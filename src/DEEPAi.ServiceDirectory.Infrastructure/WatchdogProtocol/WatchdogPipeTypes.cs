@@ -21,6 +21,19 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.WatchdogProtocol
         Paused = 7
     }
 
+    public enum WatchdogHealthStatus
+    {
+        NotRun = 1,
+        Ok = 2,
+        Failed = 3
+    }
+
+    public enum WatchdogAutoRestartStatus
+    {
+        Enabled = 1,
+        Suppressed = 2
+    }
+
     public enum WatchdogPipeParseFailureCode
     {
         None = 0,
@@ -37,13 +50,121 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.WatchdogProtocol
         UnexpectedResponse,
         UnexpectedSuccessShape,
         InvalidStatus,
-        InvalidErrorReason
+        InvalidErrorReason,
+        MissingStatusField,
+        DuplicateStatusField,
+        InvalidHealthStatus,
+        InvalidStatusCounter,
+        InvalidAutoRestartStatus,
+        InvalidStatusTimestamp,
+        InvalidStatusExtension,
+        InvalidStatusCombination,
+        InvalidStatusFieldOrder
     }
 
     public enum WatchdogPipeResponseOutcome
     {
         Success = 1,
         Error = 2
+    }
+
+    public sealed class WatchdogStatusSnapshot
+    {
+        public WatchdogStatusSnapshot(
+            WatchdogServiceStatus serviceStatus,
+            WatchdogHealthStatus healthStatus,
+            int consecutiveFailures,
+            int restartCountInTenMinutes,
+            WatchdogAutoRestartStatus autoRestartStatus,
+            DateTimeOffset? lastHealthUtc)
+        {
+            if (!Enum.IsDefined(typeof(WatchdogServiceStatus), serviceStatus))
+            {
+                throw new ArgumentOutOfRangeException(nameof(serviceStatus));
+            }
+
+            if (!Enum.IsDefined(typeof(WatchdogHealthStatus), healthStatus))
+            {
+                throw new ArgumentOutOfRangeException(nameof(healthStatus));
+            }
+
+            if (!Enum.IsDefined(
+                typeof(WatchdogAutoRestartStatus),
+                autoRestartStatus))
+            {
+                throw new ArgumentOutOfRangeException(nameof(autoRestartStatus));
+            }
+
+            if (consecutiveFailures < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(consecutiveFailures));
+            }
+
+            if (restartCountInTenMinutes < 0 || restartCountInTenMinutes > 3)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(restartCountInTenMinutes));
+            }
+
+            if (healthStatus == WatchdogHealthStatus.NotRun)
+            {
+                if (consecutiveFailures != 0 || lastHealthUtc.HasValue)
+                {
+                    throw new ArgumentException(
+                        "NOT_RUN health requires zero failures and no last health timestamp.");
+                }
+            }
+            else
+            {
+                if (!lastHealthUtc.HasValue
+                    || lastHealthUtc.Value.Offset != TimeSpan.Zero
+                    || lastHealthUtc.Value.Ticks % TimeSpan.TicksPerMillisecond != 0)
+                {
+                    throw new ArgumentException(
+                        "A completed health check requires a millisecond-precision UTC timestamp.");
+                }
+
+                if (healthStatus == WatchdogHealthStatus.Ok
+                    && consecutiveFailures != 0)
+                {
+                    throw new ArgumentException(
+                        "OK health requires zero consecutive failures.");
+                }
+
+                if (healthStatus == WatchdogHealthStatus.Failed
+                    && consecutiveFailures == 0)
+                {
+                    throw new ArgumentException(
+                        "FAILED health requires at least one consecutive failure.");
+                }
+            }
+
+            if (autoRestartStatus == WatchdogAutoRestartStatus.Enabled
+                && restartCountInTenMinutes == 3)
+            {
+                throw new ArgumentException(
+                    "Three restarts in ten minutes require automatic restart suppression.");
+            }
+
+            ServiceStatus = serviceStatus;
+            HealthStatus = healthStatus;
+            ConsecutiveFailures = consecutiveFailures;
+            RestartCountInTenMinutes = restartCountInTenMinutes;
+            AutoRestartStatus = autoRestartStatus;
+            LastHealthUtc = lastHealthUtc;
+        }
+
+        public WatchdogServiceStatus ServiceStatus { get; }
+
+        public WatchdogHealthStatus HealthStatus { get; }
+
+        public int ConsecutiveFailures { get; }
+
+        public int RestartCountInTenMinutes { get; }
+
+        public WatchdogAutoRestartStatus AutoRestartStatus { get; }
+
+        public DateTimeOffset? LastHealthUtc { get; }
     }
 
     public sealed class WatchdogRequestParseResult
@@ -103,14 +224,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.WatchdogProtocol
         private WatchdogResponseParseResult(
             bool isValid,
             WatchdogPipeResponseOutcome? outcome,
-            WatchdogServiceStatus? serviceStatus,
+            WatchdogStatusSnapshot statusSnapshot,
             string errorReason,
             WatchdogPipeParseFailureCode failureCode)
         {
             if (!isValid)
             {
                 if (outcome.HasValue
-                    || serviceStatus.HasValue
+                    || statusSnapshot != null
                     || errorReason != null
                     || failureCode == WatchdogPipeParseFailureCode.None
                     || !Enum.IsDefined(typeof(WatchdogPipeParseFailureCode), failureCode))
@@ -128,10 +249,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.WatchdogProtocol
             else if (outcome.Value == WatchdogPipeResponseOutcome.Success)
             {
                 if (errorReason != null
-                    || (serviceStatus.HasValue
+                    || (statusSnapshot != null
                         && !Enum.IsDefined(
                             typeof(WatchdogServiceStatus),
-                            serviceStatus.Value)))
+                            statusSnapshot.ServiceStatus)))
                 {
                     throw new ArgumentException(
                         "A successful watchdog response requires a defined optional status and no error reason.");
@@ -139,7 +260,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.WatchdogProtocol
             }
             else if (outcome.Value == WatchdogPipeResponseOutcome.Error)
             {
-                if (serviceStatus.HasValue || errorReason == null)
+                if (statusSnapshot != null || errorReason == null)
                 {
                     throw new ArgumentException(
                         "An error watchdog response requires only an error reason.");
@@ -155,7 +276,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.WatchdogProtocol
 
             IsValid = isValid;
             Outcome = outcome;
-            ServiceStatus = serviceStatus;
+            StatusSnapshot = statusSnapshot;
             ErrorReason = errorReason;
             FailureCode = failureCode;
         }
@@ -164,7 +285,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.WatchdogProtocol
 
         public WatchdogPipeResponseOutcome? Outcome { get; }
 
-        public WatchdogServiceStatus? ServiceStatus { get; }
+        public WatchdogStatusSnapshot StatusSnapshot { get; }
+
+        public WatchdogServiceStatus? ServiceStatus => StatusSnapshot == null
+            ? (WatchdogServiceStatus?)null
+            : StatusSnapshot.ServiceStatus;
 
         public string ErrorReason { get; }
 
@@ -181,12 +306,17 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.WatchdogProtocol
         }
 
         internal static WatchdogResponseParseResult SuccessWithStatus(
-            WatchdogServiceStatus serviceStatus)
+            WatchdogStatusSnapshot statusSnapshot)
         {
+            if (statusSnapshot == null)
+            {
+                throw new ArgumentNullException(nameof(statusSnapshot));
+            }
+
             return new WatchdogResponseParseResult(
                 true,
                 WatchdogPipeResponseOutcome.Success,
-                serviceStatus,
+                statusSnapshot,
                 null,
                 WatchdogPipeParseFailureCode.None);
         }

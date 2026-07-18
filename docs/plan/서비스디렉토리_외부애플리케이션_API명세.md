@@ -1,6 +1,6 @@
 # 서비스 디렉토리 외부 애플리케이션 API 명세
 
-> 문서 상태: 초안
+> 문서 상태: 외부 wire 계약 확정
 > 구현 상태: 승인 서비스 조회 projection, 일일 API 키·exactly-one 헤더 검증, bounded strict UTF-8 XML 입력과 listener endpoint guard primitive 부분 구현, HTTP API 미구현·미검증
 > 대상 독자: 서비스 디렉토리에 자기 서비스 정보를 조회·등록하는 다른 애플리케이션 개발자
 > 배포 범위: 사내 연동 개발자와 승인된 운영 담당자
@@ -35,10 +35,12 @@
 - 프로토콜 의미: HTTP/1.1 요청·응답
 - 기준 주소: `http://{ListenAddress}:21000`. `ListenAddress`는 설치된 IP literal이며 IPv6 URI에서는 대괄호로 감싼다. DNS hostname은 현재 listener 계약에 포함하지 않는다.
 - 요청·응답 본문: `application/xml; charset=utf-8`
-- API URL, XML payload, media type와 협상에는 버전을 두지 않는다. 현재 무버전 경로와 기존 필드 의미를 계속 유지하며 호환 확장은 상세 명세가 미리 정의한 선택적 확장점 또는 별도 endpoint로만 수행한다. 알 수 없는 XML 요소 처리 정책이 확정되기 전에는 임의의 선택 필드를 추가하지 않는다.
+- API URL, XML payload, media type와 협상에는 버전을 두지 않는다. 현재 무버전 경로와 기존 필드 의미를 계속 유지하며 호환 확장은 응답의 `Extensions` 또는 별도 endpoint로만 수행한다.
+- External XML의 고정 기본 namespace는 `urn:deepai:service-directory:external`이다. namespace에는 버전 suffix를 붙이지 않으며 namespace가 없거나 다른 namespace인 요청은 `400 BAD_REQUEST`로 거부한다.
+- 규범 스키마는 [`xsd/external.xsd`](./xsd/external.xsd)다. 요청은 DTD·외부 엔터티·본문 크기·깊이 제한을 먼저 적용한 뒤 스키마의 root, 순서, cardinality와 값을 엄격히 검증한다. 알 수 없는 요청 요소·속성, 중복 요소와 mixed content는 허용하지 않는다.
+- 응답의 호환 확장은 `Response`의 마지막 선택 요소인 `Extensions` 자식에서만 허용한다. 클라이언트는 `Extensions` 안의 모르는 요소를 무시해야 하며, 그 밖의 위치에 요소를 추가하거나 기존 필드 의미를 바꾸거나 새 필수 필드를 추가하지 않는다. 요청에는 `Extensions`를 허용하지 않는다.
 - 본문을 보내는 요청은 `Content-Type`을 지정하고, 클라이언트는 `Accept: application/xml`을 보낸다.
 - API payload의 모든 시각은 UTC ISO 8601 형식(예: `2026-07-17T02:00:00Z`)이다. §2.3 일일 API 키의 날짜만 시스템 로컬 날짜를 사용한다.
-- 현재 XML에는 namespace가 없다. namespace/XSD 정책은 계약 확정 전에 결정하되 선택할 namespace에도 API 버전을 포함하지 않는다.
 
 ### 2.2 운영 보안 요구
 
@@ -66,6 +68,8 @@ X-DPAI-API-Key: {44-character Base64 value}
 ```
 
 헤더는 정확히 한 번만 보내야 한다. 누락, 중복, 공백 포함, 44자가 아닌 값과 엄격한 Base64 디코딩에 실패한 값은 거부한다.
+
+`X-DPAI-API-Key`라는 헤더 이름은 아래의 44자 생성 알고리즘에 영구적으로 결합한다. 서버는 이 헤더 값에 대해 다른 알고리즘을 추측하거나 여러 방식으로 복호화를 시도하지 않으며, 이전·다음 날짜나 다른 key derivation으로 fallback하지 않는다. 향후 보안상 다른 인증 방식이 불가피하면 기존 헤더와 endpoint 의미를 바꾸지 않고 별도의 의미 있는 인증 헤더와 별도 endpoint를 병렬로 정의해 명시적으로 소비자를 이전한다. 두 인증 헤더를 한 요청에 함께 보내면 모호한 인증으로 거부한다. 기존 방식의 중단은 일반 업데이트가 아니라 모든 소비자와 운영자가 승인한 별도 호환성 파괴 절차다.
 
 | 항목 | 규칙 |
 |---|---|
@@ -144,7 +148,7 @@ X-DPAI-API-Key    = AAECAwQFBgcICQoLDA0OD37MVf5dYeif4Ss6OjGAC+g=
 모든 정의된 응답은 다음 envelope을 사용한다.
 
 ```xml
-<Response>
+<Response xmlns="urn:deepai:service-directory:external">
   <Result>OK</Result>
   <Code>0</Code>
   <Message></Message>
@@ -170,18 +174,33 @@ X-DPAI-API-Key    = AAECAwQFBgcICQoLDA0OD37MVf5dYeif4Ss6OjGAC+g=
 | 1004 | `LIMIT_EXCEEDED` | 요청 속도·동시 실행 또는 전체 승인 대기 1,000개 제한 초과 |
 | 3000 | `INTERNAL` | 내부 오류. 구체적인 파일·예외 정보는 응답하지 않음 |
 
-rate limit과 승인 대기 cap 초과는 HTTP `429`와 `1004 LIMIT_EXCEEDED`를 사용한다. 그 밖의 HTTP 상태와 envelope 오류 매핑은 §3.3에 따라 계약 확정 전에 결정한다.
+위 목록은 [`xsd/external.xsd`](./xsd/external.xsd)의 닫힌 `CodeType`과 같은 계약이다. 목록에 없는 code는 스키마 위반이며 공개 뒤 새 값을 추가하거나 기존 code의 의미를 바꾸지 않는다. 새 endpoint도 이 공통 `Response`를 사용하면 현재 code만 사용한다.
 
-### 3.3 현재 HTTP 상태 규칙
+rate limit과 승인 대기 cap 초과는 HTTP `429`와 `1004 LIMIT_EXCEEDED`를 사용한다. 그 밖의 HTTP 상태와 envelope 오류 매핑은 §3.3의 확정 계약을 따른다.
 
-기존 초안과의 경로·행위 호환을 위해 논리 오류는 HTTP `200`과 envelope `Code`로 구분한다. 일일 API 키 실패는 `401`, rate limit·동시 실행·승인 대기 cap 초과는 `429`, 접근 등급 위반은 `403`, 정의되지 않은 경로는 `404`, 처리되지 않은 내부 오류는 `500`이다.
+### 3.3 HTTP 상태 규칙
 
-이 규칙은 외부 통합에 중요한 결정이며 아직 전체가 확정되지 않았다. 위에서 고정한 `401`과 `429`를 제외한 논리 오류를 계약 확정 전에 `400`, `403`, `404`, `409`, `413`, `415` 같은 표준 상태로 전환할지 결정해야 한다.
+HTTP `200`은 `Code=0`인 성공 응답에만 사용한다. 클라이언트는 HTTP 상태와 envelope `Code`를 모두 확인하며, 오류를 성공 HTTP 상태에 넣지 않는다.
+
+| HTTP | envelope | 사용처 |
+|---|---|---|
+| `200` | `0 OK` | 정상 처리. `PENDING_*`와 `ALREADY_REGISTERED`도 성공 결과 |
+| `400` | `1000 BAD_REQUEST` | 쿼리, 경로 값, XML, 필드, namespace 또는 스키마 검증 실패 |
+| `401` | `1003 INVALID_API_KEY` | 일일 API 키 누락·중복·검증 실패. 실패 단계를 구분하지 않음 |
+| `403` | body 없음 | listener local endpoint·신뢰 경계 검증을 통과하지 못한 요청. External에는 인가 상세 code를 정의하지 않음 |
+| `404` | `1001 NOT_FOUND` 또는 body 없음 | 승인 서비스가 없거나 정의되지 않은 경로 |
+| `409` | `1002 CONFLICT` | 같은 ProductCode의 상이한 대기 등 현재 상태 충돌 |
+| `413` | body 없음 | raw 요청 본문 제한 초과 |
+| `415` | body 없음 | 지원하지 않는 `Content-Type` |
+| `429` | `1004 LIMIT_EXCEEDED` | rate limit, burst, 동시 실행 또는 승인 대기 cap 초과 |
+| `500` | `3000 INTERNAL` | 처리되지 않은 내부 오류. 상세 예외 비노출 |
+
+애플리케이션이 안전하게 envelope을 만들 수 있는 오류에는 해당 XML을 반환한다. `401`은 실패 단계와 관계없이 동일한 `1003 INVALID_API_KEY` envelope을 반환한다. `413`, `415`, 신뢰 경계의 `403` 조기 거부와 정의되지 않은 경로의 `404`는 항상 body 없이 반환한다. `429`가 시간 기반 제한이면 `Retry-After`가 필수이고 승인 대기 cap처럼 해제 시각을 알 수 없으면 생략한다.
 
 ### 3.4 외부 서비스 DTO
 
 ```xml
-<Service>
+<Service xmlns="urn:deepai:service-directory:external">
   <Name>VMS Bridge</Name>
   <ProductCode>ABCD</ProductCode>
   <ServerAddress>10.0.0.5</ServerAddress>
@@ -201,7 +220,7 @@ rate limit과 승인 대기 cap 초과는 HTTP `429`와 `1004 LIMIT_EXCEEDED`를
 응답:
 
 ```xml
-<Response>
+<Response xmlns="urn:deepai:service-directory:external">
   <Result>OK</Result>
   <Code>0</Code>
   <Message />
@@ -224,7 +243,7 @@ rate limit과 승인 대기 cap 초과는 HTTP `429`와 `1004 LIMIT_EXCEEDED`를
 성공 응답:
 
 ```xml
-<Response>
+<Response xmlns="urn:deepai:service-directory:external">
   <Result>OK</Result>
   <Code>0</Code>
   <Message />
@@ -247,7 +266,7 @@ rate limit과 승인 대기 cap 초과는 HTTP `429`와 `1004 LIMIT_EXCEEDED`를
 요청:
 
 ```xml
-<RegistrationRequest>
+<RegistrationRequest xmlns="urn:deepai:service-directory:external">
   <Name>VMS Bridge</Name>
   <ProductCode>ABCD</ProductCode>
   <ServerAddress>10.0.0.5</ServerAddress>
@@ -271,7 +290,7 @@ rate limit과 승인 대기 cap 초과는 HTTP `429`와 `1004 LIMIT_EXCEEDED`를
 성공 응답:
 
 ```xml
-<Response>
+<Response xmlns="urn:deepai:service-directory:external">
   <Result>OK</Result>
   <Code>0</Code>
   <Message />
@@ -305,6 +324,8 @@ rate limit과 승인 대기 cap 초과는 HTTP `429`와 `1004 LIMIT_EXCEEDED`를
 | `ServerAddress` | 필수. [개발계획 §5.1](./서비스디렉토리_개발계획.md#51-도메인-레코드)의 공통 `ServerAddress` 문법과 정규화·비교 규칙을 그대로 적용 |
 | `Port` | 정수 `1..65535` |
 
+`RegistrationRequest`의 XSD는 ProductCode 입력에만 선후행 XML whitespace와 ASCII 소문자를 허용한다. 서버는 trim·대문자 정규화와 4바이트 검증을 다시 수행한 뒤 비교·저장하며, `Service`를 포함한 모든 응답 ProductCode는 공백 없는 대문자 canonical 형식만 반환한다.
+
 추가 요구:
 
 - XML DTD와 외부 엔터티를 금지하고 안전한 reader 설정을 사용한다.
@@ -335,10 +356,10 @@ rate limit과 승인 대기 cap 초과는 HTTP `429`와 `1004 LIMIT_EXCEEDED`를
 5. `PENDING_*`이면 운영자 승인이 필요함을 표시한다.
 6. 승인 반영 확인 polling의 기본 간격은 60초이며 30초보다 짧게 설정할 수 없다. 시작 후 1시간이 지나면 자동 polling을 중단하고 다음 로그인 또는 사용자의 명시적 재확인 때 다시 조회한다.
 
-## 7. 미확정 계약
+## 7. 호환성 고정 사항
 
-다음 항목이 결정되면 이 문서와 예제를 함께 갱신한다.
-
-- 일일 API 키 알고리즘을 불가피하게 변경할 때 기존 연동을 깨지 않는 전환·폐기 정책. 현재 wire에는 버전 필드가 없음
-- HTTP 상태와 envelope 오류 코드의 최종 매핑
-- 버전을 포함하지 않는 고정 XML namespace/XSD와 알 수 없는 요소 처리
+- `X-DPAI-API-Key`는 §2.3의 알고리즘에 영구 결합하고 같은 헤더에서 다른 알고리즘을 협상하지 않는다.
+- HTTP 상태와 envelope 오류의 최종 매핑은 §3.3을 따른다.
+- 오류 `Code`는 §3.2와 XSD에 열거한 닫힌 집합이며 새 값을 추가하거나 기존 의미를 재사용하지 않는다.
+- External XML은 버전 없는 고정 namespace와 [`xsd/external.xsd`](./xsd/external.xsd)를 사용한다. namespace 없는 legacy XML은 허용하지 않는다.
+- 공개 뒤의 호환 추가는 응답 마지막의 `Extensions` 또는 별도 endpoint에서만 수행한다. 기존 경로·메서드·필드 의미를 변경하거나 새 필수 필드를 추가하지 않는다.

@@ -1,7 +1,7 @@
 # 서비스 디렉토리 API 명세 안내
 
-> 문서 상태: 분리 완료, 세부 계약은 초안
-> 구현 상태: 승인 서비스 조회, 일일 API 키·헤더 검증, bounded XML 입력, Named Pipe wire codec, listener endpoint guard, Admin 인가, 보안 진단 Event Log·flood limiter와 Peer pairing 암호 primitive 부분 구현, HTTP API·host 통합 미구현·미검증
+> 문서 상태: 분리 완료, 세부 wire 계약 확정
+> 구현 상태: 승인 서비스 조회, 일일 API 키·헤더 검증, bounded XML 입력, Named Pipe wire codec, listener endpoint guard, Admin 인가, 보안 진단 Event Log·flood limiter와 Peer pairing 암호 primitive 부분 구현. Admin DTO·strict XML client codec와 Tray loopback client 소스 추가, 현재 작업 트리 빌드 미검증, HTTP 서버·host 통합 미구현
 > 최종 정리일: 2026-07-18
 
 기존의 단일 API 명세를 호출 주체와 신뢰 경계에 따라 두 문서로 분리했다. 이 파일은 호환되는 진입점과 문서 색인으로만 사용하며, 요청·응답의 단일 원본은 아래 두 상세 명세다.
@@ -15,6 +15,8 @@
 - IP literal prefix를 보안 경계로 취급하지 않고 요청의 실제 local endpoint를 신뢰 경계별 주소와 TCP `21000`에 다시 결합
 - 활성 서비스 최대 1,000개, 외부 애플리케이션 호출은 저빈도 전제
 - URL, media type, health와 Peer XML에 API 버전 필드를 두지 않고 현재 무버전 경로를 영구 유지. 기존 소비자와 호환되는 추가만 허용
+- 고정 XML namespace는 External `urn:deepai:service-directory:external`, Admin `urn:deepai:service-directory:admin`, Peer `urn:deepai:service-directory:peer`이며 버전 suffix와 namespace 없는 요청을 금지. 규범 XSD는 [`xsd/external.xsd`](./xsd/external.xsd), [`xsd/admin.xsd`](./xsd/admin.xsd), [`xsd/peer.xsd`](./xsd/peer.xsd)
+- HTTP `200`은 `Code=0` 성공에만 사용하고 `400`·`401`·`403`·`404`·`409`·`413`·`415`·`429`·`500` 매핑과 인증 전 bodyless·인증 후 Peer signed 오류 예외는 상세 명세를 따름
 - Peer 병합은 `LogicalVersion`과 canonical `OriginInstanceId`를 사용하고 UTC 시각은 감사·표시 전용. 60초 시계 편차는 Peer 인증 freshness에만 적용
 - 인증·인가·endpoint 신뢰 경계 실패는 Windows Application Event Log source `DEEPAi.ServiceDirectory.Security`에 별도 기록하고 비밀값 배제와 반복 실패 flood 억제를 적용
 - 상세 요청 크기·필드·항목 수·rate limit·timeout은 아래 내·외부 상세 명세가 단일 원본
@@ -49,10 +51,11 @@
 
 ## 현재 호환성 상태
 
-아직 HTTP API 실행체와 실제 소비자가 없으므로 두 상세 명세는 초안이다. 경로와 wire에는 API 버전 필드를 두지 않으며 현재 `/api/*`, `/admin/*`, `/api/sync/*` 경로를 영구 유지한다. 공개 뒤에는 기존 소비자가 계속 동작하는 호환 추가만 허용한다.
+아직 HTTP API 서버 실행체는 없고 Tray의 Admin client도 실행 검증하지 않았지만 두 상세 명세의 wire 계약은 확정했다. 경로와 wire에는 API 버전 필드를 두지 않으며 현재 `/api/*`, `/admin/*`, `/api/sync/*` 경로를 영구 유지한다. 공개 뒤에는 기존 소비자가 계속 동작하는 호환 추가만 허용한다.
 
-- External 일일 API 키 알고리즘을 불가피하게 바꿀 때 현재 무버전 wire의 호환 전환 정책
-- 표준 HTTP 상태 사용 여부와 envelope 오류 코드의 최종 매핑
-- 버전을 포함하지 않는 고정 XML namespace/XSD와 알 수 없는 요소 처리 정책
+- External 일일 API 키 헤더는 현재 44자 알고리즘에 영구 결합한다. 불가피한 교체는 기존 wire 변경이 아니라 별도 인증 헤더와 endpoint의 병렬 계약 및 명시적 migration으로만 수행한다.
+- HTTP 상태와 envelope 오류 매핑은 각 상세 명세에서 확정했다.
+- 상세 명세와 XSD에 열거한 오류 `Code` 집합은 닫힌 계약이다. 목록에 없는 값을 임의로 추가하거나 기존 의미를 재사용하지 않는다.
+- 요청은 경계별 고정 namespace와 XSD를 엄격히 적용하고 namespace 없는 XML을 거부한다. 호환 추가는 응답 마지막의 선택적 `Extensions` 안에서만 허용하며 요청의 알 수 없는 요소·속성은 거부한다.
 
 외부 계약을 확정한 뒤에는 경로·메서드·기존 필드 의미를 바꾸거나 새 필수 필드를 추가하지 않는다. 기능 확장은 상세 계약이 이미 허용한 선택적 확장점 또는 별도 endpoint 추가처럼 기존 소비자가 계속 동작하는 방식으로만 수행하며 `/v1` 같은 버전 경로, version query·header와 `ApiVersion`·`ProtocolVersion` 요소를 추가하지 않는다. 암호 primitive의 domain-separation label과 알고리즘 식별자는 API 버전 필드로 취급하지 않는다.

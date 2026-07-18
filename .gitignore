@@ -8,3 +8,10 @@ TestResults/
 *.nupkg
 *.snupkg
 *.log
+
+# Generated installer artifacts; installer sources and documentation stay tracked.
+/installer/DEEPAi-ServiceDirectory-*-build.*-x64.exe
+/installer/DEEPAi-ServiceDirectory-*-build.*-x64.exe.sha256
+
+# Local staging for private symbol bundles. Symbols must not be committed.
+/artifacts/symbols/

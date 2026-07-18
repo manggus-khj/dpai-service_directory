@@ -1,0 +1,35 @@
+<Application
+    x:Class="DEEPAi.ServiceDirectory.Tray.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:tb="clr-namespace:H.NotifyIcon;assembly=H.NotifyIcon.Wpf"
+    ShutdownMode="OnExplicitShutdown">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/LightTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+
+            <tb:TaskbarIcon
+                x:Key="ServiceDirectoryTrayIcon"
+                IconSource="{Binding TrayIconSource}"
+                MenuActivation="LeftOrRightClick"
+                ToolTipText="{Binding TrayToolTipText}">
+                <tb:TaskbarIcon.ContextMenu>
+                    <ContextMenu FontSize="{StaticResource BodyFontSize}">
+                        <MenuItem Header="상태 모니터 열기" Command="{Binding OpenWindowCommand}" />
+                        <Separator />
+                        <MenuItem Header="서비스 시작 (START)" Command="{Binding StartServiceCommand}" />
+                        <MenuItem Header="서비스 중지 (STOP)" Command="{Binding StopServiceCommand}" />
+                        <MenuItem Header="서비스 재시작 (RESTART)" Command="{Binding RestartServiceCommand}" />
+                        <MenuItem Header="지금 동기화" Command="{Binding SyncNowCommand}" />
+                        <Separator />
+                        <MenuItem Header="종료" Command="{Binding ExitCommand}" />
+                    </ContextMenu>
+                </tb:TaskbarIcon.ContextMenu>
+            </tb:TaskbarIcon>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

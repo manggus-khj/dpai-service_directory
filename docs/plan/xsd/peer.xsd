@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:tns="urn:deepai:service-directory:peer"
+           targetNamespace="urn:deepai:service-directory:peer"
+           elementFormDefault="qualified"
+           attributeFormDefault="unqualified">
+
+  <xs:annotation>
+    <xs:documentation>Normative, versionless Peer HTTP XML contract.</xs:documentation>
+  </xs:annotation>
+
+  <xs:element name="PairingHello" type="tns:PairingHelloType" />
+  <xs:element name="PairingKeyConfirm" type="tns:PairingKeyConfirmType" />
+  <xs:element name="PairingDecision" type="tns:PairingDecisionType" />
+  <xs:element name="PairingCommit" type="tns:PairingCommitType" />
+  <xs:element name="Handshake" type="tns:HandshakeRequestType" />
+  <xs:element name="Exchange" type="tns:ExchangeType" />
+  <xs:element name="Release" type="tns:ReleaseType" />
+  <xs:element name="Revoke" type="tns:RevokeType" />
+  <xs:element name="Service" type="tns:SyncServiceType" />
+  <xs:element name="Response" type="tns:ResponseType" />
+
+  <xs:complexType name="PairingHelloType">
+    <xs:sequence>
+      <xs:element name="Algorithm" type="tns:AlgorithmType" />
+      <xs:element name="PairingId" type="tns:GuidType" />
+      <xs:element name="InitiatorInstanceId" type="tns:GuidType" />
+      <xs:element name="InitiatorEndpoint" type="tns:EndpointType" />
+      <xs:element name="InitiatorNonce" type="tns:Bytes32Type" />
+      <xs:element name="InitiatorPublicKey" type="tns:PublicKeyBlobType" />
+      <xs:element name="InitiatorLastPeerKeyEpoch" type="xs:unsignedLong" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PairingHelloResultType">
+    <xs:sequence>
+      <xs:element name="Algorithm" type="tns:AlgorithmType" />
+      <xs:element name="PairingId" type="tns:GuidType" />
+      <xs:element name="ResponderInstanceId" type="tns:GuidType" />
+      <xs:element name="ResponderEndpoint" type="tns:EndpointType" />
+      <xs:element name="ResponderNonce" type="tns:Bytes32Type" />
+      <xs:element name="ResponderPublicKey" type="tns:PublicKeyBlobType" />
+      <xs:element name="ResponderLastPeerKeyEpoch" type="xs:unsignedLong" />
+      <xs:element name="KeyEpoch" type="tns:PositiveEpochType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PairingKeyConfirmType">
+    <xs:sequence>
+      <xs:element name="PairingId" type="tns:GuidType" />
+      <xs:element name="KeyEpoch" type="tns:PositiveEpochType" />
+      <xs:element name="SenderRole" type="tns:PairingRoleType" />
+      <xs:element name="SenderInstanceId" type="tns:GuidType" />
+      <xs:element name="ReceiverInstanceId" type="tns:GuidType" />
+      <xs:element name="TranscriptHash" type="tns:Bytes32Type" />
+      <xs:element name="ConfirmationMac" type="tns:Bytes32Type" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PairingDecisionType">
+    <xs:sequence>
+      <xs:element name="PairingId" type="tns:GuidType" />
+      <xs:element name="KeyEpoch" type="tns:PositiveEpochType" />
+      <xs:element name="SenderRole" type="tns:PairingRoleType" />
+      <xs:element name="SenderInstanceId" type="tns:GuidType" />
+      <xs:element name="ReceiverInstanceId" type="tns:GuidType" />
+      <xs:element name="TranscriptHash" type="tns:Bytes32Type" />
+      <xs:element name="Decision" type="tns:PairingDecisionValueType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PairingCommitType">
+    <xs:sequence>
+      <xs:element name="PairingId" type="tns:GuidType" />
+      <xs:element name="KeyEpoch" type="tns:PositiveEpochType" />
+      <xs:element name="SenderRole" type="tns:PairingRoleType" />
+      <xs:element name="SenderInstanceId" type="tns:GuidType" />
+      <xs:element name="ReceiverInstanceId" type="tns:GuidType" />
+      <xs:element name="TranscriptHash" type="tns:Bytes32Type" />
+      <xs:element name="Commit" type="tns:CommitMarkerType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="HandshakeRequestType">
+    <xs:sequence>
+      <xs:element name="InstanceId" type="tns:GuidType" />
+      <xs:element name="PeerInstanceId" type="tns:GuidType" />
+      <xs:element name="KeyEpoch" type="tns:PositiveEpochType" />
+      <xs:element name="HandshakeNonce" type="tns:Bytes32Type" />
+      <xs:element name="UtcNow" type="tns:UtcDateTimeType" />
+      <xs:element name="SyncEnabled" type="tns:BooleanTextType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="HandshakeResultType">
+    <xs:sequence>
+      <xs:element name="InstanceId" type="tns:GuidType" />
+      <xs:element name="KeyEpoch" type="tns:PositiveEpochType" />
+      <xs:element name="HandshakeNonce" type="tns:Bytes32Type" />
+      <xs:element name="SessionId" type="tns:Bytes16Type" />
+      <xs:element name="ExpiresUtc" type="tns:UtcDateTimeType" />
+      <xs:element name="UtcNow" type="tns:UtcDateTimeType" />
+      <xs:element name="SyncEnabled" type="tns:BooleanTextType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ExchangeType">
+    <xs:choice>
+      <xs:element name="SyncData" type="tns:SyncDataType" />
+      <xs:element name="PullRequest" type="tns:PullRequestType" />
+    </xs:choice>
+    <xs:attribute name="Mode" type="tns:ExchangeModeType" use="required" />
+  </xs:complexType>
+
+  <xs:complexType name="PullRequestType">
+    <xs:sequence>
+      <xs:element name="SnapshotId" type="tns:GuidType" />
+      <xs:element name="BatchIndex" type="xs:unsignedInt" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SyncDataType">
+    <xs:sequence>
+      <xs:element name="InstanceId" type="tns:GuidType" />
+      <xs:element name="SnapshotId" type="tns:GuidType" />
+      <xs:element name="LogicalClock" type="xs:unsignedLong" />
+      <xs:element name="BatchIndex" type="xs:unsignedInt" />
+      <xs:element name="TotalCount" type="xs:unsignedLong" />
+      <xs:element name="IsLastBatch" type="tns:BooleanTextType" />
+      <xs:element name="Items" type="tns:SyncItemsType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SyncItemsType">
+    <xs:sequence>
+      <xs:element name="Service" type="tns:SyncServiceType" minOccurs="0" maxOccurs="unbounded" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SyncServiceType">
+    <xs:sequence>
+      <xs:element name="Name" type="tns:NameType" />
+      <xs:element name="ProductCode" type="tns:ProductCodeType" />
+      <xs:element name="ServerAddress" type="tns:ServerAddressType" />
+      <xs:element name="Port" type="tns:PortType" />
+      <xs:element name="LastModifiedUtc" type="tns:UtcDateTimeType" />
+      <xs:element name="Deleted" type="tns:BooleanTextType" />
+      <xs:element name="DeletedUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+      <xs:element name="LogicalVersion" type="tns:PositiveEpochType" />
+      <xs:element name="OriginInstanceId" type="tns:GuidType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ExchangeAckType">
+    <xs:sequence>
+      <xs:element name="Mode" type="tns:PushOnlyType" />
+      <xs:element name="SnapshotId" type="tns:GuidType" />
+      <xs:element name="BatchIndex" type="xs:unsignedInt" />
+      <xs:element name="ServerSnapshotId" type="tns:GuidType" minOccurs="0" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ReleaseType">
+    <xs:sequence>
+      <xs:element name="InstanceId" type="tns:GuidType" />
+      <xs:element name="SessionId" type="tns:Bytes16Type" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RevokeType">
+    <xs:sequence>
+      <xs:element name="InstanceId" type="tns:GuidType" />
+      <xs:element name="PeerInstanceId" type="tns:GuidType" />
+      <xs:element name="KeyEpoch" type="tns:PositiveEpochType" />
+      <xs:element name="RevokeId" type="tns:GuidType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ResponseType">
+    <xs:sequence>
+      <xs:element name="Result" type="tns:ResultType" />
+      <xs:element name="Code" type="tns:CodeType" />
+      <xs:element name="Message" type="tns:MessageType" />
+      <xs:choice minOccurs="0">
+        <xs:element name="PairingHelloResult" type="tns:PairingHelloResultType" />
+        <xs:element name="PairingKeyConfirmResult" type="tns:PairingKeyConfirmType" />
+        <xs:element name="Handshake" type="tns:HandshakeResultType" />
+        <xs:element name="ExchangeAck" type="tns:ExchangeAckType" />
+        <xs:element name="Exchange" type="tns:ExchangeType" />
+      </xs:choice>
+      <xs:element name="Extensions" type="tns:ExtensionsType" minOccurs="0" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ExtensionsType">
+    <xs:sequence><xs:any namespace="##any" processContents="lax" minOccurs="0" maxOccurs="unbounded" /></xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="AlgorithmType"><xs:restriction base="xs:string"><xs:enumeration value="DPAI-SD-ECDH-P256-HMAC-SHA256-v1"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="PairingRoleType"><xs:restriction base="xs:string"><xs:enumeration value="initiator"/><xs:enumeration value="responder"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="PairingDecisionValueType"><xs:restriction base="xs:string"><xs:enumeration value="CONFIRMED"/><xs:enumeration value="CANCELLED"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="CommitMarkerType"><xs:restriction base="xs:string"><xs:enumeration value="COMMIT"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="ExchangeModeType"><xs:restriction base="xs:string"><xs:enumeration value="Push"/><xs:enumeration value="Pull"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="PushOnlyType"><xs:restriction base="xs:string"><xs:enumeration value="Push"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="ResultType"><xs:restriction base="xs:string"><xs:enumeration value="OK"/><xs:enumeration value="ERROR"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="BooleanTextType"><xs:restriction base="xs:string"><xs:enumeration value="true"/><xs:enumeration value="false"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="CodeType">
+    <xs:restriction base="xs:unsignedInt">
+      <xs:enumeration value="0"/><xs:enumeration value="1000"/><xs:enumeration value="1001"/>
+      <xs:enumeration value="1002"/><xs:enumeration value="1004"/><xs:enumeration value="2001"/>
+      <xs:enumeration value="2002"/><xs:enumeration value="2003"/><xs:enumeration value="2004"/>
+      <xs:enumeration value="2005"/><xs:enumeration value="2006"/><xs:enumeration value="2007"/>
+      <xs:enumeration value="3000"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:simpleType name="MessageType"><xs:restriction base="xs:string"><xs:maxLength value="512"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="NameType"><xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="128"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="ProductCodeType"><xs:restriction base="xs:string"><xs:pattern value="[A-Z0-9]{4}"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="ServerAddressType"><xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="253"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="EndpointType"><xs:restriction base="xs:string"><xs:minLength value="18"/><xs:maxLength value="80"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="PortType"><xs:restriction base="xs:unsignedShort"><xs:minInclusive value="1"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="PositiveEpochType"><xs:restriction base="xs:unsignedLong"><xs:minInclusive value="1"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="GuidType"><xs:restriction base="xs:string"><xs:pattern value="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="UtcDateTimeType"><xs:restriction base="xs:string"><xs:pattern value="[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,7})?Z"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="Bytes16Type"><xs:restriction base="xs:base64Binary"><xs:length value="16"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="Bytes32Type"><xs:restriction base="xs:base64Binary"><xs:length value="32"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="PublicKeyBlobType"><xs:restriction base="xs:base64Binary"><xs:length value="72"/></xs:restriction></xs:simpleType>
+
+</xs:schema>

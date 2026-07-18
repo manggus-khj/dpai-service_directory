@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:tns="urn:deepai:service-directory:admin"
+           targetNamespace="urn:deepai:service-directory:admin"
+           elementFormDefault="qualified"
+           attributeFormDefault="unqualified">
+
+  <xs:annotation>
+    <xs:documentation>Normative, versionless Admin HTTP XML contract.</xs:documentation>
+  </xs:annotation>
+
+  <xs:element name="EnableSync" type="tns:EnableSyncType" />
+  <xs:element name="PairingConfirmation" type="tns:PairingConfirmationType" />
+  <xs:element name="PairingCancellation" type="tns:PairingCancellationType" />
+  <xs:element name="DisableSync" type="tns:DisableSyncType" />
+  <xs:element name="LoggingSettings" type="tns:LoggingSettingsType" />
+  <xs:element name="Response" type="tns:ResponseType" />
+
+  <xs:complexType name="EnableSyncType">
+    <xs:sequence>
+      <xs:element name="PeerEndpoint" type="tns:EndpointType" />
+      <xs:element name="RePair" type="tns:BooleanTextType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PairingConfirmationType">
+    <xs:sequence>
+      <xs:element name="PairingId" type="tns:GuidType" />
+      <xs:element name="Confirmed" type="tns:TrueTextType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PairingCancellationType">
+    <xs:sequence>
+      <xs:element name="PairingId" type="tns:GuidType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="DisableSyncType">
+    <xs:sequence>
+      <xs:element name="ForgetPeer" type="tns:BooleanTextType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="LoggingSettingsType">
+    <xs:sequence>
+      <xs:element name="LogRetentionDays" type="tns:LogRetentionDaysType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ResponseType">
+    <xs:sequence>
+      <xs:element name="Result" type="tns:ResultType" />
+      <xs:element name="Code" type="tns:CodeType" />
+      <xs:element name="Message" type="tns:MessageType" />
+      <xs:choice minOccurs="0">
+        <xs:sequence>
+          <xs:element name="Services" type="tns:ServicesType" />
+          <xs:element name="TotalCount" type="xs:unsignedInt" />
+          <xs:element name="NextCursor" type="tns:CursorType" minOccurs="0" />
+        </xs:sequence>
+        <xs:sequence>
+          <xs:element name="PendingItems" type="tns:PendingItemsType" />
+          <xs:element name="TotalCount" type="xs:unsignedInt" />
+          <xs:element name="NextCursor" type="tns:CursorType" minOccurs="0" />
+        </xs:sequence>
+        <xs:element name="SyncStatus" type="tns:SyncStatusType" />
+        <xs:element name="SyncDisableResult" type="tns:SyncDisableResultType" />
+        <xs:element name="LoggingSettings" type="tns:LoggingSettingsType" />
+      </xs:choice>
+      <xs:element name="Extensions" type="tns:ExtensionsType" minOccurs="0" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ServicesType">
+    <xs:sequence>
+      <xs:element name="Service" type="tns:ServiceType" minOccurs="0" maxOccurs="250" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ServiceType">
+    <xs:sequence>
+      <xs:element name="Name" type="tns:NameType" />
+      <xs:element name="ProductCode" type="tns:ProductCodeType" />
+      <xs:element name="ServerAddress" type="tns:ServerAddressType" />
+      <xs:element name="Port" type="tns:PortType" />
+      <xs:element name="LastModifiedUtc" type="tns:UtcDateTimeType" />
+      <xs:element name="Deleted" type="tns:BooleanTextType" />
+      <xs:element name="DeletedUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PendingItemsType">
+    <xs:sequence>
+      <xs:element name="PendingItem" type="tns:PendingItemType" minOccurs="0" maxOccurs="250" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PendingItemType">
+    <xs:sequence>
+      <xs:element name="Id" type="tns:GuidType" />
+      <xs:element name="Type" type="tns:PendingType" />
+      <xs:element name="RequestedUtc" type="tns:UtcDateTimeType" />
+      <xs:element name="SourceIP" type="tns:IpTextType" />
+      <xs:element name="Requested" type="tns:ServiceInputType" />
+      <xs:element name="Current" type="tns:ServiceInputType" minOccurs="0" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ServiceInputType">
+    <xs:sequence>
+      <xs:element name="Name" type="tns:NameType" />
+      <xs:element name="ProductCode" type="tns:ProductCodeType" />
+      <xs:element name="ServerAddress" type="tns:ServerAddressType" />
+      <xs:element name="Port" type="tns:PortType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SyncStatusType">
+    <xs:sequence>
+      <xs:element name="Enabled" type="tns:BooleanTextType" />
+      <xs:element name="PairingState" type="tns:PairingStateType" />
+      <xs:element name="PeerEndpoint" type="tns:EndpointType" minOccurs="0" />
+      <xs:element name="PeerInstanceId" type="tns:GuidType" minOccurs="0" />
+      <xs:element name="KeyEpoch" type="tns:PositiveEpochType" minOccurs="0" />
+      <xs:element name="PairingId" type="tns:GuidType" minOccurs="0" />
+      <xs:element name="PairingExpiresUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+      <xs:element name="PairingRemainingSeconds" type="tns:PairingRemainingType" minOccurs="0" />
+      <xs:element name="Sas" type="tns:SasType" minOccurs="0" />
+      <xs:element name="LocalConfirmed" type="tns:BooleanTextType" minOccurs="0" />
+      <xs:element name="RemoteConfirmed" type="tns:BooleanTextType" minOccurs="0" />
+      <xs:element name="CommitExpiresUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+      <xs:element name="LocalCommitConfirmed" type="tns:BooleanTextType" minOccurs="0" />
+      <xs:element name="RemoteCommitConfirmed" type="tns:BooleanTextType" minOccurs="0" />
+      <xs:element name="LastSyncUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+      <xs:element name="LastResult" type="tns:StatusNameType" />
+      <xs:element name="ClockSkewSeconds" type="xs:long" minOccurs="0" />
+      <xs:element name="LastPeerNotificationOperation" type="tns:NotificationOperationType" />
+      <xs:element name="LastPeerNotificationResult" type="tns:NotificationResultType" />
+      <xs:element name="LastPeerNotificationUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SyncDisableResultType">
+    <xs:sequence>
+      <xs:element name="LocalPairingState" type="tns:DisabledPairingStateType" />
+      <xs:element name="PeerNotificationOperation" type="tns:DisableNotificationOperationType" />
+      <xs:element name="PeerNotificationResult" type="tns:DisableNotificationResultType" />
+      <xs:element name="PeerNotificationUtc" type="tns:UtcDateTimeType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ExtensionsType">
+    <xs:sequence>
+      <xs:any namespace="##any" processContents="lax" minOccurs="0" maxOccurs="unbounded" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="ResultType"><xs:restriction base="xs:string"><xs:enumeration value="OK"/><xs:enumeration value="ERROR"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="BooleanTextType"><xs:restriction base="xs:string"><xs:enumeration value="true"/><xs:enumeration value="false"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="TrueTextType"><xs:restriction base="xs:string"><xs:enumeration value="true"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="PendingType"><xs:restriction base="xs:string"><xs:enumeration value="New"/><xs:enumeration value="Modify"/></xs:restriction></xs:simpleType>
+
+  <xs:simpleType name="PairingStateType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Unpaired"/><xs:enumeration value="PairingWindowOpen"/>
+      <xs:enumeration value="Negotiating"/><xs:enumeration value="SasPending"/>
+      <xs:enumeration value="BothConfirmed"/><xs:enumeration value="PairedPendingCommit"/>
+      <xs:enumeration value="PairedDisabled"/><xs:enumeration value="Enabled"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DisabledPairingStateType"><xs:restriction base="xs:string"><xs:enumeration value="PairedDisabled"/><xs:enumeration value="Unpaired"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="NotificationOperationType"><xs:restriction base="xs:string"><xs:enumeration value="NONE"/><xs:enumeration value="RELEASE"/><xs:enumeration value="REVOKE"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="NotificationResultType"><xs:restriction base="xs:string"><xs:enumeration value="NOT_RUN"/><xs:enumeration value="CONFIRMED"/><xs:enumeration value="UNCONFIRMED"/><xs:enumeration value="NOT_REQUIRED"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="DisableNotificationOperationType"><xs:restriction base="xs:string"><xs:enumeration value="RELEASE"/><xs:enumeration value="REVOKE"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="DisableNotificationResultType"><xs:restriction base="xs:string"><xs:enumeration value="CONFIRMED"/><xs:enumeration value="UNCONFIRMED"/><xs:enumeration value="NOT_REQUIRED"/></xs:restriction></xs:simpleType>
+
+  <xs:simpleType name="CodeType">
+    <xs:restriction base="xs:unsignedInt">
+      <xs:enumeration value="0"/><xs:enumeration value="1000"/><xs:enumeration value="1001"/>
+      <xs:enumeration value="1002"/><xs:enumeration value="1004"/><xs:enumeration value="2001"/>
+      <xs:enumeration value="2002"/><xs:enumeration value="2003"/><xs:enumeration value="2004"/>
+      <xs:enumeration value="2005"/><xs:enumeration value="2006"/><xs:enumeration value="2007"/>
+      <xs:enumeration value="3000"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:simpleType name="MessageType"><xs:restriction base="xs:string"><xs:maxLength value="512"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="CursorType"><xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="2048"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="NameType"><xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="128"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="ProductCodeType"><xs:restriction base="xs:string"><xs:pattern value="[A-Z0-9]{4}"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="ServerAddressType"><xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="253"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="IpTextType"><xs:restriction base="xs:string"><xs:minLength value="2"/><xs:maxLength value="45"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="EndpointType"><xs:restriction base="xs:string"><xs:minLength value="18"/><xs:maxLength value="80"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="PortType"><xs:restriction base="xs:unsignedShort"><xs:minInclusive value="1"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="LogRetentionDaysType"><xs:restriction base="xs:unsignedShort"><xs:minInclusive value="1"/><xs:maxInclusive value="1095"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="PairingRemainingType"><xs:restriction base="xs:unsignedShort"><xs:maxInclusive value="300"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="PositiveEpochType"><xs:restriction base="xs:unsignedLong"><xs:minInclusive value="1"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="SasType"><xs:restriction base="xs:string"><xs:pattern value="[0-9]{8}"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="StatusNameType"><xs:restriction base="xs:string"><xs:pattern value="[A-Z][A-Z0-9_]{1,63}"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="GuidType"><xs:restriction base="xs:string"><xs:pattern value="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="UtcDateTimeType"><xs:restriction base="xs:string"><xs:pattern value="[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,7})?Z"/></xs:restriction></xs:simpleType>
+
+</xs:schema>

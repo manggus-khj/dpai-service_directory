@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.WatchdogProtocol
@@ -51,10 +53,15 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.WatchdogProtocol
 
         public static byte[] EncodeStatusSuccessResponse(
             WatchdogPipeCommand command,
-            WatchdogServiceStatus serviceStatus)
+            WatchdogStatusSnapshot statusSnapshot)
         {
             EnsureStatusCommand(command, nameof(command));
-            return EncodeLine(StatusSuccessPrefix + FormatStatus(serviceStatus));
+            if (statusSnapshot == null)
+            {
+                throw new ArgumentNullException(nameof(statusSnapshot));
+            }
+
+            return EncodeLine(FormatStatusResponse(statusSnapshot));
         }
 
         public static byte[] EncodeErrorResponse(string userReason)
@@ -104,16 +111,19 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.WatchdogProtocol
                         WatchdogPipeParseFailureCode.UnexpectedSuccessShape);
                 }
 
-                WatchdogServiceStatus serviceStatus;
-                if (!TryParseStatus(
+                WatchdogStatusSnapshot statusSnapshot;
+                WatchdogPipeParseFailureCode statusFailure;
+                if (!TryParseStatusSnapshot(
                     text.Substring(StatusSuccessPrefix.Length),
-                    out serviceStatus))
+                    out statusSnapshot,
+                    out statusFailure))
                 {
                     return WatchdogResponseParseResult.Failure(
-                        WatchdogPipeParseFailureCode.InvalidStatus);
+                        statusFailure);
                 }
 
-                return WatchdogResponseParseResult.SuccessWithStatus(serviceStatus);
+                return WatchdogResponseParseResult.SuccessWithStatus(
+                    statusSnapshot);
             }
 
             return WatchdogResponseParseResult.Failure(
@@ -360,6 +370,71 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.WatchdogProtocol
             }
         }
 
+        private static string FormatStatusResponse(
+            WatchdogStatusSnapshot statusSnapshot)
+        {
+            var builder = new StringBuilder();
+            builder.Append(StatusSuccessPrefix);
+            builder.Append(FormatStatus(statusSnapshot.ServiceStatus));
+            builder.Append(";HEALTH=");
+            builder.Append(FormatHealthStatus(statusSnapshot.HealthStatus));
+            builder.Append(";FAILURES=");
+            builder.Append(statusSnapshot.ConsecutiveFailures.ToString(
+                CultureInfo.InvariantCulture));
+            builder.Append(";RESTARTS_10M=");
+            builder.Append(statusSnapshot.RestartCountInTenMinutes.ToString(
+                CultureInfo.InvariantCulture));
+            builder.Append(";AUTO_RESTART=");
+            builder.Append(FormatAutoRestartStatus(
+                statusSnapshot.AutoRestartStatus));
+
+            if (statusSnapshot.LastHealthUtc.HasValue)
+            {
+                builder.Append(";LAST_HEALTH_UTC=");
+                builder.Append(statusSnapshot.LastHealthUtc.Value.UtcDateTime.ToString(
+                    "yyyy-MM-dd'T'HH:mm:ss.fff'Z'",
+                    CultureInfo.InvariantCulture));
+            }
+
+            return builder.ToString();
+        }
+
+        private static string FormatHealthStatus(
+            WatchdogHealthStatus healthStatus)
+        {
+            switch (healthStatus)
+            {
+                case WatchdogHealthStatus.NotRun:
+                    return "NOT_RUN";
+                case WatchdogHealthStatus.Ok:
+                    return "OK";
+                case WatchdogHealthStatus.Failed:
+                    return "FAILED";
+                default:
+                    throw new ArgumentOutOfRangeException(
+                        nameof(healthStatus),
+                        healthStatus,
+                        "A defined watchdog health status is required.");
+            }
+        }
+
+        private static string FormatAutoRestartStatus(
+            WatchdogAutoRestartStatus autoRestartStatus)
+        {
+            switch (autoRestartStatus)
+            {
+                case WatchdogAutoRestartStatus.Enabled:
+                    return "ENABLED";
+                case WatchdogAutoRestartStatus.Suppressed:
+                    return "SUPPRESSED";
+                default:
+                    throw new ArgumentOutOfRangeException(
+                        nameof(autoRestartStatus),
+                        autoRestartStatus,
+                        "A defined automatic restart status is required.");
+            }
+        }
+
         private static bool TryParseStatus(
             string text,
             out WatchdogServiceStatus serviceStatus)
@@ -408,6 +483,331 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.WatchdogProtocol
 
             serviceStatus = default(WatchdogServiceStatus);
             return false;
+        }
+
+        private static bool TryParseStatusSnapshot(
+            string text,
+            out WatchdogStatusSnapshot statusSnapshot,
+            out WatchdogPipeParseFailureCode failureCode)
+        {
+            statusSnapshot = null;
+            failureCode = WatchdogPipeParseFailureCode.None;
+
+            string[] segments = text.Split(';');
+            WatchdogServiceStatus serviceStatus;
+            if (segments.Length == 0
+                || !TryParseStatus(segments[0], out serviceStatus))
+            {
+                failureCode = WatchdogPipeParseFailureCode.InvalidStatus;
+                return false;
+            }
+
+            WatchdogHealthStatus? healthStatus = null;
+            int? consecutiveFailures = null;
+            int? restartCount = null;
+            WatchdogAutoRestartStatus? autoRestartStatus = null;
+            DateTimeOffset? lastHealthUtc = null;
+            bool lastHealthSeen = false;
+            int nextKnownFieldIndex = 0;
+            bool extensionFieldsStarted = false;
+            var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+
+            for (int index = 1; index < segments.Length; index++)
+            {
+                string segment = segments[index];
+                int separatorIndex = segment.IndexOf('=');
+                if (separatorIndex <= 0
+                    || separatorIndex == segment.Length - 1)
+                {
+                    failureCode =
+                        WatchdogPipeParseFailureCode.InvalidStatusExtension;
+                    return false;
+                }
+
+                string key = segment.Substring(0, separatorIndex);
+                string value = segment.Substring(separatorIndex + 1);
+                if (!IsValidStatusExtension(key, value))
+                {
+                    failureCode =
+                        WatchdogPipeParseFailureCode.InvalidStatusExtension;
+                    return false;
+                }
+
+                if (!seenKeys.Add(key))
+                {
+                    failureCode =
+                        WatchdogPipeParseFailureCode.DuplicateStatusField;
+                    return false;
+                }
+
+                switch (key)
+                {
+                    case "HEALTH":
+                        if (extensionFieldsStarted || nextKnownFieldIndex != 0)
+                        {
+                            failureCode = WatchdogPipeParseFailureCode
+                                .InvalidStatusFieldOrder;
+                            return false;
+                        }
+
+                        WatchdogHealthStatus parsedHealthStatus;
+                        if (!TryParseHealthStatus(value, out parsedHealthStatus))
+                        {
+                            failureCode =
+                                WatchdogPipeParseFailureCode.InvalidHealthStatus;
+                            return false;
+                        }
+
+                        healthStatus = parsedHealthStatus;
+                        nextKnownFieldIndex++;
+                        break;
+                    case "FAILURES":
+                        if (extensionFieldsStarted || nextKnownFieldIndex != 1)
+                        {
+                            failureCode = WatchdogPipeParseFailureCode
+                                .InvalidStatusFieldOrder;
+                            return false;
+                        }
+
+                        int parsedFailureCount;
+                        if (!TryParseNonNegativeCounter(
+                            value,
+                            int.MaxValue,
+                            out parsedFailureCount))
+                        {
+                            failureCode =
+                                WatchdogPipeParseFailureCode.InvalidStatusCounter;
+                            return false;
+                        }
+
+                        consecutiveFailures = parsedFailureCount;
+                        nextKnownFieldIndex++;
+                        break;
+                    case "RESTARTS_10M":
+                        if (extensionFieldsStarted || nextKnownFieldIndex != 2)
+                        {
+                            failureCode = WatchdogPipeParseFailureCode
+                                .InvalidStatusFieldOrder;
+                            return false;
+                        }
+
+                        int parsedRestartCount;
+                        if (!TryParseNonNegativeCounter(
+                            value,
+                            3,
+                            out parsedRestartCount))
+                        {
+                            failureCode =
+                                WatchdogPipeParseFailureCode.InvalidStatusCounter;
+                            return false;
+                        }
+
+                        restartCount = parsedRestartCount;
+                        nextKnownFieldIndex++;
+                        break;
+                    case "AUTO_RESTART":
+                        if (extensionFieldsStarted || nextKnownFieldIndex != 3)
+                        {
+                            failureCode = WatchdogPipeParseFailureCode
+                                .InvalidStatusFieldOrder;
+                            return false;
+                        }
+
+                        WatchdogAutoRestartStatus parsedAutoRestartStatus;
+                        if (!TryParseAutoRestartStatus(
+                            value,
+                            out parsedAutoRestartStatus))
+                        {
+                            failureCode = WatchdogPipeParseFailureCode
+                                .InvalidAutoRestartStatus;
+                            return false;
+                        }
+
+                        autoRestartStatus = parsedAutoRestartStatus;
+                        nextKnownFieldIndex++;
+                        break;
+                    case "LAST_HEALTH_UTC":
+                        if (extensionFieldsStarted || nextKnownFieldIndex != 4)
+                        {
+                            failureCode = WatchdogPipeParseFailureCode
+                                .InvalidStatusFieldOrder;
+                            return false;
+                        }
+
+                        DateTimeOffset parsedLastHealthUtc;
+                        if (!DateTimeOffset.TryParseExact(
+                            value,
+                            "yyyy-MM-dd'T'HH:mm:ss.fff'Z'",
+                            CultureInfo.InvariantCulture,
+                            DateTimeStyles.AssumeUniversal
+                                | DateTimeStyles.AdjustToUniversal,
+                            out parsedLastHealthUtc))
+                        {
+                            failureCode = WatchdogPipeParseFailureCode
+                                .InvalidStatusTimestamp;
+                            return false;
+                        }
+
+                        lastHealthSeen = true;
+                        lastHealthUtc = parsedLastHealthUtc;
+                        nextKnownFieldIndex++;
+                        break;
+                    default:
+                        bool knownFieldsComplete = nextKnownFieldIndex == 5
+                            || (nextKnownFieldIndex == 4
+                                && healthStatus == WatchdogHealthStatus.NotRun);
+                        if (!knownFieldsComplete)
+                        {
+                            failureCode = WatchdogPipeParseFailureCode
+                                .InvalidStatusFieldOrder;
+                            return false;
+                        }
+
+                        // Future diagnostic keys are ignored only after all
+                        // conditionally required known fields.
+                        extensionFieldsStarted = true;
+                        break;
+                }
+            }
+
+            if (!healthStatus.HasValue
+                || !consecutiveFailures.HasValue
+                || !restartCount.HasValue
+                || !autoRestartStatus.HasValue)
+            {
+                failureCode = WatchdogPipeParseFailureCode.MissingStatusField;
+                return false;
+            }
+
+            if ((healthStatus.Value == WatchdogHealthStatus.NotRun
+                    && lastHealthSeen)
+                || (healthStatus.Value != WatchdogHealthStatus.NotRun
+                    && !lastHealthSeen))
+            {
+                failureCode =
+                    WatchdogPipeParseFailureCode.InvalidStatusTimestamp;
+                return false;
+            }
+
+            try
+            {
+                statusSnapshot = new WatchdogStatusSnapshot(
+                    serviceStatus,
+                    healthStatus.Value,
+                    consecutiveFailures.Value,
+                    restartCount.Value,
+                    autoRestartStatus.Value,
+                    lastHealthUtc);
+                return true;
+            }
+            catch (ArgumentException)
+            {
+                failureCode =
+                    WatchdogPipeParseFailureCode.InvalidStatusCombination;
+                return false;
+            }
+        }
+
+        private static bool TryParseHealthStatus(
+            string text,
+            out WatchdogHealthStatus healthStatus)
+        {
+            if (StringComparer.Ordinal.Equals(text, "NOT_RUN"))
+            {
+                healthStatus = WatchdogHealthStatus.NotRun;
+                return true;
+            }
+
+            if (StringComparer.Ordinal.Equals(text, "OK"))
+            {
+                healthStatus = WatchdogHealthStatus.Ok;
+                return true;
+            }
+
+            if (StringComparer.Ordinal.Equals(text, "FAILED"))
+            {
+                healthStatus = WatchdogHealthStatus.Failed;
+                return true;
+            }
+
+            healthStatus = default(WatchdogHealthStatus);
+            return false;
+        }
+
+        private static bool TryParseAutoRestartStatus(
+            string text,
+            out WatchdogAutoRestartStatus autoRestartStatus)
+        {
+            if (StringComparer.Ordinal.Equals(text, "ENABLED"))
+            {
+                autoRestartStatus = WatchdogAutoRestartStatus.Enabled;
+                return true;
+            }
+
+            if (StringComparer.Ordinal.Equals(text, "SUPPRESSED"))
+            {
+                autoRestartStatus = WatchdogAutoRestartStatus.Suppressed;
+                return true;
+            }
+
+            autoRestartStatus = default(WatchdogAutoRestartStatus);
+            return false;
+        }
+
+        private static bool TryParseNonNegativeCounter(
+            string text,
+            int maximum,
+            out int value)
+        {
+            value = 0;
+            if (string.IsNullOrEmpty(text)
+                || (text.Length > 1 && text[0] == '0'))
+            {
+                return false;
+            }
+
+            return int.TryParse(
+                    text,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out value)
+                && value >= 0
+                && value <= maximum;
+        }
+
+        private static bool IsValidStatusExtension(
+            string key,
+            string value)
+        {
+            if (string.IsNullOrEmpty(key)
+                || key.Length > 32
+                || string.IsNullOrEmpty(value)
+                || value.Length > 96)
+            {
+                return false;
+            }
+
+            for (int index = 0; index < key.Length; index++)
+            {
+                char current = key[index];
+                if (!((current >= 'A' && current <= 'Z')
+                    || (index > 0 && current >= '0' && current <= '9')
+                    || (index > 0 && current == '_')))
+                {
+                    return false;
+                }
+            }
+
+            for (int index = 0; index < value.Length; index++)
+            {
+                char current = value[index];
+                if (current < '!' || current > '~' || current == ';')
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static void ValidateErrorReason(

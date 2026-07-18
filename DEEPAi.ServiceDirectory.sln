@@ -10,6 +10,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DEEPAi.ServiceDirectory.Ext
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DEEPAi.ServiceDirectory.Infrastructure", "src\DEEPAi.ServiceDirectory.Infrastructure\DEEPAi.ServiceDirectory.Infrastructure.csproj", "{28622150-C996-4B70-B9EF-8B9E45FA16CB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DEEPAi.ServiceDirectory.InternalProtocol", "src\DEEPAi.ServiceDirectory.InternalProtocol\DEEPAi.ServiceDirectory.InternalProtocol.csproj", "{47D9AE4E-20A8-4E39-A188-F7326EC829B7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DEEPAi.ServiceDirectory.Tray", "src\DEEPAi.ServiceDirectory.Tray\DEEPAi.ServiceDirectory.Tray.csproj", "{0D95E153-7595-4B31-BD1B-9D3A3E8EC821}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -32,6 +36,14 @@ Global
 		{28622150-C996-4B70-B9EF-8B9E45FA16CB}.Debug|x64.Build.0 = Debug|x64
 		{28622150-C996-4B70-B9EF-8B9E45FA16CB}.Release|x64.ActiveCfg = Release|x64
 		{28622150-C996-4B70-B9EF-8B9E45FA16CB}.Release|x64.Build.0 = Release|x64
+		{47D9AE4E-20A8-4E39-A188-F7326EC829B7}.Debug|x64.ActiveCfg = Debug|x64
+		{47D9AE4E-20A8-4E39-A188-F7326EC829B7}.Debug|x64.Build.0 = Debug|x64
+		{47D9AE4E-20A8-4E39-A188-F7326EC829B7}.Release|x64.ActiveCfg = Release|x64
+		{47D9AE4E-20A8-4E39-A188-F7326EC829B7}.Release|x64.Build.0 = Release|x64
+		{0D95E153-7595-4B31-BD1B-9D3A3E8EC821}.Debug|x64.ActiveCfg = Debug|x64
+		{0D95E153-7595-4B31-BD1B-9D3A3E8EC821}.Debug|x64.Build.0 = Debug|x64
+		{0D95E153-7595-4B31-BD1B-9D3A3E8EC821}.Release|x64.ActiveCfg = Release|x64
+		{0D95E153-7595-4B31-BD1B-9D3A3E8EC821}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
