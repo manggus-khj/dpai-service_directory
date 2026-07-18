@@ -1,0 +1,52 @@
+<Project>
+  <PropertyGroup>
+    <_RepositoryVersionSource>$(IntermediateOutputPath)DEEPAi.RepositoryVersion.g.cs</_RepositoryVersionSource>
+    <_RepositoryVersionTargetsFile>$(MSBuildThisFileFullPath)</_RepositoryVersionTargetsFile>
+    <_RepositoryVersionPropsFile>$(MSBuildThisFileDirectory)Directory.Build.props</_RepositoryVersionPropsFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(_RepositoryVersionSource)" />
+    <FileWrites Include="$(_RepositoryVersionSource)" />
+  </ItemGroup>
+
+  <Target Name="ValidateRepositoryBuildConfiguration">
+    <Error Condition="!Exists('$(RepositoryVersionFile)')" Text="VERSION file was not found at '$(RepositoryVersionFile)'." />
+    <Error Condition="'$(_RepositoryVersionValid)' != 'True'" Text="VERSION must contain exactly VERSION=major.minor.patch and BUILD=positive-integer." />
+    <Error Condition="'$(Version)' != '$(DpaiProductVersion)'" Text="Version cannot override the repository VERSION file." />
+    <Error Condition="'$(AssemblyVersion)' != '$(DpaiAssemblyVersion)'" Text="AssemblyVersion cannot override the repository VERSION file." />
+    <Error Condition="'$(FileVersion)' != '$(DpaiFileVersion)'" Text="FileVersion cannot override the repository VERSION file." />
+    <Error Condition="'$(InformationalVersion)' != '$(DpaiInformationalVersion)'" Text="InformationalVersion cannot override the repository VERSION file." />
+    <Error Condition="'$(TargetFrameworkVersion)' != 'v4.8'" Text="All service directory projects must target .NET Framework 4.8." />
+    <Error Condition="'$(Platform)' != 'x64' or '$(PlatformTarget)' != 'x64' or '$(Prefer32Bit)' == 'true'" Text="Only the x64 platform is supported." />
+  </Target>
+
+  <Target Name="ValidateRepositoryVersionRanges"
+          DependsOnTargets="ValidateRepositoryBuildConfiguration"
+          Condition="'$(_RepositoryVersionValid)' == 'True'">
+    <Error Condition="'$(DpaiVersionMajor)' != '' and $(DpaiVersionMajor) &gt; 65534" Text="VERSION major component must be at most 65534 for assembly metadata." />
+    <Error Condition="'$(DpaiVersionMinor)' != '' and $(DpaiVersionMinor) &gt; 65534" Text="VERSION minor component must be at most 65534 for assembly metadata." />
+    <Error Condition="'$(DpaiVersionPatch)' != '' and $(DpaiVersionPatch) &gt; 65534" Text="VERSION patch component must be at most 65534 for assembly metadata." />
+    <Error Condition="'$(DpaiBuildNumber)' != '' and $(DpaiBuildNumber) &gt; 65535" Text="BUILD must be at most 65535 for assembly file version metadata." />
+  </Target>
+
+  <Target Name="GenerateRepositoryVersionAttributes"
+          BeforeTargets="CoreCompile"
+          DependsOnTargets="ValidateRepositoryBuildConfiguration;ValidateRepositoryVersionRanges"
+          Inputs="$(RepositoryVersionFile);$(_RepositoryVersionPropsFile);$(_RepositoryVersionTargetsFile)"
+          Outputs="$(_RepositoryVersionSource)">
+    <ItemGroup>
+      <_RepositoryAssemblyAttribute Include="System.Reflection.AssemblyVersionAttribute">
+        <_Parameter1>$(DpaiAssemblyVersion)</_Parameter1>
+      </_RepositoryAssemblyAttribute>
+      <_RepositoryAssemblyAttribute Include="System.Reflection.AssemblyFileVersionAttribute">
+        <_Parameter1>$(DpaiFileVersion)</_Parameter1>
+      </_RepositoryAssemblyAttribute>
+      <_RepositoryAssemblyAttribute Include="System.Reflection.AssemblyInformationalVersionAttribute">
+        <_Parameter1>$(DpaiInformationalVersion)</_Parameter1>
+      </_RepositoryAssemblyAttribute>
+    </ItemGroup>
+    <WriteCodeFragment Language="C#"
+                       OutputFile="$(_RepositoryVersionSource)"
+                       AssemblyAttributes="@(_RepositoryAssemblyAttribute)" />
+  </Target>
+</Project>

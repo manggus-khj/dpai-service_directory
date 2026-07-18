@@ -1,18 +1,20 @@
 # 서비스 디렉토리 외부 애플리케이션 API 명세
 
-> 문서 상태: 1.0 초안
-> 구현 상태: 미구현
+> 문서 상태: 초안
+> 구현 상태: 승인 서비스 조회 projection, 일일 API 키·exactly-one 헤더 검증, bounded strict UTF-8 XML 입력과 listener endpoint guard primitive 부분 구현, HTTP API 미구현·미검증
 > 대상 독자: 서비스 디렉토리에 자기 서비스 정보를 조회·등록하는 다른 애플리케이션 개발자
 > 배포 범위: 사내 연동 개발자와 승인된 운영 담당자
-> 최종 정리일: 2026-07-17
+> 최종 정리일: 2026-07-18
 
 이 문서는 다른 애플리케이션이 서비스 디렉토리의 생존 여부를 확인하고, 제품코드에 해당하는 접속정보를 조회하고, 신규 등록 또는 변경 승인을 요청할 때 사용하는 독립 계약이다. 관리자 기능, 피어 동기화, XML 저장 구조는 이 계약에 포함하지 않는다.
+
+현재 저장소의 `DEEPAi.ServiceDirectory.ExternalProtocol` 어셈블리는 서버 구현에 사용하는 내부 primitive이며 외부 애플리케이션에 배포하는 안정된 client SDK 계약이 아니다. 재배포 가능한 client package를 별도로 확정하기 전까지 외부 애플리케이션은 이 문서를 wire contract의 단일 원본으로 사용한다.
 
 ## 1. 계약 범위
 
 | 메서드와 경로 | 목적 | 데이터 변경 |
 |---|---|---|
-| `GET /api/health` | 서비스 디렉토리 응답 가능 여부와 API 계약 버전 확인 | 없음 |
+| `GET /api/health` | 서비스 디렉토리 응답 가능 여부 확인 | 없음 |
 | `GET /api/services?productCode={code}` | 승인 완료된 단일 서비스 접속정보 조회 | 없음 |
 | `POST /api/registration` | 신규 등록 또는 기존 정보 변경 승인 요청 | 승인 대기 요청 생성 |
 
@@ -33,9 +35,10 @@
 - 프로토콜 의미: HTTP/1.1 요청·응답
 - 기준 주소: `http://{ListenAddress}:21000`. `ListenAddress`는 설치된 IP literal이며 IPv6 URI에서는 대괄호로 감싼다. DNS hostname은 현재 listener 계약에 포함하지 않는다.
 - 요청·응답 본문: `application/xml; charset=utf-8`
+- API URL, XML payload, media type와 협상에는 버전을 두지 않는다. 현재 무버전 경로와 기존 필드 의미를 계속 유지하며 호환 확장은 상세 명세가 미리 정의한 선택적 확장점 또는 별도 endpoint로만 수행한다. 알 수 없는 XML 요소 처리 정책이 확정되기 전에는 임의의 선택 필드를 추가하지 않는다.
 - 본문을 보내는 요청은 `Content-Type`을 지정하고, 클라이언트는 `Accept: application/xml`을 보낸다.
 - API payload의 모든 시각은 UTC ISO 8601 형식(예: `2026-07-17T02:00:00Z`)이다. §2.3 일일 API 키의 날짜만 시스템 로컬 날짜를 사용한다.
-- 현재 XML에는 namespace가 없다. namespace/XSD와 API 버전 경로는 1.0 확정 전에 결정한다.
+- 현재 XML에는 namespace가 없다. namespace/XSD 정책은 계약 확정 전에 결정하되 선택할 namespace에도 API 버전을 포함하지 않는다.
 
 ### 2.2 운영 보안 요구
 
@@ -46,7 +49,8 @@
 - `GET /api/health`를 포함한 세 엔드포인트는 모두 §2.3의 일일 API 키를 요구한다.
 - 일일 API 키는 별도 비밀값을 배포·저장하지 않고 ProductCode와 시스템 로컬 날짜로 생성한다. HTTP Basic, URL query key와 별도 bearer token은 사용하지 않는다.
 - 서비스 조회와 등록 요청의 ProductCode는 일일 API 키에서 복원한 ProductCode와 일치해야 한다.
-- listener는 설치 프로그램이 `config.xml`에 저장한 단일 IPv4·IPv6 literal `ListenAddress`에만 바인딩한다. 주소는 현재 로컬 Domain·Private 인터페이스에 할당된 non-loopback 값이어야 하며 누락·미할당·wildcard·Public 주소면 서비스 기동을 실패시킨다. wildcard `http://+:21000/`, `0.0.0.0`, 자동 주소 선택 또는 외부·비신뢰망 노출을 금지한다.
+- External·Peer 원격 prefix는 설치 프로그램이 `config.xml`에 저장한 단일 unicast IPv4·IPv6 literal `ListenAddress`에 등록한다. Admin·와치독 loopback prefix는 내부 명세에 따라 별도로 등록한다. 주소는 현재 로컬 Domain·Private 인터페이스에 할당된 non-loopback 값이어야 하며 IPv6 link-local·multicast·IPv4-mapped와 zone identifier는 지원하지 않는다. mapped 주소는 원래 IPv4 literal로 입력한다. 누락·미할당·wildcard·multicast·Public 주소면 서비스 기동을 실패시킨다. wildcard `http://+:21000/`, `0.0.0.0`, 자동 주소 선택 또는 외부·비신뢰망 노출을 금지한다.
+- IP literal URL prefix만으로 인터페이스 격리를 보장하지 않는다. 서비스는 모든 External 요청의 실제 local endpoint가 설정한 `ListenAddress:21000`과 정확히 일치하는지 다시 검사하고, endpoint를 확인할 수 없거나 불일치하면 요청을 거부한다.
 - Windows 방화벽 인바운드 규칙은 Domain·Private 프로필에서만 TCP `21000`을 허용하고 Public 프로필에서는 허용하지 않는다. 고정 CIDR 또는 원격 IP allowlist는 사용하지 않는다.
 - 네트워크 프로필, 인터페이스 바인딩과 요청 원격 IP는 운영 경계와 rate-limit 기준일 뿐 호출자 인증·인가를 대신하지 않는다.
 - health를 포함한 모든 엔드포인트에는 §2.6의 요청 속도와 동시 실행 제한을 적용한다.
@@ -103,7 +107,7 @@ X-DPAI-API-Key    = AAECAwQFBgcICQoLDA0OD37MVf5dYeif4Ss6OjGAC+g=
 
 서버의 현재 로컬 날짜만 허용하며 이전·다음 날짜에 대한 유예는 두지 않는다. 자정 경계에서 `401`을 받은 호출자는 새 로컬 날짜로 API 키를 다시 생성해 한 번 재시도할 수 있다. 참여 호스트는 동일한 timezone과 동기화된 시스템 시계를 사용해야 한다.
 
-누락, 형식 오류, 복호화 실패, padding 오류, 날짜 불일치와 ProductCode 불일치는 모두 HTTP `401`과 동일한 `INVALID_API_KEY` 응답으로 처리한다. 어느 검증 단계에서 실패했는지 응답·시스템 파일 로그에 노출하지 않고 API 키 원문도 기록하지 않는다.
+누락, 형식 오류, 복호화 실패, padding 오류, 날짜 불일치와 ProductCode 불일치는 모두 HTTP `401`과 동일한 `INVALID_API_KEY` 응답으로 처리한다. 어느 검증 단계에서 실패했는지 응답·시스템 파일 로그에 노출하지 않고 API 키 원문도 기록하지 않는다. 별도 Windows `Application` Event Log에는 [개발계획 §9.5](./서비스디렉토리_개발계획.md#95-보안-진단-event-log)의 `4101 EXTERNAL_API_KEY_REJECTED`, `Reason=INVALID_API_KEY`로만 기록하며 비밀값·ProductCode·원문 요청을 남기지 않고 독립 flood 억제를 적용한다.
 
 ### 2.5 승인된 제한사항
 
@@ -166,13 +170,13 @@ X-DPAI-API-Key    = AAECAwQFBgcICQoLDA0OD37MVf5dYeif4Ss6OjGAC+g=
 | 1004 | `LIMIT_EXCEEDED` | 요청 속도·동시 실행 또는 전체 승인 대기 1,000개 제한 초과 |
 | 3000 | `INTERNAL` | 내부 오류. 구체적인 파일·예외 정보는 응답하지 않음 |
 
-rate limit과 승인 대기 cap 초과는 HTTP `429`와 `1004 LIMIT_EXCEEDED`를 사용한다. 그 밖의 HTTP 상태와 envelope 오류 매핑은 §3.3에 따라 1.0 확정 전에 결정한다.
+rate limit과 승인 대기 cap 초과는 HTTP `429`와 `1004 LIMIT_EXCEEDED`를 사용한다. 그 밖의 HTTP 상태와 envelope 오류 매핑은 §3.3에 따라 계약 확정 전에 결정한다.
 
 ### 3.3 현재 HTTP 상태 규칙
 
 기존 초안과의 경로·행위 호환을 위해 논리 오류는 HTTP `200`과 envelope `Code`로 구분한다. 일일 API 키 실패는 `401`, rate limit·동시 실행·승인 대기 cap 초과는 `429`, 접근 등급 위반은 `403`, 정의되지 않은 경로는 `404`, 처리되지 않은 내부 오류는 `500`이다.
 
-이 규칙은 외부 통합에 중요한 결정이며 아직 전체가 확정되지 않았다. 위에서 고정한 `401`과 `429`를 제외한 논리 오류를 1.0 확정 전에 `400`, `403`, `404`, `409`, `413`, `415` 같은 표준 상태로 전환할지 결정해야 한다.
+이 규칙은 외부 통합에 중요한 결정이며 아직 전체가 확정되지 않았다. 위에서 고정한 `401`과 `429`를 제외한 논리 오류를 계약 확정 전에 `400`, `403`, `404`, `409`, `413`, `415` 같은 표준 상태로 전환할지 결정해야 한다.
 
 ### 3.4 외부 서비스 DTO
 
@@ -186,13 +190,13 @@ rate limit과 승인 대기 cap 초과는 HTTP `429`와 `1004 LIMIT_EXCEEDED`를
 </Service>
 ```
 
-`Deleted`, `DeletedUtc`, 변경 출처와 피어 식별자는 내부 동기화 필드이므로 외부 DTO에 포함하지 않는다.
+`Deleted`, `DeletedUtc`, `LogicalVersion`, 변경 출처와 피어 식별자는 내부 동기화 필드이므로 외부 DTO에 포함하지 않는다. `LastModifiedUtc`는 표시·감사용이며 외부 앱이 변경 충돌이나 revision 순서를 판정하는 값이 아니다.
 
 ## 4. 엔드포인트
 
 ### 4.1 `GET /api/health`
 
-서비스 디렉토리가 요청을 받을 수 있는지 확인한다. 제품 빌드·패치 버전은 노출하지 않고 API 계약 버전만 반환한다.
+서비스 디렉토리가 요청을 받을 수 있는지 확인한다. 제품·빌드·패치 또는 API 버전은 노출하지 않는다.
 
 응답:
 
@@ -201,7 +205,6 @@ rate limit과 승인 대기 cap 초과는 HTTP `429`와 `1004 LIMIT_EXCEEDED`를
   <Result>OK</Result>
   <Code>0</Code>
   <Message />
-  <ApiVersion>1.0-draft</ApiVersion>
   <UtcNow>2026-07-17T02:00:00Z</UtcNow>
 </Response>
 ```
@@ -281,7 +284,8 @@ rate limit과 승인 대기 cap 초과는 HTTP `429`와 `1004 LIMIT_EXCEEDED`를
 - `ALREADY_REGISTERED`에는 `PendingId`가 없다.
 - 같은 내용으로 재시도하면 새 요청을 만들지 않으므로 네트워크 실패 뒤 동일 요청을 재전송할 수 있다.
 - 대기 생성 시 서버는 해당 ProductCode의 현재 상태 revision을 함께 보존한다. 승인 전에 sync·삭제 등으로 기준 상태가 바뀌면 내부 API의 낙관적 동시성 규칙을 적용하고 조용히 덮어쓰지 않는다.
-- 현재 계약만으로는 대기와 거절을 구분할 수 없다. 클라이언트는 서비스 조회로 승인 반영 여부만 확인할 수 있으며, 승인·거절 상태 조회 API와 결과 보존 기간은 1.0 확정 전 결정해야 한다.
+- 별도 pending·result·status 조회 API와 처리 이력은 제공하지 않는다. `PendingId`는 중복 요청을 식별하는 접수 응답값일 뿐 후속 조회 key가 아니다.
+- 클라이언트는 `GET /api/services?productCode={code}`를 재조회해 반환된 승인값이 요청값과 일치하는지만 확인한다. 대기 중과 거절은 외부에서 구분하지 않으며 거절 사유도 노출하지 않는다.
 
 승인 대기 제한:
 
@@ -298,7 +302,7 @@ rate limit과 승인 대기 cap 초과는 HTTP `429`와 `1004 LIMIT_EXCEEDED`를
 |---|---|
 | `Name` | 필수. trim 후 1~128 Unicode scalar, UTF-8 인코딩 시 최대 512바이트. 제어문자 금지. 비교는 Ordinal 대소문자 구분 |
 | `ProductCode` | 필수. trim 후 `ToUpperInvariant()`, `[A-Z0-9]{4}` 형식의 정확히 4바이트 ASCII, `OrdinalIgnoreCase` 유일 키 |
-| `ServerAddress` | 필수. IPv4·IPv6 literal 또는 최대 253자의 ASCII DNS hostname. scheme, path, query와 port 포함 금지. trim 후 `OrdinalIgnoreCase` 비교 |
+| `ServerAddress` | 필수. [개발계획 §5.1](./서비스디렉토리_개발계획.md#51-도메인-레코드)의 공통 `ServerAddress` 문법과 정규화·비교 규칙을 그대로 적용 |
 | `Port` | 정수 `1..65535` |
 
 추가 요구:
@@ -325,7 +329,7 @@ rate limit과 승인 대기 cap 초과는 HTTP `429`와 `1004 LIMIT_EXCEEDED`를
 ### 6.2 권장 호출 흐름
 
 1. 정규화된 4바이트 ProductCode와 현재 시스템 로컬 날짜로 새 일일 API 키를 생성한다.
-2. `GET /api/health`로 연결과 지원 API 버전을 확인한다.
+2. `GET /api/health`로 연결과 응답 가능 여부를 확인한다.
 3. 요청마다 새 IV로 일일 API 키를 다시 생성하고 `GET /api/services?productCode={code}`로 현재 승인 정보를 조회한다.
 4. 없거나 원하는 값과 다르면 새 일일 API 키로 `POST /api/registration`을 호출한다.
 5. `PENDING_*`이면 운영자 승인이 필요함을 표시한다.
@@ -333,10 +337,8 @@ rate limit과 승인 대기 cap 초과는 HTTP `429`와 `1004 LIMIT_EXCEEDED`를
 
 ## 7. 미확정 계약
 
-다음 항목이 결정되면 이 문서의 버전과 예제를 함께 갱신한다.
+다음 항목이 결정되면 이 문서와 예제를 함께 갱신한다.
 
-- API 버전 경로 또는 미디어 타입과 호환성 정책
-- 일일 API 키 알고리즘 변경 시 버전 식별과 구버전 병행·폐기 정책
-- 등록 요청 상태 조회, 거절 사유 노출 범위, 결과 보존 기간
+- 일일 API 키 알고리즘을 불가피하게 변경할 때 기존 연동을 깨지 않는 전환·폐기 정책. 현재 wire에는 버전 필드가 없음
 - HTTP 상태와 envelope 오류 코드의 최종 매핑
-- XML namespace/XSD와 알 수 없는 요소 처리
+- 버전을 포함하지 않는 고정 XML namespace/XSD와 알 수 없는 요소 처리

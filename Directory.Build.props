@@ -1,0 +1,29 @@
+<Project>
+  <PropertyGroup>
+    <RepositoryVersionFile>$(MSBuildThisFileDirectory)VERSION</RepositoryVersionFile>
+    <_RepositoryVersionPattern>\AVERSION=((0|[1-9][0-9]{0,4})\.(0|[1-9][0-9]{0,4})\.(0|[1-9][0-9]{0,4}))\r?\nBUILD=([1-9][0-9]{0,4})(?:\r?\n)?\z</_RepositoryVersionPattern>
+    <_RepositoryVersionText Condition="Exists('$(RepositoryVersionFile)')">$([MSBuild]::Unescape($([System.IO.File]::ReadAllText('$(RepositoryVersionFile)'))))</_RepositoryVersionText>
+    <_RepositoryVersionValid Condition="'$(_RepositoryVersionText)' != ''">$([System.Text.RegularExpressions.Regex]::IsMatch('$(_RepositoryVersionText)', '$(_RepositoryVersionPattern)'))</_RepositoryVersionValid>
+
+    <DpaiProductVersion Condition="'$(_RepositoryVersionValid)' == 'True'">$([System.Text.RegularExpressions.Regex]::Replace('$(_RepositoryVersionText)', '$(_RepositoryVersionPattern)', '$1'))</DpaiProductVersion>
+    <DpaiBuildNumber Condition="'$(_RepositoryVersionValid)' == 'True'">$([System.Text.RegularExpressions.Regex]::Replace('$(_RepositoryVersionText)', '$(_RepositoryVersionPattern)', '$5'))</DpaiBuildNumber>
+    <DpaiVersionMajor Condition="'$(_RepositoryVersionValid)' == 'True'">$([System.Text.RegularExpressions.Regex]::Replace('$(DpaiProductVersion)', '\A([0-9]+)\.[0-9]+\.[0-9]+\z', '$1'))</DpaiVersionMajor>
+    <DpaiVersionMinor Condition="'$(_RepositoryVersionValid)' == 'True'">$([System.Text.RegularExpressions.Regex]::Replace('$(DpaiProductVersion)', '\A[0-9]+\.([0-9]+)\.[0-9]+\z', '$1'))</DpaiVersionMinor>
+    <DpaiVersionPatch Condition="'$(_RepositoryVersionValid)' == 'True'">$([System.Text.RegularExpressions.Regex]::Replace('$(DpaiProductVersion)', '\A[0-9]+\.[0-9]+\.([0-9]+)\z', '$1'))</DpaiVersionPatch>
+
+    <DpaiAssemblyVersion>$(DpaiVersionMajor).$(DpaiVersionMinor).$(DpaiVersionPatch).0</DpaiAssemblyVersion>
+    <DpaiFileVersion>$(DpaiVersionMajor).$(DpaiVersionMinor).$(DpaiVersionPatch).$(DpaiBuildNumber)</DpaiFileVersion>
+    <DpaiInformationalVersion>$(DpaiProductVersion)+build.$(DpaiBuildNumber)</DpaiInformationalVersion>
+    <Version>$(DpaiProductVersion)</Version>
+    <AssemblyVersion>$(DpaiAssemblyVersion)</AssemblyVersion>
+    <FileVersion>$(DpaiFileVersion)</FileVersion>
+    <InformationalVersion>$(DpaiInformationalVersion)</InformationalVersion>
+
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+    <Prefer32Bit>false</Prefer32Bit>
+    <LangVersion>7.3</LangVersion>
+    <Deterministic>true</Deterministic>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>

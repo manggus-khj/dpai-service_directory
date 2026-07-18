@@ -4,10 +4,11 @@
 
 ## 1. 현재 저장소 상태
 
-- 현재는 설계 문서만 있는 greenfield 저장소다.
-- 솔루션, 프로젝트, 소스, 테스트, 빌드·패키징 스크립트는 아직 없다.
-- 문서의 “확정”은 승인된 설계 결정이라는 뜻이며 구현·빌드·현장 검증 완료라는 뜻이 아니다.
-- 존재하지 않는 프로젝트 구조, 의존성 버전, 명령 또는 테스트 결과를 추측하거나 완료로 표시하지 않는다.
+- .NET Framework 4.8, x64 전용 초기 솔루션과 Domain, Application, ExternalProtocol, Infrastructure 라이브러리가 있다.
+- 현재 구현 범위는 서비스 정의 검증, `LogicalVersion`·snapshot `LogicalClock`을 포함한 immutable 디렉토리 스냅샷과 결정적 revision 비교, 승인 서비스 조회 projection, 등록·승인·거절·삭제 상태 전이, 단일 mutation gate·복구 coordinator, 저장 인터페이스, External 일일 API 키 코덱·헤더 검증 경계, 단일 파일 원자 교체, 시스템 파일 로그·1~1,095일 보존 정리, Windows Application Event Log 보안 진단·flood limiter primitive, bounded strict UTF-8 XML 입력, Named Pipe wire codec, `ListenAddress` prefix·요청 endpoint guard, Admin Windows identity 인가와 Peer P-256 pairing 암호 primitive다.
+- Windows Service, HTTP listener와 API DTO·라우팅, XML serializer·`LogicalClock` high-water의 내구적 저장·다중 파일 복구 저널, 실제 sync staging·병합, 설정 영속화, 트레이, 와치독 실행체, 설치 프로그램과 테스트 프로젝트는 아직 없다. 로그 이벤트 호출 시점·Admin 설정 API, Admin 인가와 보안 진단 logger의 HTTP·Pipe 통합, Event Source installer 등록, Peer transcript 바이트 인코딩·decision/commit MAC 계약과 상태·session·DPAPI 저장, Named Pipe ACL·client token 검증도 아직 통합되지 않았다.
+- 공통 버전 주입과 Windows/MSBuild 빌드 진입점을 추가했고 2026-07-18 Visual Studio Build Tools 2022에서 `Debug|x64` 솔루션 빌드를 경고·오류 없이 확인했다. Release, 테스트, 패키징과 실행 검증은 아직 하지 않았다.
+- 문서의 “확정”은 승인된 설계 결정이라는 뜻이며 구현·빌드·현장 검증 완료라는 뜻이 아니다. 존재하지 않거나 검증하지 않은 구조, 명령 또는 결과를 완료로 표시하지 않는다.
 
 ## 2. 작업 전에 읽을 문서
 
@@ -47,6 +48,7 @@ PowerShell로 Markdown과 기타 텍스트 문서를 읽을 때는 기본 인코
 
 - C#과 .NET Framework 4.8
 - 지원 대상: Milestone XProtect `2021 R1` 이상
+- 지원 OS: x64 Windows Server `2019` 이상은 Standard·Datacenter의 Desktop Experience만 지원하고 Server Core는 제외한다. Windows 10 `1809` 이상과 Windows 11 `24H2` 이상은 Pro·Enterprise·IoT Enterprise를 지원한다. Enterprise·IoT Enterprise의 LTSC release는 버전 하한과 해당 Milestone의 OS 지원 범위를 모두 충족하고 조합 검증을 통과한 경우에 포함한다. 모든 실제 배포 조합은 해당 Milestone 버전이 지원하는 OS와의 교집합으로 제한
 - 플랫폼: `x64` 전용. `AnyCPU` 또는 `x86` 산출물을 운영 대상으로 추가하지 않음
 - 배포 환경: Active Directory 도메인과 Workgroup을 모두 지원
 - 메인: Windows Service(`ServiceBase`) + `HttpListener`
@@ -57,13 +59,14 @@ PowerShell로 Markdown과 기타 텍스트 문서를 읽을 때는 기본 인코
 - API 포트: TCP `21000`
 - 전송: 폐쇄망의 HTTP/1.1. TLS/HTTPS는 [개발계획 §8의 승인된 예외](./docs/plan/서비스디렉토리_개발계획.md#82-tls-미사용-예외-기록)에 따라 사용하지 않음
 - 네트워크 노출: 승인된 폐쇄망 인터페이스에만 바인딩하고 wildcard를 금지하며 Windows 방화벽은 Domain·Private 프로필만 허용하고 Public 프로필에서는 차단. 원격 CIDR·원격 대역 allowlist는 사용하지 않음
-- External·Peer listener 주소는 설치 시 선택한 단일 IPv4·IPv6 literal `ListenAddress`를 `config.xml`에 저장해 사용한다. interactive 설치는 활성 Domain·Private 인터페이스 주소 중 하나를 요구하고 unattended 설치는 명시적 주소 인수를 요구한다. 누락·미할당·loopback·wildcard·Public 주소면 서비스 기동을 실패시키며 자동 주소 선택이나 wildcard fallback을 하지 않는다.
+- External·Peer 원격 prefix 주소는 설치 시 선택한 단일 IPv4·IPv6 unicast literal `ListenAddress`를 `config.xml`에 저장해 사용한다. Admin·와치독 loopback prefix는 별도다. interactive 설치는 활성 Domain·Private 인터페이스 주소 중 하나를 요구하고 unattended 설치는 명시적 주소 인수를 요구한다. IPv6 link-local·multicast·IPv4-mapped와 zone identifier는 지원하지 않으며 mapped 주소는 원래 IPv4 literal로 입력한다. 누락·미할당·loopback·wildcard·multicast·Public 주소면 서비스 기동을 실패시키며 자동 주소 선택이나 wildcard fallback을 하지 않는다.
+- HTTP Server API의 IP literal URL prefix는 보안 경계가 아니다. External·Peer 요청마다 `HttpListenerRequest.LocalEndPoint`가 설정한 `ListenAddress:21000`과 정확히 일치하는지 검사하고, Admin·와치독 loopback 요청은 local endpoint가 `127.0.0.1:21000`이며 remote address도 loopback인지 검사한다. endpoint 정보를 얻지 못하거나 불일치하면 fail closed한다.
 - 정상 운영 규모: `Deleted=false`인 활성 서비스 최대 1,000개
 - 외부 애플리케이션 호출 부하: 저빈도
 
 이 선택을 임의로 다른 프레임워크, 데이터베이스, 웹 UI 또는 설치 기술로 바꾸지 않는다. 새 의존성을 추가하기 전에는 실제 프로젝트 대상 프레임워크 지원, 고정할 버전, 라이선스, 배포 파일, 취약점과 대안 유무를 확인한다.
 
-Milestone XProtect 2021 R1 이상 지원은 확정 범위지만, 각 지원 Windows 조합에 .NET Framework 4.8이 실제로 제공되는지는 배포 환경에서 검증해야 한다. 확인 전에는 런타임이 항상 설치되어 있다고 단정하지 않는다.
+Milestone XProtect 2021 R1 이상과 위 Windows edition·버전 하한은 확정 범위다. 각 Milestone·Windows edition·설치 옵션 조합의 호환성, .NET Framework 4.8 제공 여부와 실제 설치·기동은 배포 환경에서 검증해야 하며, 확인 전에는 모든 조합에서 런타임이 항상 설치되어 있다고 단정하지 않는다.
 
 ### 제품·빌드 버전
 
@@ -72,7 +75,7 @@ Milestone XProtect 2021 R1 이상 지원은 확정 범위지만, 각 지원 Wind
 - 제품 버전 `major.minor.patch`는 사용자가 명시적으로 변경하라고 요청한 경우에만 바꾼다. 기능 추가, 수정, 릴리스 준비, 커밋 또는 push를 이유로 에이전트가 임의로 올리지 않는다.
 - 새 변경을 커밋하고 push하는 한 번의 전달 단위마다 `BUILD`를 정확히 1 증가시켜 같은 커밋에 포함한다. 초기 원격 push는 build `1`부터 시작한다.
 - 같은 전달 단위의 `commit --amend`, push 실패 후 재시도, upstream 설정 또는 내용 변경 없는 재push에는 빌드 번호를 다시 올리지 않는다. push 실패 뒤 새로운 파일 변경을 추가해 새 커밋을 만들 때만 다음 build를 사용한다.
-- 향후 .NET과 설치 프로젝트는 `VERSION`을 읽어 제품 버전과 빌드 번호를 공통 적용한다. 외부 API 응답에는 보안·호환성 계약상 제품 build를 노출하지 않는다.
+- 현재 .NET 프로젝트는 공통 MSBuild 설정으로 `VERSION`의 제품 버전과 빌드 번호를 적용한다. 향후 설치 프로젝트에도 같은 단일 원본을 적용한다. 외부 API 응답에는 보안·호환성 계약상 제품 build를 노출하지 않는다.
 
 ## 5. 구성요소 책임
 
@@ -100,6 +103,7 @@ Milestone XProtect 2021 R1 이상 지원은 확정 범위지만, 각 지원 Wind
 ## 6. 도메인 불변식
 
 - `ProductCode`는 trim 후 `ToUpperInvariant()`로 정규화한 `[A-Z0-9]{4}` 형식의 정확히 4바이트 ASCII 값이며 `StringComparer.OrdinalIgnoreCase` 의미로 비교하는 유일 키다.
+- `ServerAddress`는 [개발계획 §5.1](./docs/plan/서비스디렉토리_개발계획.md#51-도메인-레코드)의 공통 문법으로만 검증한다. 요약하면 trim한 IPv4·IPv6 literal 또는 최대 253자 ASCII DNS hostname만 허용하며 scheme·path·query·port·IPv6 zone identifier와 모호한 IPv4 표기를 거부한다.
 - 활성 서비스는 최대 1,000개다. 톰스톤과 승인 대기는 이 수에 포함하지 않으며 용량 경계의 요청·승인 동작과 별도 항목 제한은 [외부 API 명세](./docs/plan/서비스디렉토리_외부애플리케이션_API명세.md)와 [내부 API 명세](./docs/plan/서비스디렉토리_내부_API명세.md)를 따른다.
 - 등록과 수정은 승인 전 정식 디렉토리에 반영하지 않는다.
 - 등록 요청은 같은 제품코드의 기존 대기를 먼저 확인한다. 요청이 대기 내용과 같으면 기존 요청을 재사용하고, 다르면 현재 활성값과 같더라도 충돌로 처리한다.
@@ -112,6 +116,7 @@ Milestone XProtect 2021 R1 이상 지원은 확정 범위지만, 각 지원 Wind
 - 톰스톤은 시간으로 제거하지 않으며 같은 제품코드의 신규 등록 승인 때만 새 활성 레코드로 대체한다.
 - 외부 조회는 톰스톤과 신규 승인 대기를 없는 항목으로 취급한다. Modify 대기 중에는 기존 승인값을 반환한다.
 - 변경 레코드는 마지막 변경 출처 `OriginInstanceId`를 보존한다. 현재 송신자 ID를 레코드 출처로 대신하지 않는다.
+- 변경 레코드는 unsigned 64-bit `LogicalVersion`을 가진다. 병합 순서는 `(LogicalVersion, canonical OriginInstanceId)`이며 GUID는 소문자 `D` 형식으로 정규화해 `Ordinal` 비교한다. `LastModifiedUtc`와 `DeletedUtc`는 감사·표시용 UTC 시각이며 병합 순서를 결정하지 않는다.
 
 ## 7. 저장·동시성 규칙
 
@@ -124,9 +129,11 @@ Milestone XProtect 2021 R1 이상 지원은 확정 범위지만, 각 지원 Wind
 - 조회는 현재 immutable snapshot을 사용해 mutation gate를 점유하지 않는다. sync 중 생긴 로컬 변경은 최종 병합 시 현재 snapshot에 보존하고 다음 사이클에서 피어로 전파한다.
 - `directory.xml` 갱신과 `pending.xml` 제거처럼 여러 파일이 참여하는 작업은 파일별 원자 쓰기만으로 충분하지 않다. 저널 또는 동등한 복구 설계와 강제 종료 테스트가 필요하다.
 - 실행 파일은 `%ProgramFiles%\DEEPAi\ServiceDirectory\`, 상태·설정·로그는 제한된 ACL의 `%ProgramData%\DEEPAi\ServiceDirectory\`에 둔다.
-- `config.xml`은 동기화 설정과 함께 1일 이상 정수인 `LogRetentionDays`를 영속화한다. 트레이는 파일을 직접 수정하지 않고 Admin API를 사용한다.
+- `config.xml`은 동기화 설정과 함께 `1..1095` 범위의 정수 `LogRetentionDays`를 영속화한다. 설치 기본값은 `30`이며 트레이는 파일을 직접 수정하지 않고 Admin API를 사용한다.
+- 인스턴스의 unsigned 64-bit `LogicalClock` high-water mark를 재시작과 장애 복구 뒤에도 감소하지 않게 내구적으로 영속화한다. 로컬 변경은 `max(현재 LogicalClock, 지금까지 관찰한 LogicalVersion) + 1`을 사용하고 clock과 레코드 변경을 복구 일관성 있게 저장한다. 최댓값에서는 wrap하지 않고 변경을 실패시킨다.
 - `ListenAddress` 변경은 설치 프로그램의 repair 흐름만 사용한다. 서비스 중지, 새 주소 검증, exact URL ACL·방화벽과 설정 변경, 재기동을 하나의 롤백 가능한 작업으로 수행한다.
 - External 일일 API 키에는 저장할 secret이 없다. 고정 AES secret이나 별도 master key를 코드·설정에 추가하지 않는다. Admin은 Windows identity와 로컬 운영자 그룹만 사용하므로 애플리케이션 자격 증명을 저장하지 않는다. Peer pair root만 내부 API 명세에 따라 `secrets/peer.dat`에 DPAPI `LocalMachine`으로 보호한다.
+- 일반 제거는 서비스, 프로그램 파일, URL ACL과 방화벽 규칙을 제거하되 `%ProgramData%\DEEPAi\ServiceDirectory\`의 운영 데이터·설정·로그·백업·Peer 자격 증명을 기본 보존한다. 사용자가 명시적으로 전체 삭제를 선택한 경우에만 정확한 데이터 루트를 삭제하고 재페어링 필요성을 알린다. 보존 데이터의 ACL을 완화하지 않으며 재설치 시 새 서비스 SID에 맞게 복구한다.
 
 ## 8. 시스템 로그 규칙
 
@@ -135,30 +142,33 @@ Milestone XProtect 2021 R1 이상 지원은 확정 범위지만, 각 지원 Wind
 - 파일은 데이터 루트 기준 `logs/system/dpai-sd_yyyy-MM-dd.log`, 절대 경로로는 `%ProgramData%\DEEPAi\ServiceDirectory\logs\system\dpai-sd_yyyy-MM-dd.log`다.
 - 파일명 날짜와 각 레코드 시각은 UTC가 아니라 기록 시점의 시스템 로컬 시간대를 사용한다.
 - 레코드 시각은 `DateTimeOffset.Now` 의미의 `yyyy-MM-ddTHH:mm:ss.fffzzz` 형식으로 offset을 포함한다. `Z`로 기록하지 않는다.
-- 시스템 로그와 External 일일 API 키 날짜만 로컬 시간을 사용한다. API payload·동기화·병합 도메인 시각은 계속 UTC를 사용한다.
+- 시스템 로그와 External 일일 API 키 날짜만 로컬 시간을 사용한다. API payload의 표시·감사 시각은 UTC를 사용하고 병합 순서는 논리 버전으로 결정한다.
 - 파일 로그 이벤트는 `SERVICE_STARTED`, `SERVICE_STOPPED`, `REGISTERED_SERVICE_CREATED`, `REGISTERED_SERVICE_UPDATED`, `REGISTERED_SERVICE_DELETED`, `SYNC_INITIAL_STARTED`, `SYNC_STARTED`, `SYNC_STOPPED`, `SYNC_SUCCEEDED`로 제한한다.
 - 최초 sync는 `SYNC_INITIAL_STARTED`만 기록하고 같은 사이클에 `SYNC_STARTED`를 중복 기록하지 않는다. 성공 시 `SYNC_SUCCEEDED`를 추가한다.
 - 등록·수정·삭제 이벤트는 상태가 성공적으로 영속화된 뒤 기록한다. 승인 대기와 거절은 파일 로그 대상이 아니다.
 - 보존기간은 `LogRetentionDays`개의 로컬 달력 날짜이며, 트레이 설정과 `GET/PUT /admin/settings/logging`으로 관리한다.
 - 보존 정리는 정확한 로그 디렉터리의 `dpai-sd_yyyy-MM-dd.log` 파일만 대상으로 한다. 다른 파일이나 하위 경로를 삭제하지 않는다.
-- 설치 기본값과 최대 허용 일수, 별도 보안 감사·진단 sink는 아직 미정이다.
+- `LogRetentionDays` 설치 기본값은 `30`, 최대 허용값은 3년인 `1095`다. 범위 밖 값은 저장하지 않는다.
+- 인증·인가 실패와 local·remote endpoint 불일치 같은 신뢰 경계 실패는 위 9개 파일 이벤트와 분리해 Windows Application Event Log의 source `DEEPAi.ServiceDirectory.Security`에 기록한다. 서비스는 installer가 만든 exact `Application` source key를 read-only로 확인하고 source 자동 생성 API를 사용하지 않는다. 비밀값·API 키·토큰·요청 원문을 기록하지 않고 반복 실패는 집계·속도 제한해 로그 flood를 억제한다.
 
 ## 9. 동기화 규칙
 
 - 실행 시점은 승인·삭제 직후, 10분 주기, 서비스 기동, 관리자 수동 요청이다.
 - 모든 사이클은 인증된 handshake부터 시작한다.
-- 시계 편차가 60초를 넘으면 병합을 거부하고 관찰 가능한 오류 상태를 남긴다.
-- 활성 레코드는 `LastModifiedUtc`, 톰스톤은 `DeletedUtc`로 비교한다.
-- 동시각·상이한 값은 레코드의 정규화된 `OriginInstanceId`로 결정적으로 판정한다.
-- 비교 시각과 `OriginInstanceId`가 모두 같은데 payload가 다르면 정상 revision이 아니므로 전체 병합을 중단하고 상태를 변경하지 않는다.
+- 60초 시계 편차 한계는 Peer 요청 인증의 timestamp freshness와 replay 방지에만 사용한다. 데이터 병합 순서는 벽시계와 무관하다.
+- 활성 레코드와 톰스톤 모두 `LogicalVersion`을 먼저 비교하고, 같으면 canonical `OriginInstanceId`를 결정적 타이브레이크로 사용한다.
+- `LogicalVersion`과 `OriginInstanceId`가 모두 같은데 payload가 다르면 정상 revision이 아니므로 전체 병합을 중단하고 상태를 변경하지 않는다.
 - 병합은 교환법칙, 결합법칙, 멱등성과 결정성을 만족해야 한다.
 - sync는 일관된 스냅샷을 사용하고 동시 관리 변경·다른 sync와 직렬화 또는 명확한 버전 경계를 가진다.
-- 로컬 변경 시각은 시계 역행에도 이전 로컬 변경과 해당 키의 이전 비교 시각보다 단조 증가해야 한다.
+- 인증된 전체 원격 snapshot과 모든 batch의 검증·병합이 성공한 commit에서만 채택 여부와 관계없이 내구적 `LogicalClock`을 원격 snapshot의 `LogicalClock` 이상으로 전진시킨다. 실패한 exchange에서는 clock을 바꾸지 않으며 다음 로컬 변경은 성공적으로 관찰한 모든 버전보다 큰 값을 사용한다.
 - 해제 통지 실패와 로컬 해제 성공을 구분해 기록한다.
 
-최초 페어링, 피어 인증과 handshake·exchange 결합은 [내부 API 명세의 Peer 계약](./docs/plan/서비스디렉토리_내부_API명세.md#22-peer)을 그대로 구현한다. 벽시계 LWW 위험 수용 여부는 여전히 구현 차단 사항이므로 해당 결정을 문서에서 먼저 해소하고 임시 병합 프로토콜을 만들지 않는다.
+최초 페어링, 피어 인증과 handshake·exchange 결합은 [내부 API 명세의 Peer 계약](./docs/plan/서비스디렉토리_내부_API명세.md#22-peer)을 그대로 구현한다. 논리 버전 도메인 primitive는 소스에 반영됐지만 serializer·복구 저장·실제 sync 병합은 미구현이므로 이를 완료 상태로 두거나 벽시계 비교와 혼합한 임시 병합 프로토콜을 만들지 않는다.
 
 ## 10. API 경계와 변경 규칙
+
+- External, Admin, Health와 Peer API는 URL, media type, 요청·응답 XML 또는 별도 header에 API 버전 필드를 두지 않는다. `/v1` 같은 버전 경로, `ApiVersion`과 `ProtocolVersion` 요소를 추가하지 않고 현재 무버전 경로를 영구 유지한다.
+- 계약 변경은 기존 소비자가 계속 동작하는 호환 추가만 허용한다. 기존 경로·메서드·필드 의미를 바꾸거나 필수 필드를 추가하는 호환되지 않는 변경을 금지하고, 새 필드는 상세 명세가 이미 허용한 선택적 확장점에서만 추가한다. 암호 primitive의 domain-separation label과 알고리즘 식별자는 API 버전 필드가 아니다.
 
 ### 외부 애플리케이션 계약
 
@@ -169,15 +179,17 @@ Milestone XProtect 2021 R1 이상 지원은 확정 범위지만, 각 지원 Wind
 - 서비스 조회·등록 요청은 키에서 복원한 ProductCode와 쿼리·XML ProductCode가 일치해야 한다. 와치독 health는 등록 ProductCode가 아닌 전용 구성요소 코드 `WDOG`로 같은 키를 생성한다.
 - External 일일 API 키 방식을 Admin·Peer 인증에 재사용하지 않는다.
 - 외부 앱이 Admin, Peer, Named Pipe 또는 저장 파일에 의존하게 만들지 않는다.
+- 외부 등록 요청의 별도 상태·결과 조회 API와 거절 이력 API를 추가하지 않는다. 외부 앱은 `GET /api/services?productCode={code}`를 재조회해 요청한 값이 승인 정보에 반영됐는지만 확인하며 대기와 거절을 구분하지 않는다.
 - 외부 응답에 톰스톤, 피어 ID, 내부 경로, 스택, 제품 빌드·패치 버전을 노출하지 않는다.
 - 브라우저 cross-origin 호출과 정적 파일 제공은 지원하지 않는다. CORS 허용 헤더, 디렉터리 목록, 설정·백업 파일 노출을 추가하지 않는다.
 - 외부 계약 변경에는 명세, DTO, 직렬화 테스트, 오류·호환성 테스트와 소비자 영향을 함께 갱신한다.
-- 1.0 확정 뒤 호환되지 않는 변경을 같은 경로에 덮어쓰지 않는다.
+- 무버전 외부 경로를 영구 유지하고 호환되지 않는 변경을 덮어쓰지 않는다.
 - 외부 호출은 저빈도를 전제로 하고 활성 서비스는 최대 1,000개를 지원한다. 구체적인 본문·필드·호출 제한은 [외부 API 명세](./docs/plan/서비스디렉토리_외부애플리케이션_API명세.md)를 단일 원본으로 사용한다.
 
 ### 내부 계약
 
 - `/admin/*`는 `127.0.0.1` loopback `HttpListener`에서만 수신하고 `Negotiate` 인증을 사용한다. IP literal loopback에서는 Kerberos를 전제로 하지 않고 AD·Workgroup 모두 NTLM을 허용하되 `UnsafeConnectionNtlmAuthentication=false`를 유지한다. 추후 검증된 loopback hostname·SPN을 추가한 환경에서 Kerberos가 협상될 수 있지만 필수 계약은 아니다. 설치 프로그램이 만드는 로컬 `DEEPAi-ServiceDirectory-Operators` 그룹만 운영자로 인가한다. 상세 계약은 [내부 API 명세의 Admin 절](./docs/plan/서비스디렉토리_내부_API명세.md#21-admin)을 따른다.
+- Admin 인가는 현재 요청에서 전달된 인증된 `WindowsIdentity`와 정확한 로컬 `DEEPAi-ServiceDirectory-Operators` SID만 사용한다. 현재 프로세스 identity, 이름이 같은 도메인 그룹, 내장 Administrators 또는 UI 표시 상태로 대체하지 않으며 SID 해석·token 검사가 실패하면 허용하지 않는다.
 - `/api/sync/*`의 최초 신뢰 설정은 ECDH P-256과 양쪽 운영자의 8자리 SAS 확인을 사용하고, 확정한 피어 자격 증명은 DPAPI로 보호하며 이후 요청·응답은 HMAC-SHA256으로 인증·무결성·freshness·재전송 방지를 검증한다. 상세 상태 전이와 wire contract는 [내부 API 명세의 Peer 절](./docs/plan/서비스디렉토리_내부_API명세.md#22-peer)을 따른다.
 - 피어 자격 증명을 폐기해도 `config.xml`의 `LastPeerKeyEpoch`를 삭제하거나 감소시키지 않는다. 새 페어링 epoch는 내부 API 명세의 단조 증가 계약을 따른다.
 - loopback, 원격 IP 또는 방화벽을 인증으로 취급하지 않는다.
@@ -203,9 +215,10 @@ Milestone XProtect 2021 R1 이상 지원은 확정 범위지만, 각 지원 Wind
 - Named Pipe는 [내부 API 명세](./docs/plan/서비스디렉토리_내부_API명세.md#6-named-pipe-서비스-제어-계약)의 로컬 운영자 그룹 ACL, BOM 없는 UTF-8, 256바이트와 3초 제한을 그대로 적용한다. 동작시키기 위해 `Everyone` 쓰기 같은 넓은 권한을 주지 않는다.
 - 현재 저장하는 애플리케이션 시크릿은 Peer pair root뿐이며 `secrets/peer.dat`에 DPAPI `LocalMachine`과 제한 ACL로 보호한다. Admin용 별도 비밀번호·토큰을 추가하지 않는다.
 - 로그·오류에 비밀번호, API 키, 토큰, 인증서 개인키, 요청 원문 전체, 내부 경로와 스택을 남기지 않는다.
-- 시스템 파일 로그에 §8의 목록 밖 이벤트를 임의로 추가하지 않는다. 인증 실패 등 하드닝상 필요한 보안 감사 이벤트의 별도 기록 대상은 아직 결정되지 않았다.
+- 시스템 파일 로그에 §8의 목록 밖 이벤트를 임의로 추가하지 않는다. 인증·인가·신뢰 경계 실패는 Windows Application Event Log source `DEEPAi.ServiceDirectory.Security`에 분리 기록하고 민감정보 배제와 flood 억제를 적용한다.
 - 방화벽 규칙은 TCP 21000과 Domain·Private 프로필로 제한하고 Public 프로필에서는 차단한다. 원격 CIDR·원격 주소 allowlist는 구성하지 않는다.
 - External·Peer listener에 wildcard `http://+:21000/` 또는 `0.0.0.0` 바인딩을 사용하지 않는다. External 키 누락·형식·복호화·날짜·ProductCode 검증 실패는 동일한 `401`로 거부하고, Peer 인증 설정이 없거나 손상되면 Peer API를 열지 않는다.
+- IP literal prefix 등록만으로 인터페이스 격리가 보장된다고 가정하지 않는다. 모든 요청의 실제 local endpoint를 해당 신뢰 경계의 주소와 TCP `21000`에 다시 결합하고 loopback 경계에서는 remote endpoint도 loopback인지 확인한다.
 - 트레이와 일반 실행 파일은 `asInvoker`를 사용하고 설치 작업 외의 권한 상승을 금지한다.
 - DLL 검색 경로를 제한하고 쓰기 가능한 위치에서 실행되는 설치 파일의 DLL 하이재킹을 검증한다.
 - 운영 빌드의 DEP/NX, ASLR, CFG 적용 여부를 확인하고 인증 우회 플래그, 테스트 코드와 개발자 백도어를 포함하지 않는다. 디버그 심볼은 승인된 정책에 따라 분리한다.
@@ -226,22 +239,24 @@ Milestone XProtect 2021 R1 이상 지원은 확정 범위지만, 각 지원 Wind
 
 빌드 체크는 사용자가 명시적으로 요청했을 때만 수행한다. 매 수정, 커밋 또는 push 때 자동으로 빌드하지 않으며 컴파일을 수반하는 테스트와 패키징도 같은 규칙을 적용한다. 요청받지 않아 실행하지 않은 빌드를 실패나 미검증 은폐 없이 완료 보고에 명시한다.
 
-현재 실행할 수 있는 빌드·테스트 명령은 없다. 솔루션을 만들 때 실제로 검증한 Windows/MSBuild 기반 진입점을 저장소에 추가하고 이 절을 갱신한다. .NET Framework 4.8 프로젝트가 `dotnet build`로 빌드된다고 가정하지 않는다.
+Windows/MSBuild 빌드 진입점은 `powershell -NoProfile -File .\tools\build.ps1 -Configuration Debug`이며 Release는 `-Configuration Release`를 사용한다. 이 스크립트는 Visual Studio Installer의 `vswhere.exe`로 MSBuild를 찾고 `DEEPAi.ServiceDirectory.sln`의 `x64` 구성만 빌드한다. 빌드 환경에는 .NET Framework 4.8 SDK와 Targeting Pack이 필요하다. 2026-07-18 Visual Studio Build Tools 2022 MSBuild `17.14.40.60911`에서 Debug 빌드를 경고 0개·오류 0개로 확인했지만 Release와 테스트·패키징 진입점은 아직 검증하지 않았다. 사용자가 빌드 체크를 명시적으로 요청하기 전에는 이 명령을 실행하지 않으며, .NET Framework 4.8 프로젝트가 `dotnet build`로 빌드된다고 가정하지 않는다.
 
 코드가 생긴 뒤 최소 검증 범위:
 
 - 관련 단위 테스트와 전체 솔루션 빌드
-- Milestone XProtect 2021 R1 이상 대상의 x64 빌드·설치·기동과 AD·Workgroup 양쪽 환경
+- Milestone XProtect 2021 R1 이상과 x64 Windows Server 2019+ Standard·Datacenter Desktop Experience, Windows 10 1809+ 및 Windows 11 24H2+ Pro·Enterprise·IoT Enterprise 지원 교집합의 빌드·설치·기동 및 AD·Workgroup 양쪽 환경. Server Core 제외와 포함된 LTSC release도 검증
 - 외부·내부 API XML 직렬화와 계약 테스트
-- 등록 상태표, 활성 서비스 1,000개 경계, 승인 대기 1,000개·800개 경고와 ProductCode 3·4·5바이트, ASCII 영문·숫자, 소문자 정규화, 비ASCII·내부 공백 거부, 선후행 공백 trim, 동시 요청
+- 등록 상태표, 활성 서비스 1,000개 경계, 승인 대기 1,000개·800개 경고와 ProductCode 3·4·5바이트, ASCII 영문·숫자, 소문자 정규화, 비ASCII·내부 공백 거부, 선후행 공백 trim, IPv4·IPv4-embedded IPv6 선행 `0`과 숫자·점 전용 hostname 거부, 동시 요청
 - 최초 저장, 손상·백업 복구, 다중 파일 작업 중 강제 종료
-- 병합 속성 테스트, 활성 병합 후보 1,000개 초과 거부, 1,000개 batch·다중 batch staging과 동시 sync
+- unsigned 64-bit `LogicalVersion`·내구적 `LogicalClock`의 재시작·복구·overflow, 동일 버전 타이브레이크·collision과 병합의 교환법칙·결합법칙·멱등성·결정성, 활성 병합 후보 1,000개 초과 거부, 1,000개 batch·다중 batch staging과 동시 sync
 - External 일일 API 키 고정 벡터, 44자 Base64, 무작위 IV, 잘못된 padding·날짜·ProductCode와 자정 rollover
 - External 동일 날짜 replay와 요청 미결합이 승인된 제한으로 유지되는지, Admin·Peer 인증 우회와 Peer 변조·재전송은 차단되는지 분리 검증
 - XXE, 확정된 16KiB·4MiB 본문과 XML 깊이 16, 페이지·batch·rate limit·동시 실행 제한
 - HTTP 전용 listener, HTTPS·인증서 의존성 부재, 승인된 폐쇄망 인터페이스 바인딩, wildcard 금지, Domain·Private 허용과 Public 차단, 원격 CIDR allowlist 부재
 - interactive·unattended 설치의 `ListenAddress` 선택, 미할당·loopback·wildcard·Public 주소 기동 실패, repair 변경과 URL ACL·방화벽 롤백
+- IP literal prefix 우회 시도와 실제 `LocalEndPoint` 불일치 거부, Admin·와치독의 non-loopback remote endpoint 거부
 - Admin Negotiate의 IP literal loopback NTLM, 선택적 hostname·SPN Kerberos, `UnsafeConnectionNtlmAuthentication=false`, 로컬 `DEEPAi-ServiceDirectory-Operators` 인가와 AD·Workgroup 동작
+- Peer P-256 blob·KDF·방향별 confirmation MAC·pair root·8자리 SAS 고정 벡터와 잘못된 curve point·길이·SAS rejection sampling
 - Peer ECDH P-256 페어링, 양쪽 8자리 SAS 확인, DPAPI 보호, HMAC-SHA256 요청·응답 변조·재전송 차단과 pairing KDF·SAS·canonical MAC 고정 벡터
 - CORS·정적 파일·설정 파일 비노출과 응답 헤더의 제품·프레임워크 정보 최소화
 - `asInvoker`, DLL 하이재킹, DEP/NX·ASLR·CFG, 운영 우회 코드와 디버그 심볼 정책
@@ -249,8 +264,9 @@ Milestone XProtect 2021 R1 이상 지원은 확정 범위지만, 각 지원 Wind
 - SAST, 시크릿·의존성 CVE 스캔, 재현 빌드 해시와 오프라인 패치 체크섬
 - 서비스 재시작 뒤 상태 영속성
 - 시스템 로컬 날짜별 로그 파일 전환, offset 포함 시각과 timezone·DST 변경, External 일일 API 키 날짜 rollover
-- 정의된 9개 로그 이벤트의 시점·중복 방지와 `LogRetentionDays` 보존 정리
-- 설치·업그레이드·롤백·제거 smoke test
+- 정의된 9개 로그 이벤트의 시점·중복 방지, `LogRetentionDays` 기본 30·경계 1/1095·초과 거부와 보존 정리
+- Windows Application Event Log source 생성·ACL, 인증·인가·경계 실패 기록, 비밀값 배제와 반복 실패 flood 억제
+- 설치·업그레이드·롤백·기본 데이터 보존 제거·명시적 전체 삭제 smoke test
 - 설치 경로, 파일·서비스 ACL, 서비스 계정과 방화벽 Domain·Private/Public 프로필
 
 버그 수정은 가능하면 실패 테스트나 재현으로 문제를 먼저 확인하고, 원인을 고친 뒤 원래 문제가 사라지고 회귀가 없는지 검증한다.

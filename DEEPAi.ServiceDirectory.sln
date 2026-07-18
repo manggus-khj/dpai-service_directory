@@ -1,0 +1,39 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.28701.123
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DEEPAi.ServiceDirectory.Domain", "src\DEEPAi.ServiceDirectory.Domain\DEEPAi.ServiceDirectory.Domain.csproj", "{3DDACBF2-4EC4-4950-A6AA-8242A3BB837C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DEEPAi.ServiceDirectory.Application", "src\DEEPAi.ServiceDirectory.Application\DEEPAi.ServiceDirectory.Application.csproj", "{D9501542-E687-4603-AA5F-9107605B11F2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DEEPAi.ServiceDirectory.ExternalProtocol", "src\DEEPAi.ServiceDirectory.ExternalProtocol\DEEPAi.ServiceDirectory.ExternalProtocol.csproj", "{B380F00C-9518-4907-9EA9-03759DB0B37A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DEEPAi.ServiceDirectory.Infrastructure", "src\DEEPAi.ServiceDirectory.Infrastructure\DEEPAi.ServiceDirectory.Infrastructure.csproj", "{28622150-C996-4B70-B9EF-8B9E45FA16CB}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{3DDACBF2-4EC4-4950-A6AA-8242A3BB837C}.Debug|x64.ActiveCfg = Debug|x64
+		{3DDACBF2-4EC4-4950-A6AA-8242A3BB837C}.Debug|x64.Build.0 = Debug|x64
+		{3DDACBF2-4EC4-4950-A6AA-8242A3BB837C}.Release|x64.ActiveCfg = Release|x64
+		{3DDACBF2-4EC4-4950-A6AA-8242A3BB837C}.Release|x64.Build.0 = Release|x64
+		{D9501542-E687-4603-AA5F-9107605B11F2}.Debug|x64.ActiveCfg = Debug|x64
+		{D9501542-E687-4603-AA5F-9107605B11F2}.Debug|x64.Build.0 = Debug|x64
+		{D9501542-E687-4603-AA5F-9107605B11F2}.Release|x64.ActiveCfg = Release|x64
+		{D9501542-E687-4603-AA5F-9107605B11F2}.Release|x64.Build.0 = Release|x64
+		{B380F00C-9518-4907-9EA9-03759DB0B37A}.Debug|x64.ActiveCfg = Debug|x64
+		{B380F00C-9518-4907-9EA9-03759DB0B37A}.Debug|x64.Build.0 = Debug|x64
+		{B380F00C-9518-4907-9EA9-03759DB0B37A}.Release|x64.ActiveCfg = Release|x64
+		{B380F00C-9518-4907-9EA9-03759DB0B37A}.Release|x64.Build.0 = Release|x64
+		{28622150-C996-4B70-B9EF-8B9E45FA16CB}.Debug|x64.ActiveCfg = Debug|x64
+		{28622150-C996-4B70-B9EF-8B9E45FA16CB}.Debug|x64.Build.0 = Debug|x64
+		{28622150-C996-4B70-B9EF-8B9E45FA16CB}.Release|x64.ActiveCfg = Release|x64
+		{28622150-C996-4B70-B9EF-8B9E45FA16CB}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
