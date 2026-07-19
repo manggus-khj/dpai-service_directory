@@ -43,6 +43,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Queries\ApprovedServiceLookup.cs" />
     <Compile Include="State\StateMutationCoordinator.cs" />
+    <Compile Include="State\StateMutationGate.cs" />
     <Compile Include="State\StateMutationResult.cs" />
     <Compile Include="Synchronization\InboundSynchronizationStaging.cs" />
   </ItemGroup>

@@ -43,9 +43,15 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Logging
         private readonly object _syncRoot = new object();
         private DateTime? _lastCleanedLocalDate;
         private int? _lastCleanedRetentionDays;
+        private int? _configuredRetentionDays;
 
         public SystemFileLogger()
             : this(GetDefaultDataRootPath(), () => DateTimeOffset.Now)
+        {
+        }
+
+        public SystemFileLogger(string dataRootPath)
+            : this(dataRootPath, () => DateTimeOffset.Now)
         {
         }
 
@@ -213,6 +219,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Logging
 
             lock (_syncRoot)
             {
+                int effectiveRetentionDays =
+                    _configuredRetentionDays ?? retentionDays;
                 DateTimeOffset localNow = _localNowProvider();
                 DateTime localDate = localNow.Date;
                 EnsureLogDirectoryIsSafe();
@@ -244,11 +252,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Logging
                 }
 
                 if (_lastCleanedLocalDate != localDate
-                    || _lastCleanedRetentionDays != retentionDays)
+                    || _lastCleanedRetentionDays
+                        != effectiveRetentionDays)
                 {
                     try
                     {
-                        CleanExpiredFiles(localDate, retentionDays);
+                        CleanExpiredFiles(
+                            localDate,
+                            effectiveRetentionDays);
                     }
                     catch (Exception exception) when (IsRetentionIoFailure(exception))
                     {
@@ -256,7 +267,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Logging
                     }
 
                     _lastCleanedLocalDate = localDate;
-                    _lastCleanedRetentionDays = retentionDays;
+                    _lastCleanedRetentionDays = effectiveRetentionDays;
                 }
             }
         }
@@ -267,6 +278,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Logging
 
             lock (_syncRoot)
             {
+                // Once the runtime applies config.xml, it is the policy
+                // authority. Event producers may have captured an older
+                // value before an Admin update; those stale arguments must
+                // never tighten or relax the newly applied retention policy.
+                _configuredRetentionDays = retentionDays;
                 DateTimeOffset localNow = _localNowProvider();
                 DateTime localDate = localNow.Date;
                 EnsureLogDirectoryIsSafe();

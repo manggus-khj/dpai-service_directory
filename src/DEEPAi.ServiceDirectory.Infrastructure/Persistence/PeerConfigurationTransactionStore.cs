@@ -109,7 +109,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         {
             var pathPolicy = new StateStoragePathPolicy(
                 stateDirectoryPath);
-            _fileWriter = new AtomicFileWriter(pathPolicy);
+            _fileWriter = new AtomicFileWriter(pathPolicy, accessPolicy);
             _journalManager = new RecoveryJournalManager(
                 pathPolicy,
                 _fileWriter,

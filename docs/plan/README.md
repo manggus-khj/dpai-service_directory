@@ -1,14 +1,14 @@
 # 서비스 디렉토리 계획 문서 안내
 
-> 문서 묶음 상태: 설계 초안
-> 구현 상태: 초기 기반·UI·저장 복구·External/Admin/Peer protocol·공용 `HttpListener` transport host·와치독 실행체 부분 구현, 기존 기반 Debug|x64 빌드 확인·현재 작업 트리 빌드·실행 미검증
-> 최종 정리일: 2026-07-18
+> 문서 묶음 상태: 핵심 설계와 외부·내부 wire 계약 확정
+> 구현 상태: 메인 Service·Tray·Watchdog, 저장·복구, External/Admin/Peer HTTP orchestration, Inno/package 소스 구현. 기존 기반 Debug|x64 빌드만 확인했고 현재 작업 트리의 build·test·package·Windows 실행·설치는 미검증
+> 최종 정리일: 2026-07-19
 
-이 디렉터리는 서비스 디렉토리의 제품 설계, API 계약, 공통 보안 기준을 관리한다. 현재 저장소에는 x64 솔루션, 논리 버전 snapshot·결정적 sync 병합과 mutation coordinator, canonical 저장 XML v1·config/state store·복구 저널, 시스템 로그·보안 진단 primitive가 있다. External 세 endpoint·`WDOG` loopback health와 Admin 12개 endpoint의 transport-neutral HTTP 경계, strict External·Admin·Peer XML codec, Peer pairing/session MAC·KDF·replay·Push staging·불변 Pull snapshot primitive도 소스와 계약 테스트로 구현했다. 설정된 원격 IP literal과 `127.0.0.1` 두 prefix만 등록하고 exact raw target으로 인증·경계를 선택하며 세 어댑터에 요청을 전달하고 응답·전체 deadline·중지 경합을 관리하는 공용 `HttpListener` transport host와 가상 transport 계약 테스트 소스도 추가됐다. WPF Tray UI·클라이언트와 별도 Watchdog Windows Service에는 10초 health, 연결부터 전체 응답 완료까지 3초 deadline, restart latch, 제한된 ServiceController 및 BOM 없는 UTF-8 한 줄·보호 DACL·client token 이중 검증 Named Pipe server가 추가됐다. .NET Framework 4.8 x64 MSTest 프로젝트와 `tools/test.ps1`도 있다. 2026-07-18 초기 NuGet restore와 PackageReference lock 생성을 완료했지만 이후 프로젝트 참조가 늘어난 현재 작업 트리는 빌드·실행·테스트·lock 재생성을 검증하지 않았다. 메인 Windows Service와 host 수명주기 연결, 실제 Windows `HttpListener`·Negotiate/NTLM·deadline·중지 경합 실행 검증, Admin application handler, Peer 상태 머신·HTTP/session/DPAPI/scheduler, config·PeerSecret 복합 transaction, Inno Setup 설치 프로그램과 package 명령은 아직 구현되지 않았고, installer의 와치독 가상 서비스 계정·서비스 SID 활성화·메인 서비스 제어 DACL도 아직 구성되지 않았다. 문서에서 “확정” 또는 “구현”이라고 표시한 내용도 별도 검증 표기가 없으면 빌드·실행 완료를 뜻하지 않는다.
+이 디렉터리는 서비스 디렉토리의 제품 설계, API 계약, 공통 보안 기준을 관리한다. 현재 저장소에는 x64 솔루션, 논리 버전 snapshot·결정적 sync 병합·공용 mutation gate, canonical 저장 XML v1·config/state/DPAPI peer store·복구 저널, 시스템 로그와 보안 진단 경계가 있다. External 세 endpoint, `WDOG` loopback health, Admin 12개 endpoint와 Peer pairing·session·exchange를 메인 Windows Service의 공용 `HttpListener`에 연결했고 endpoint별 인증 선택·deadline·drain을 구현했다. Service·Watchdog·Tray에는 process-wide native DLL 검색 경로 제한을 연결했다. WPF Tray, Watchdog Windows Service·보호 Named Pipe, .NET Framework 4.8 x64 MSTest와 `tools/test.ps1`, Inno Setup·설치 helper·`tools/package.ps1` 소스도 있다. 다만 현재 추가분은 build·test·package를 실행하지 않았고 실제 Windows Service, `HttpListener` Negotiate/NTLM, Event Log, DPAPI, ACL·방화벽, 설치·repair·upgrade·rollback·uninstall도 현장 검증하지 않았다. 문서에서 “확정” 또는 “구현”이라고 표시한 내용도 별도 검증 표기가 없으면 빌드·실행 완료를 뜻하지 않는다.
 
 ## 확정 운영 기준
 
-- 제품 버전 `1.0.0`, 현재 build `3`. 제품 버전은 사용자 명시 요청 때만 변경하고 이후 새 변경의 commit+push 전달마다 build만 1 증가
+- 제품 버전 `1.0.0`, 현재 build `4`. 제품 버전은 사용자 명시 요청 때만 변경하고 이후 새 변경의 commit+push 전달마다 build만 1 증가
 - Milestone XProtect `2021 R1` 이상, `x64` 전용
 - 지원 OS는 x64 Windows Server `2019` 이상 Standard·Datacenter Desktop Experience, Windows 10 `1809` 이상 및 Windows 11 `24H2` 이상 Pro·Enterprise·IoT Enterprise이며 Server Core는 제외. Enterprise·IoT Enterprise LTSC는 버전 하한·Milestone 지원 교집합·조합 검증을 모두 충족한 release만 포함
 - Active Directory 도메인과 Workgroup 환경 모두 지원
@@ -75,8 +75,8 @@
 
 다음 항목의 선택은 확정됐다. 문서 확정은 코드·실행 검증 완료를 뜻하지 않으며 현재 구현이 없는 항목을 완료로 표시하지 않는다.
 
-- 테스트는 exact `MSTest.TestFramework`·`MSTest.TestAdapter` `4.3.2`와 PackageReference lock을 사용한다. x64 테스트 프로젝트, lock과 `powershell -NoProfile -File .\tools\test.ps1 -Configuration Debug`는 구현됐으나 아직 실행하지 않았다. `powershell -NoProfile -File .\tools\package.ps1 -Configuration Release`와 Inno Setup 소스는 미구현이다.
-- `directory.xml`·`pending.xml`·`config.xml`은 루트 `SchemaVersion="1"`로 시작하고 명시적인 순차 migration만 허용한다. directory·pending serializer, snapshot store, before·after image와 `PREPARED`·`COMMITTED` 저널 실행체 및 in-process fault-injection 테스트 소스는 구현됐다. config·PeerSecret store 결합, `.bak` 단독 복구, 실제 프로세스 종료·빌드·테스트 검증은 남아 있다.
-- 코드 서명과 오프라인 설치용 체크섬·manifest를 만들거나 확인하지 않고 설치 EXE를 직접 실행한다. 공통 하드닝 기준과 다른 이 선택의 잔여 위험은 개발계획 §8.4의 승인 예외에 기록하며 실제 Inno Setup package·설치 검증은 아직 미구현이다.
+- 테스트는 exact `MSTest.TestFramework`·`MSTest.TestAdapter` `4.3.2`와 PackageReference lock을 사용한다. x64 테스트 프로젝트, lock, `tools/test.ps1`, `tools/package.ps1`와 Inno Setup 소스는 구현됐으나 현재 test·package를 실행하지 않았다.
+- `directory.xml`·`pending.xml`·`config.xml`은 루트 `SchemaVersion="1"`로 시작하고 명시적인 순차 migration만 허용한다. directory·pending·config·DPAPI PeerSecret store, before·after image와 `PREPARED`·`COMMITTED` 저널 및 in-process fault-injection 테스트 소스가 있다. active journal 없이 primary가 누락·손상되면 `.bak` 자동 복원으로 high-water를 낮추지 않고 fail closed하며, 실제 프로세스 강제 종료·빌드·테스트 검증은 남아 있다.
+- 코드 서명과 오프라인 설치용 체크섬·manifest를 만들거나 확인하지 않고 설치 EXE를 직접 실행한다. 공통 하드닝 기준과 다른 이 선택의 잔여 위험은 개발계획 §8.4의 승인 예외에 기록한다. Inno/package 소스는 구현됐지만 package compile과 실제 설치·repair·upgrade·rollback·uninstall은 실행하지 않았다.
 
 구현되지 않은 항목을 임시 규칙이나 제한 없는 네트워크 노출로 대체해 완료 처리하지 않는다. 평문 HTTP, External 일일 API 키와 무검증 오프라인 패치는 각각 개발계획 §8.2·§8.3·§8.4의 승인된 예외 범위에서만 허용하며 다른 신뢰 경계나 자동 업데이트에 확장하지 않는다.

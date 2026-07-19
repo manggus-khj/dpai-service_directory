@@ -11,6 +11,7 @@
     <AssemblyName>DEEPAi.ServiceDirectory.Tray</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <StartupObject>DEEPAi.ServiceDirectory.Tray.Program</StartupObject>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
     <FileAlignment>512</FileAlignment>
@@ -43,9 +44,13 @@
     <Reference Include="WindowsBase" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="H.NotifyIcon.Wpf" Version="2.4.1" />
+    <PackageReference Include="H.NotifyIcon.Wpf" Version="[2.4.1]" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\DEEPAi.ServiceDirectory.Domain\DEEPAi.ServiceDirectory.Domain.csproj">
+      <Project>{3DDACBF2-4EC4-4950-A6AA-8242A3BB837C}</Project>
+      <Name>DEEPAi.ServiceDirectory.Domain</Name>
+    </ProjectReference>
     <ProjectReference Include="..\DEEPAi.ServiceDirectory.Infrastructure\DEEPAi.ServiceDirectory.Infrastructure.csproj">
       <Project>{28622150-C996-4B70-B9EF-8B9E45FA16CB}</Project>
       <Name>DEEPAi.ServiceDirectory.Infrastructure</Name>
@@ -89,6 +94,7 @@
       <DependentUpon>MainWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Program.cs" />
     <Compile Include="ViewModels\ObservableObject.cs" />
     <Compile Include="ViewModels\StatusMonitorViewModel.cs" />
     <Compile Include="ViewModels\StatusMonitorViewModel.Actions.cs" />

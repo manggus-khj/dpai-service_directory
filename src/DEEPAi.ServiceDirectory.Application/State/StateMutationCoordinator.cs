@@ -65,14 +65,15 @@ namespace DEEPAi.ServiceDirectory.Application.State
     public sealed class StateMutationCoordinator
     {
         private readonly IServiceDirectoryStateStore _store;
-        private readonly object _mutationGate = new object();
+        private readonly StateMutationGate _mutationGate;
         private readonly object _recoveryGate = new object();
         private DirectorySnapshot _currentSnapshot;
         private int _status;
 
         private StateMutationCoordinator(
             IServiceDirectoryStateStore store,
-            DirectorySnapshot initialSnapshot)
+            DirectorySnapshot initialSnapshot,
+            StateMutationGate mutationGate)
         {
             if (store == null)
             {
@@ -84,7 +85,13 @@ namespace DEEPAi.ServiceDirectory.Application.State
                 throw new ArgumentNullException(nameof(initialSnapshot));
             }
 
+            if (mutationGate == null)
+            {
+                throw new ArgumentNullException(nameof(mutationGate));
+            }
+
             _store = store;
+            _mutationGate = mutationGate;
             _currentSnapshot = initialSnapshot;
             _status = (int)StateCoordinatorStatus.Ready;
         }
@@ -92,12 +99,24 @@ namespace DEEPAi.ServiceDirectory.Application.State
         public static StateCoordinatorOpenResult Open(
             IServiceDirectoryStateStore store)
         {
+            return Open(store, new StateMutationGate());
+        }
+
+        public static StateCoordinatorOpenResult Open(
+            IServiceDirectoryStateStore store,
+            StateMutationGate mutationGate)
+        {
             if (store == null)
             {
                 throw new ArgumentNullException(nameof(store));
             }
 
-            StateLoadResult loadResult = store.Load();
+            if (mutationGate == null)
+            {
+                throw new ArgumentNullException(nameof(mutationGate));
+            }
+
+            StateLoadResult loadResult = mutationGate.Execute(store.Load);
             if (loadResult == null)
             {
                 throw new InvalidOperationException(
@@ -117,7 +136,10 @@ namespace DEEPAi.ServiceDirectory.Application.State
             }
 
             return StateCoordinatorOpenResult.Success(
-                new StateMutationCoordinator(store, loadResult.Snapshot));
+                new StateMutationCoordinator(
+                    store,
+                    loadResult.Snapshot,
+                    mutationGate));
         }
 
         public DirectorySnapshot CurrentSnapshot => Volatile.Read(ref _currentSnapshot);
@@ -211,7 +233,7 @@ namespace DEEPAi.ServiceDirectory.Application.State
         {
             lock (_recoveryGate)
             {
-                lock (_mutationGate)
+                return _mutationGate.Execute(() =>
                 {
                     StateCoordinatorStatus status = ReadStatus();
                     if (status == StateCoordinatorStatus.Ready)
@@ -227,48 +249,45 @@ namespace DEEPAi.ServiceDirectory.Application.State
                     }
 
                     WriteStatus(StateCoordinatorStatus.Recovering);
-                }
-
-                StateLoadResult loadResult;
-                try
-                {
-                    loadResult = _store.Load();
-                    if (loadResult == null)
+                    StateLoadResult loadResult;
+                    try
                     {
-                        throw new InvalidOperationException(
-                            "The state store returned no recovery result.");
+                        loadResult = _store.Load();
+                        if (loadResult == null)
+                        {
+                            throw new InvalidOperationException(
+                                "The state store returned no recovery result.");
+                        }
+
+                        if (loadResult.IsSuccess
+                            && loadResult.Snapshot == null)
+                        {
+                            throw new InvalidOperationException(
+                                "A successful state recovery must provide a snapshot.");
+                        }
+                    }
+                    catch
+                    {
+                        WriteStatus(
+                            StateCoordinatorStatus.RecoveryRequired);
+                        throw;
                     }
 
-                    if (loadResult.IsSuccess && loadResult.Snapshot == null)
-                    {
-                        throw new InvalidOperationException(
-                            "A successful state recovery must provide a snapshot.");
-                    }
-                }
-                catch
-                {
-                    lock (_mutationGate)
-                    {
-                        WriteStatus(StateCoordinatorStatus.RecoveryRequired);
-                    }
-
-                    throw;
-                }
-
-                lock (_mutationGate)
-                {
                     if (loadResult.IsSuccess)
                     {
-                        Volatile.Write(ref _currentSnapshot, loadResult.Snapshot);
+                        Volatile.Write(
+                            ref _currentSnapshot,
+                            loadResult.Snapshot);
                         WriteStatus(StateCoordinatorStatus.Ready);
                     }
                     else
                     {
-                        WriteStatus(StateCoordinatorStatus.RecoveryRequired);
+                        WriteStatus(
+                            StateCoordinatorStatus.RecoveryRequired);
                     }
-                }
 
-                return loadResult;
+                    return loadResult;
+                });
             }
         }
 
@@ -276,7 +295,7 @@ namespace DEEPAi.ServiceDirectory.Application.State
             Func<DirectorySnapshot, TTransition> transitionFactory)
             where TTransition : StateTransitionResult
         {
-            lock (_mutationGate)
+            return _mutationGate.Execute(() =>
             {
                 if (ReadStatus() != StateCoordinatorStatus.Ready)
                 {
@@ -333,7 +352,7 @@ namespace DEEPAi.ServiceDirectory.Application.State
                 return StateMutationResult<TTransition>.Completed(
                     transition,
                     true);
-            }
+            });
         }
 
         private StateCoordinatorStatus ReadStatus()

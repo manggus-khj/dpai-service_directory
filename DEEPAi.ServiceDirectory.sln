@@ -12,6 +12,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DEEPAi.ServiceDirectory.Inf
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DEEPAi.ServiceDirectory.InternalProtocol", "src\DEEPAi.ServiceDirectory.InternalProtocol\DEEPAi.ServiceDirectory.InternalProtocol.csproj", "{47D9AE4E-20A8-4E39-A188-F7326EC829B7}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DEEPAi.ServiceDirectory.Service", "src\DEEPAi.ServiceDirectory.Service\DEEPAi.ServiceDirectory.Service.csproj", "{BC1E7549-3E70-4D34-967A-E05ED5B1A817}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DEEPAi.ServiceDirectory.Tray", "src\DEEPAi.ServiceDirectory.Tray\DEEPAi.ServiceDirectory.Tray.csproj", "{0D95E153-7595-4B31-BD1B-9D3A3E8EC821}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DEEPAi.ServiceDirectory.Watchdog", "src\DEEPAi.ServiceDirectory.Watchdog\DEEPAi.ServiceDirectory.Watchdog.csproj", "{146B7063-FA53-4967-A995-307EE42987D8}"
@@ -44,6 +46,10 @@ Global
 		{47D9AE4E-20A8-4E39-A188-F7326EC829B7}.Debug|x64.Build.0 = Debug|x64
 		{47D9AE4E-20A8-4E39-A188-F7326EC829B7}.Release|x64.ActiveCfg = Release|x64
 		{47D9AE4E-20A8-4E39-A188-F7326EC829B7}.Release|x64.Build.0 = Release|x64
+		{BC1E7549-3E70-4D34-967A-E05ED5B1A817}.Debug|x64.ActiveCfg = Debug|x64
+		{BC1E7549-3E70-4D34-967A-E05ED5B1A817}.Debug|x64.Build.0 = Debug|x64
+		{BC1E7549-3E70-4D34-967A-E05ED5B1A817}.Release|x64.ActiveCfg = Release|x64
+		{BC1E7549-3E70-4D34-967A-E05ED5B1A817}.Release|x64.Build.0 = Release|x64
 		{0D95E153-7595-4B31-BD1B-9D3A3E8EC821}.Debug|x64.ActiveCfg = Debug|x64
 		{0D95E153-7595-4B31-BD1B-9D3A3E8EC821}.Debug|x64.Build.0 = Debug|x64
 		{0D95E153-7595-4B31-BD1B-9D3A3E8EC821}.Release|x64.ActiveCfg = Release|x64

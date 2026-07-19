@@ -14,3 +14,6 @@ TestResults/
 
 # Local staging for private symbol bundles. Symbols must not be committed.
 /artifacts/symbols/
+
+# Disposable packaging staging, including temporary ISCC output.
+/artifacts/package/

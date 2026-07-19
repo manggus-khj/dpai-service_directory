@@ -84,6 +84,7 @@
     <Compile Include="ExternalProtocol\ExternalRequestConcurrencyLimiterTests.cs" />
     <Compile Include="Infrastructure\ActivePeerSessionTests.cs" />
     <Compile Include="Infrastructure\AtomicFileWriterTests.cs" />
+    <Compile Include="Infrastructure\AdminApplicationHttpRequestHandlerTests.cs" />
     <Compile Include="Infrastructure\AdminHttpAdapterTests.cs" />
     <Compile Include="Infrastructure\AdminRequestAdmissionControllerTests.cs" />
     <Compile Include="Infrastructure\ConfigurationPersistenceTests.cs" />
@@ -94,6 +95,8 @@
     <Compile Include="Infrastructure\HttpRequestEndpointGuardTests.cs" />
     <Compile Include="Infrastructure\HttpTransportResponseDataTests.cs" />
     <Compile Include="Infrastructure\PairingCryptographyTests.cs" />
+    <Compile Include="Infrastructure\PairingDecisionReplayEntryTests.cs" />
+    <Compile Include="Infrastructure\PeerSynchronizationSchedulingTests.cs" />
     <Compile Include="Infrastructure\PeerConfigurationTransactionStoreTests.cs" />
     <Compile Include="Infrastructure\PeerCredentialPersistenceTests.cs" />
     <Compile Include="Infrastructure\PeerInboundRequestCoordinatorTests.cs" />
@@ -123,6 +126,7 @@
     <Compile Include="TestSupport\TestData.cs" />
     <Compile Include="Watchdog\MainServiceControllerMappingTests.cs" />
     <Compile Include="Watchdog\WatchdogHealthResponseValidatorTests.cs" />
+    <Compile Include="Watchdog\WatchdogLifecycleTests.cs" />
     <Compile Include="Watchdog\WatchdogMonitorPolicyTests.cs" />
     <Compile Include="Watchdog\WatchdogPipeClientAuthorizationTests.cs" />
     <Compile Include="Watchdog\WatchdogPipeRequestReaderTests.cs" />

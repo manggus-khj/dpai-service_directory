@@ -85,7 +85,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void ConfiguredListenerRoutesOnlyExternalCandidates()
+        public void ConfiguredListenerRoutesExternalAndPeerCandidates()
         {
             ServiceDirectoryListenerAddress configuredAddress =
                 CreateConfiguredAddress();
@@ -104,12 +104,12 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 configuredAddress,
                 ConfiguredEndpoint,
                 "/api/sync",
-                ServiceDirectoryHttpRoute.NotFound);
+                ServiceDirectoryHttpRoute.Peer);
             AssertRoute(
                 configuredAddress,
                 ConfiguredEndpoint,
                 "/api/sync/exchange",
-                ServiceDirectoryHttpRoute.NotFound);
+                ServiceDirectoryHttpRoute.Peer);
             AssertRoute(
                 configuredAddress,
                 ConfiguredEndpoint,
@@ -152,7 +152,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 configuredAddress,
                 LoopbackEndpoint,
                 "/api/sync/handshake",
-                ServiceDirectoryHttpRoute.NotFound);
+                ServiceDirectoryHttpRoute.Peer);
             AssertRoute(
                 configuredAddress,
                 LoopbackEndpoint,

@@ -7,6 +7,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
 {
     internal interface IPeerSecretAccessPolicy
     {
+        void ProtectExistingFile(string path);
+
         void ValidateExistingFile(string path);
     }
 
@@ -84,6 +86,39 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 AccessControlSections.Access
                     | AccessControlSections.Owner);
             ValidateDescriptor(security);
+        }
+
+        public void ProtectExistingFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                throw new ArgumentException(
+                    "The peer credential path is required.",
+                    nameof(path));
+            }
+
+            var file = new FileInfo(path);
+            if (!file.Exists)
+            {
+                throw new FileNotFoundException(
+                    "The peer credential file does not exist.",
+                    path);
+            }
+
+            if ((file.Attributes & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new IOException(
+                    "The peer credential file must not be a reparse point.");
+            }
+
+            var security = new FileSecurity();
+            security.SetAccessRuleProtection(true, false);
+            security.SetOwner(_serviceSid);
+            AddFullControl(security, _serviceSid);
+            AddFullControl(security, _systemSid);
+            AddFullControl(security, _administratorsSid);
+            file.SetAccessControl(security);
+            ValidateExistingFile(path);
         }
 
         internal void ValidateDescriptor(FileSecurity security)
@@ -171,6 +206,19 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                     + principalName
                     + ".");
             }
+        }
+
+        private static void AddFullControl(
+            FileSecurity security,
+            SecurityIdentifier sid)
+        {
+            security.AddAccessRule(
+                new FileSystemAccessRule(
+                    sid,
+                    FileSystemRights.FullControl,
+                    InheritanceFlags.None,
+                    PropagationFlags.None,
+                    AccessControlType.Allow));
         }
     }
 }

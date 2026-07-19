@@ -302,6 +302,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                     target.ContentType = response.ContentType;
                 }
 
+                foreach (KeyValuePair<string, string> header
+                    in response.Headers)
+                {
+                    target.AddHeader(header.Key, header.Value);
+                }
+
                 if (response.RetryAfterSeconds.HasValue)
                 {
                     target.AddHeader(

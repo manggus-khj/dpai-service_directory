@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using DEEPAi.ServiceDirectory.Domain;
 using DEEPAi.ServiceDirectory.Infrastructure.Persistence;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -205,6 +206,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             string stateDirectory = CreateStateDirectory();
             try
             {
+                WriteCanonicalEmptyState(stateDirectory);
                 string journalRoot = Path.Combine(
                     stateDirectory,
                     "journal");
@@ -225,7 +227,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 Assert.AreEqual(
                     0,
                     Directory.GetFileSystemEntries(journalRoot).Length);
-                Assert.IsFalse(File.Exists(
+                Assert.IsTrue(File.Exists(
                     Path.Combine(stateDirectory, "directory.xml")));
             }
             finally
@@ -255,6 +257,18 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             File.WriteAllBytes(
                 Path.Combine(transactionPath, fileName),
                 contents);
+        }
+
+        private static void WriteCanonicalEmptyState(string stateDirectory)
+        {
+            var codec = new StateXmlCodec();
+            DirectorySnapshot empty = DirectorySnapshot.Empty();
+            File.WriteAllBytes(
+                Path.Combine(stateDirectory, "directory.xml"),
+                codec.SerializeDirectory(empty));
+            File.WriteAllBytes(
+                Path.Combine(stateDirectory, "pending.xml"),
+                codec.SerializePending(empty));
         }
 
         private static string CreateStateDirectory()

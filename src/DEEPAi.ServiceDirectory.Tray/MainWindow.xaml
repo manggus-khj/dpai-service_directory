@@ -239,6 +239,7 @@
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="58" />
+                                    <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
                                     <RowDefinition Height="58" />
                                 </Grid.RowDefinitions>
@@ -254,7 +255,20 @@
                                         Content="새로 고침"
                                         Command="{Binding RefreshCurrentPageCommand}" />
                                 </Grid>
-                                <Grid Grid.Row="1">
+                                <Border
+                                    Grid.Row="1"
+                                    Margin="18,0,18,12"
+                                    Padding="12,9"
+                                    Background="{StaticResource WarningSoftBrush}"
+                                    BorderBrush="{StaticResource WarningBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="7"
+                                    Visibility="{Binding HasPendingCapacityWarning, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <TextBlock
+                                        Text="{Binding PendingCapacityWarningText}"
+                                        FontFamily="Segoe UI Semibold" />
+                                </Border>
+                                <Grid Grid.Row="2">
                                     <DataGrid
                                         ItemsSource="{Binding PendingItems}"
                                         SelectedItem="{Binding SelectedPending, Mode=TwoWay}"
@@ -285,7 +299,7 @@
                                             Style="{StaticResource MutedTextStyle}" />
                                     </Border>
                                 </Grid>
-                                <Grid Grid.Row="2" Margin="18,0">
+                                <Grid Grid.Row="3" Margin="18,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />

@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using DEEPAi.ServiceDirectory.Domain;
 using DEEPAi.ServiceDirectory.Infrastructure.WatchdogProtocol;
 using DEEPAi.ServiceDirectory.InternalProtocol.Admin;
 using DEEPAi.ServiceDirectory.Tray.Clients;
@@ -476,6 +477,24 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
         public string PendingCountText => _pendingTotalCount.HasValue
             ? _pendingTotalCount.Value.ToString("N0", CultureInfo.CurrentCulture)
             : "—";
+
+        public bool HasPendingCapacityWarning =>
+            _pendingTotalCount.HasValue
+            && _pendingTotalCount.Value
+                >= DirectorySnapshot.PendingRegistrationWarningThreshold;
+
+        public string PendingCapacityWarningText =>
+            HasPendingCapacityWarning
+                ? "승인 대기가 경고 기준에 도달했습니다. 운영자가 대기를 처리해야 합니다. (현재 "
+                    + _pendingTotalCount.Value.ToString(
+                        "N0",
+                        CultureInfo.CurrentCulture)
+                    + " / "
+                    + DirectorySnapshot.PendingRegistrationLimit.ToString(
+                        "N0",
+                        CultureInfo.CurrentCulture)
+                    + ")"
+                : string.Empty;
 
         public string ServiceCountText => _serviceTotalCount.HasValue
             ? _serviceTotalCount.Value.ToString("N0", CultureInfo.CurrentCulture)

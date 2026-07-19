@@ -414,6 +414,8 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             _pendingTotalCount = page.TotalCount;
             _pendingNextCursor = page.NextCursor;
             OnPropertyChanged(nameof(PendingCountText));
+            OnPropertyChanged(nameof(HasPendingCapacityWarning));
+            OnPropertyChanged(nameof(PendingCapacityWarningText));
             OnPropertyChanged(nameof(PendingPageText));
             MarkAdminSuccess(manualProbe);
             RaiseCommandStates();

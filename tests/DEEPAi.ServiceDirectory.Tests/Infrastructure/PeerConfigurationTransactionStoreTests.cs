@@ -268,6 +268,45 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             }
         }
 
+        [TestMethod]
+        public void PeerCommitRebasesOnLatestAdminLogRetention()
+        {
+            string root = CreateInitializedStateDirectory();
+            try
+            {
+                var store = new PeerConfigurationTransactionStore(
+                    root,
+                    new CloneProtector(),
+                    new NoOpAccessPolicy());
+                using (var state =
+                    new ServiceDirectoryRuntimeConfigurationState(store))
+                {
+                    ServiceDirectoryConfiguration stalePeerBaseline =
+                        state.GetCurrent();
+                    Assert.IsTrue(
+                        state.SetLogRetentionDays(1095).IsSuccess);
+
+                    RuntimeConfigurationCommitResult peerCommit =
+                        state.CommitPeerState(
+                            stalePeerBaseline.WithSynchronization(
+                                stalePeerBaseline.LastPeerKeyEpoch,
+                                stalePeerBaseline.Synchronization),
+                            null);
+
+                    Assert.AreEqual(
+                        RuntimeConfigurationCommitStatus.Completed,
+                        peerCommit.Status);
+                    Assert.AreEqual(
+                        1095,
+                        state.GetCurrent().LogRetentionDays);
+                }
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
+        }
+
         private static string CreateInitializedStateDirectory()
         {
             string root = Path.Combine(
@@ -424,6 +463,11 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
 
         private sealed class NoOpAccessPolicy : IPeerSecretAccessPolicy
         {
+            public void ProtectExistingFile(string path)
+            {
+                ValidateExistingFile(path);
+            }
+
             public void ValidateExistingFile(string path)
             {
                 if (!File.Exists(path))

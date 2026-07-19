@@ -1,4 +1,5 @@
 using System.ServiceProcess;
+using DEEPAi.ServiceDirectory.Infrastructure.Security;
 
 namespace DEEPAi.ServiceDirectory.Watchdog
 {
@@ -6,6 +7,8 @@ namespace DEEPAi.ServiceDirectory.Watchdog
     {
         private static void Main()
         {
+            NativeLibrarySearchPolicy.Apply();
+
             ServiceBase.Run(
                 new ServiceBase[]
                 {

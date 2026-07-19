@@ -227,12 +227,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                         null);
                 }
 
-                return new PersistedState(
-                    DirectorySnapshot.Empty(),
-                    false,
-                    null,
-                    false,
-                    null);
+                throw new InvalidDataException(
+                    "The installed directory.xml and pending.xml state documents are missing.");
             }
 
             if (directoryExists != pendingExists)

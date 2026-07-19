@@ -9,8 +9,7 @@ using DEEPAi.ServiceDirectory.Infrastructure.Networking;
 namespace DEEPAi.ServiceDirectory.Infrastructure.Http
 {
     // Owns the shared HttpListener transport only. Application state handlers
-    // remain constructor-injected through the three completed adapters. Peer
-    // routes stay closed until their authenticated wire handler exists.
+    // remain constructor-injected through their transport-neutral adapters.
     public sealed class ServiceDirectoryHttpListenerHost : IDisposable
     {
         internal const string LoopbackPrefix =
@@ -29,6 +28,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             AdminHttpResponseData> _adminProcessor;
         private readonly Func<ExternalHttpRequestData,
             ExternalHttpResponseData> _watchdogProcessor;
+        private readonly Func<PeerHttpRequestData,
+            PeerHttpResponseData> _peerProcessor;
         private readonly IHttpDeadlineWaiter _deadlineWaiter;
         private readonly SemaphoreSlim _transportSlots;
         private readonly HashSet<Task> _activeRequests;
@@ -48,11 +49,29 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             AdminHttpAdapter adminAdapter,
             WatchdogHealthHttpAdapter watchdogAdapter)
             : this(
+                configuredAddress,
+                externalAdapter,
+                adminAdapter,
+                watchdogAdapter,
+                null)
+        {
+        }
+
+        public ServiceDirectoryHttpListenerHost(
+            ServiceDirectoryListenerAddress configuredAddress,
+            ExternalHttpAdapter externalAdapter,
+            AdminHttpAdapter adminAdapter,
+            WatchdogHealthHttpAdapter watchdogAdapter,
+            PeerHttpAdapter peerAdapter)
+            : this(
                 new SystemHttpListenerServer(),
                 configuredAddress,
                 GetExternalProcessor(externalAdapter),
                 GetAdminProcessor(adminAdapter),
                 GetWatchdogProcessor(watchdogAdapter),
+                peerAdapter == null
+                    ? GetClosedPeerProcessor()
+                    : GetPeerProcessor(peerAdapter),
                 new SystemHttpDeadlineWaiter())
         {
         }
@@ -66,6 +85,29 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 AdminHttpResponseData> adminProcessor,
             Func<ExternalHttpRequestData,
                 ExternalHttpResponseData> watchdogProcessor,
+            IHttpDeadlineWaiter deadlineWaiter)
+            : this(
+                listener,
+                configuredAddress,
+                externalProcessor,
+                adminProcessor,
+                watchdogProcessor,
+                GetClosedPeerProcessor(),
+                deadlineWaiter)
+        {
+        }
+
+        internal ServiceDirectoryHttpListenerHost(
+            IHttpListenerServer listener,
+            ServiceDirectoryListenerAddress configuredAddress,
+            Func<ExternalHttpRequestData,
+                ExternalHttpResponseData> externalProcessor,
+            Func<AdminHttpRequestData,
+                AdminHttpResponseData> adminProcessor,
+            Func<ExternalHttpRequestData,
+                ExternalHttpResponseData> watchdogProcessor,
+            Func<PeerHttpRequestData,
+                PeerHttpResponseData> peerProcessor,
             IHttpDeadlineWaiter deadlineWaiter)
         {
             _listener = listener
@@ -81,6 +123,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             _watchdogProcessor = watchdogProcessor
                 ?? throw new ArgumentNullException(
                     nameof(watchdogProcessor));
+            _peerProcessor = peerProcessor
+                ?? throw new ArgumentNullException(nameof(peerProcessor));
             _deadlineWaiter = deadlineWaiter
                 ?? throw new ArgumentNullException(nameof(deadlineWaiter));
             _transportSlots = new SemaphoreSlim(
@@ -167,14 +211,18 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             return Stop(DefaultStopDrainTimeout);
         }
 
-        public bool Stop(TimeSpan drainTimeout)
+        public void BeginStop()
+        {
+            SignalStop(null);
+        }
+
+        public bool WaitForStop(TimeSpan drainTimeout)
         {
             if (drainTimeout < TimeSpan.Zero)
             {
                 throw new ArgumentOutOfRangeException(nameof(drainTimeout));
             }
 
-            SignalStop(null);
             try
             {
                 return _completion.Task.Wait(drainTimeout);
@@ -185,6 +233,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 // that listener acceptance and tracked requests drained.
                 return _completion.Task.IsCompleted;
             }
+        }
+
+        public bool Stop(TimeSpan drainTimeout)
+        {
+            BeginStop();
+            return WaitForStop(drainTimeout);
         }
 
         public void Dispose()
@@ -371,9 +425,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 else
                 {
                     // Synchronous adapter code cannot be force-cancelled.
-                    // Do not let an uncooperative request prevent listener
-                    // drain after its context has been aborted. Detached
-                    // operations remain bounded and are still observed.
+                    // The transport context is aborted at the deadline, but
+                    // runtime state must remain alive until the detached
+                    // application operation actually terminates.
                     TrackDetachedOperation(operation);
                 }
 
@@ -425,6 +479,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                     return HttpTransportResponseData.FromExternal(
                         _watchdogProcessor(
                             HttpListenerRequestMapper.ToExternal(
+                                context,
+                                target)));
+                case ServiceDirectoryHttpRoute.Peer:
+                    return HttpTransportResponseData.FromPeer(
+                        _peerProcessor(
+                            HttpListenerRequestMapper.ToPeer(
                                 context,
                                 target)));
                 case ServiceDirectoryHttpRoute.NotFound:
@@ -506,6 +566,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             {
                 SignalStop(failure);
             }
+
+            TryCompleteIfDrained();
         }
 
         private void OnAcceptLoopCompleted(Task acceptLoop)
@@ -589,7 +651,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             Exception failure;
             lock (_stateGate)
             {
-                if (!_acceptLoopEnded || _activeRequests.Count != 0)
+                if (!_acceptLoopEnded
+                    || _activeRequests.Count != 0
+                    || _detachedOperations.Count != 0)
                 {
                     return;
                 }
@@ -683,6 +747,24 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             }
 
             return adapter.Process;
+        }
+
+        private static Func<PeerHttpRequestData,
+            PeerHttpResponseData> GetPeerProcessor(
+                PeerHttpAdapter adapter)
+        {
+            if (adapter == null)
+            {
+                throw new ArgumentNullException(nameof(adapter));
+            }
+
+            return adapter.Process;
+        }
+
+        private static Func<PeerHttpRequestData,
+            PeerHttpResponseData> GetClosedPeerProcessor()
+        {
+            return request => PeerHttpResponseData.Bodyless(404);
         }
 
         private void ThrowIfDisposed()

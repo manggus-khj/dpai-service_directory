@@ -7,6 +7,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
     {
         private const string BackupSuffix = ".bak";
         private readonly StateStoragePathPolicy _pathPolicy;
+        private readonly IPeerSecretAccessPolicy _peerSecretAccessPolicy;
 
         public AtomicFileWriter(string stateDirectoryPath)
             : this(new StateStoragePathPolicy(stateDirectoryPath))
@@ -14,6 +15,13 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         }
 
         internal AtomicFileWriter(StateStoragePathPolicy pathPolicy)
+            : this(pathPolicy, null)
+        {
+        }
+
+        internal AtomicFileWriter(
+            StateStoragePathPolicy pathPolicy,
+            IPeerSecretAccessPolicy peerSecretAccessPolicy)
         {
             if (pathPolicy == null)
             {
@@ -21,6 +29,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             }
 
             _pathPolicy = pathPolicy;
+            _peerSecretAccessPolicy = peerSecretAccessPolicy;
             _pathPolicy.EnsureStateDirectoryIsSafe();
         }
 
@@ -74,6 +83,22 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                     FileOptions.WriteThrough))
                 {
                     temporaryFileCreated = true;
+                    if (target == StateFileTarget.PeerSecret)
+                    {
+                        if (_peerSecretAccessPolicy == null)
+                        {
+                            throw new InvalidOperationException(
+                                "A peer secret access policy is required.");
+                        }
+
+                        // Apply the exact DACL before any DPAPI LocalMachine
+                        // credential bytes reach the file.  Protecting only
+                        // after the atomic move would leave a confidentiality
+                        // window under the parent directory's inherited ACL.
+                        _peerSecretAccessPolicy.ProtectExistingFile(
+                            temporaryPath);
+                    }
+
                     stream.Write(contents, 0, contents.Length);
                     stream.Flush(true);
                 }
@@ -93,6 +118,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 temporaryFileCreated = false;
 
                 FlushExistingFile(fullDestinationPath);
+                if (target == StateFileTarget.PeerSecret)
+                {
+                    _peerSecretAccessPolicy.ValidateExistingFile(
+                        fullDestinationPath);
+                }
                 writeCompleted = true;
             }
             catch (Exception exception)

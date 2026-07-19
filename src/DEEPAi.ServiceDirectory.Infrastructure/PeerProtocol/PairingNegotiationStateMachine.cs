@@ -163,6 +163,47 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
             }
         }
 
+        internal Guid? CurrentPeerInstanceId
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    ThrowIfDisposed();
+                    ExpireIfNeeded(GetMonotonicTimestamp());
+                    return _peerInstanceId == Guid.Empty
+                        ? (Guid?)null
+                        : _peerInstanceId;
+                }
+            }
+        }
+
+        internal string CurrentPeerEndpoint
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    ThrowIfDisposed();
+                    ExpireIfNeeded(GetMonotonicTimestamp());
+                    return _peerEndpoint;
+                }
+            }
+        }
+
+        internal ulong? CurrentKeyEpoch
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    ThrowIfDisposed();
+                    ExpireIfNeeded(GetMonotonicTimestamp());
+                    return _keyEpoch == 0 ? (ulong?)null : _keyEpoch;
+                }
+            }
+        }
+
         internal bool LocalConfirmed
         {
             get

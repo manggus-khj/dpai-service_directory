@@ -46,7 +46,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             }
 
             _pathPolicy = pathPolicy;
-            _fileWriter = new AtomicFileWriter(pathPolicy);
+            _fileWriter = new AtomicFileWriter(pathPolicy, accessPolicy);
             _codec = new PeerCredentialBinaryCodec();
             _protector = protector;
             _accessPolicy = accessPolicy;

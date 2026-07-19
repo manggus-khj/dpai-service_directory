@@ -19,6 +19,29 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
         RetainedInitiator = 3
     }
 
+    // Raised only after a second, non-identical terminal decision has passed
+    // the current transient K0 MAC and peer/transcript binding checks. It is
+    // distinct from malformed or unauthenticated input because the protocol
+    // requires the whole pairing to be cancelled.
+    internal sealed class PairingDecisionConflictException : Exception
+    {
+        internal PairingDecisionConflictException(Guid pairingId)
+            : base(
+                "An authenticated peer attempted to replace its terminal pairing decision.")
+        {
+            if (pairingId == Guid.Empty)
+            {
+                throw new ArgumentException(
+                    "The conflicting decision must identify the active pairing.",
+                    nameof(pairingId));
+            }
+
+            PairingId = pairingId;
+        }
+
+        internal Guid PairingId { get; }
+    }
+
     internal sealed class PairingLocalDecisionMessage : IDisposable
     {
         private readonly byte[] _requestBody;

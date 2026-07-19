@@ -9,6 +9,7 @@
     <RootNamespace>DEEPAi.ServiceDirectory.Watchdog</RootNamespace>
     <AssemblyName>DEEPAi.ServiceDirectory.Watchdog</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <FileAlignment>512</FileAlignment>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x64' ">
@@ -48,6 +49,9 @@
       <Project>{28622150-C996-4B70-B9EF-8B9E45FA16CB}</Project>
       <Name>DEEPAi.ServiceDirectory.Infrastructure</Name>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="app.manifest" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="MainServiceController.cs" />

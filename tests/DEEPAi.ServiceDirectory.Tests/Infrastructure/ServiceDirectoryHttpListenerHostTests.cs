@@ -443,6 +443,24 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void BeginStopSignalsBeforeSharedDeadlineWait()
+        {
+            var listener = new FakeHttpListenerServer();
+            using (ServiceDirectoryHttpListenerHost host = CreateHost(
+                listener))
+            {
+                host.Start();
+                host.BeginStop();
+
+                Assert.AreEqual(1, listener.StopCount);
+                Assert.IsTrue(
+                    host.WaitForStop(TimeSpan.FromSeconds(2)));
+                Assert.IsTrue(host.Completion.IsCompleted);
+                Assert.IsNull(host.FatalException);
+            }
+        }
+
+        [TestMethod]
         public void StopUnblocksPendingAcceptAndIsIdempotent()
         {
             var listener = new FakeHttpListenerServer();

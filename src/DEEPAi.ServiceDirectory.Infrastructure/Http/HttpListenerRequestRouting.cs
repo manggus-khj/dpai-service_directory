@@ -14,7 +14,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         NotFound = 0,
         External = 1,
         Admin = 2,
-        WatchdogHealth = 3
+        WatchdogHealth = 3,
+        Peer = 4
     }
 
     internal static class HttpListenerRequestRouting
@@ -58,15 +59,25 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
 
             if (IsAdminCandidate(target.AbsolutePath))
             {
-                // Authentication selection remains anonymous outside exact
-                // loopback scope, but the Admin adapter must still see the
-                // request so its endpoint guard records the required 4106
-                // diagnostic before returning a bodyless 403.
-                return ServiceDirectoryHttpRoute.Admin;
+                // Never deliver an out-of-scope Admin request to the Admin
+                // adapter.  This also prevents a remote request from
+                // learning that an Admin route exists through a Negotiate
+                // challenge or a distinct authorization response.
+                return HttpRequestEndpointGuard.IsLoopbackScopeAllowed(
+                        localEndpoint,
+                        remoteEndpoint)
+                    ? ServiceDirectoryHttpRoute.Admin
+                    : ServiceDirectoryHttpRoute.NotFound;
             }
 
-            if (IsPeerCandidate(target.AbsolutePath)
-                || !IsApiCandidate(target.AbsolutePath))
+            if (IsPeerCandidate(target.AbsolutePath))
+            {
+                // The Peer adapter must see a wrong or unavailable local
+                // endpoint so it can emit the required 4106 diagnostic.
+                return ServiceDirectoryHttpRoute.Peer;
+            }
+
+            if (!IsApiCandidate(target.AbsolutePath))
             {
                 return ServiceDirectoryHttpRoute.NotFound;
             }
@@ -185,6 +196,82 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 principal);
         }
 
+        internal static PeerHttpRequestData ToPeer(
+            IHttpServerContext context,
+            RawHttpRequestTarget target)
+        {
+            if (context == null)
+            {
+                throw new ArgumentNullException(nameof(context));
+            }
+
+            if (target == null)
+            {
+                throw new ArgumentNullException(nameof(target));
+            }
+
+            IHttpServerRequest request = context.Request;
+            var headers = new Dictionary<string, IReadOnlyList<string>>(
+                StringComparer.OrdinalIgnoreCase)
+            {
+                {
+                    "X-DPAI-Instance-Id",
+                    CopyHeaderValues(
+                        request.GetHeaderValues(
+                            "X-DPAI-Instance-Id"))
+                },
+                {
+                    "X-DPAI-Key-Epoch",
+                    CopyHeaderValues(
+                        request.GetHeaderValues(
+                            "X-DPAI-Key-Epoch"))
+                },
+                {
+                    "X-DPAI-Session-Id",
+                    CopyHeaderValues(
+                        request.GetHeaderValues(
+                            "X-DPAI-Session-Id"))
+                },
+                {
+                    "X-DPAI-Timestamp",
+                    CopyHeaderValues(
+                        request.GetHeaderValues(
+                            "X-DPAI-Timestamp"))
+                },
+                {
+                    "X-DPAI-Nonce",
+                    CopyHeaderValues(
+                        request.GetHeaderValues(
+                            "X-DPAI-Nonce"))
+                },
+                {
+                    "X-DPAI-Signature",
+                    CopyHeaderValues(
+                        request.GetHeaderValues(
+                            "X-DPAI-Signature"))
+                },
+                {
+                    "X-DPAI-Pairing-MAC",
+                    CopyHeaderValues(
+                        request.GetHeaderValues(
+                            "X-DPAI-Pairing-MAC"))
+                }
+            };
+
+            return new PeerHttpRequestData(
+                request.HttpMethod,
+                target.AbsolutePath,
+                target.RawQuery,
+                request.ContentType,
+                CombineHeaderValues(
+                    request.GetHeaderValues("Content-Encoding")),
+                request.ContentLength64,
+                request.InputStream,
+                request.LocalEndPoint,
+                request.RemoteEndPoint,
+                headers);
+        }
+
         private static IReadOnlyList<string> CopyHeaderValues(
             IReadOnlyList<string> values)
         {
@@ -252,6 +339,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             TimeSpan.FromSeconds(10);
         internal static readonly TimeSpan WatchdogHealthDeadline =
             TimeSpan.FromSeconds(5);
+        internal static readonly TimeSpan PeerControlDeadline =
+            TimeSpan.FromSeconds(10);
+        internal static readonly TimeSpan PeerExchangeDeadline =
+            TimeSpan.FromSeconds(30);
 
         internal static TimeSpan GetDeadline(
             ServiceDirectoryHttpRoute route,
@@ -271,6 +362,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                     return AdminDeadline;
                 case ServiceDirectoryHttpRoute.WatchdogHealth:
                     return WatchdogHealthDeadline;
+                case ServiceDirectoryHttpRoute.Peer:
+                    return StringComparer.Ordinal.Equals(
+                        path,
+                        "/api/sync/exchange")
+                        ? PeerExchangeDeadline
+                        : PeerControlDeadline;
                 case ServiceDirectoryHttpRoute.NotFound:
                 default:
                     return ExternalReadDeadline;

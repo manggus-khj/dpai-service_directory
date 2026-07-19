@@ -1,10 +1,10 @@
 # 서비스 디렉토리 외부 애플리케이션 API 명세
 
 > 문서 상태: 외부 wire 계약 확정
-> 구현 상태: External DTO와 embedded `external.xsd` 기반 strict parser·serializer, 승인 서비스 조회 projection, 일일 키·bounded 입력·endpoint guard 및 원격 External·loopback 와치독 transport-neutral 경계 소스 추가. 두 exact IP literal prefix, raw target handoff, 응답 기록과 `5/5/10초` 전체 deadline을 담당하는 공용 `HttpListener` host 소스도 추가됐지만 메인 Windows Service 연결·실제 Windows 실행과 현재 작업 트리 빌드·테스트는 미검증
+> 구현 상태: External DTO와 embedded `external.xsd` 기반 strict parser·serializer, 승인 서비스 조회 projection, 일일 키·bounded 입력·endpoint guard, 원격 External·loopback 와치독 경계와 두 exact IP literal prefix·raw target handoff·응답 기록·`5/5/10초` 전체 deadline을 메인 Windows Service의 공용 `HttpListener` host에 연결한 소스 구현. 현재 작업 트리의 locked restore·빌드·테스트와 실제 Windows listener 실행은 미검증
 > 대상 독자: 서비스 디렉토리에 자기 서비스 정보를 조회·등록하는 다른 애플리케이션 개발자
 > 배포 범위: 사내 연동 개발자와 승인된 운영 담당자
-> 최종 정리일: 2026-07-18
+> 최종 정리일: 2026-07-19
 
 이 문서는 다른 애플리케이션이 서비스 디렉토리의 생존 여부를 확인하고, 제품코드에 해당하는 접속정보를 조회하고, 신규 등록 또는 변경 승인을 요청할 때 사용하는 독립 계약이다. 관리자 기능, 피어 동기화, XML 저장 구조는 이 계약에 포함하지 않는다.
 
@@ -20,7 +20,7 @@
 
 다른 애플리케이션은 `/admin/*`, `/api/sync/*`, Named Pipe, 서비스 디렉토리의 XML 파일에 의존하면 안 된다.
 
-현재 transport-neutral External 어댑터는 설치된 non-loopback `ListenAddress`의 위 세 원격 endpoint만 담당한다. 와치독의 `http://127.0.0.1:21000/api/health` 호출은 응답 wire 형식만 공유하며, local endpoint `127.0.0.1:21000`과 loopback remote address를 함께 확인하는 별도 내부 경계다. 공용 host는 actual local endpoint와 exact raw `/api/*` 후보를 기준으로 두 어댑터를 분리하고 encoded fixed-route 시도도 decode하지 않은 채 해당 경계로 넘겨 인증·공유 동시 실행 뒤 `404`가 결정되게 한다. `/api/sync/*`와 명백한 경계 밖 경로는 body 없는 `404`로 닫는다. 메인 Windows Service 연결과 실제 Windows listener 실행은 아직 검증하지 않았으며 와치독 계약은 [내부 API 명세 §2.4](./서비스디렉토리_내부_API명세.md#24-health)를 따른다.
+현재 transport-neutral External 어댑터는 설치된 non-loopback `ListenAddress`의 위 세 원격 endpoint만 담당한다. 와치독의 `http://127.0.0.1:21000/api/health` 호출은 응답 wire 형식만 공유하며, local endpoint `127.0.0.1:21000`과 loopback remote address를 함께 확인하는 별도 내부 경계다. 공용 host는 actual local endpoint와 exact raw `/api/*` 후보를 기준으로 두 어댑터를 분리하고 encoded fixed-route 시도도 decode하지 않은 채 해당 경계로 넘겨 인증·공유 동시 실행 뒤 `404`가 결정되게 한다. `/api/sync/*`와 명백한 경계 밖 경로는 body 없는 `404`로 닫는다. 이 host는 메인 Windows Service composition에 소스로 연결됐지만 현재 작업 트리 빌드와 실제 Windows listener 실행은 검증하지 않았으며, 와치독 계약은 [내부 API 명세 §2.4](./서비스디렉토리_내부_API명세.md#24-health)를 따른다.
 
 ### 1.1 지원 규모와 호출 특성
 
@@ -320,7 +320,7 @@ HTTP `200`은 `Code=0`인 성공 응답에만 사용한다. 클라이언트는 H
 승인 대기 제한:
 
 - ProductCode당 승인 대기는 기존 처리 규칙과 같이 최대 1개다.
-- 전체 New·Modify 승인 대기는 합계 **1,000개**로 제한하고 800개에 도달하면 운영 경고를 기록한다.
+- 전체 New·Modify 승인 대기는 합계 **1,000개**로 제한하고 800개에 도달하면 트레이에 운영 경고를 표시한다. 이 경고는 [개발계획 §5.3](./서비스디렉토리_개발계획.md#53-저장-불변식)의 운영 표시이며, 허용된 9개 시스템 파일 로그 이벤트에 새 코드를 추가하지 않는다.
 - 전체 cap에 도달해도 기존 대기와 동일한 요청은 새 항목을 만들지 않고 기존 `PendingId`와 `PENDING_EXISTS`를 반환한다.
 - 전체 cap에서 새로운 대기 항목을 만들어야 하는 요청만 HTTP `429`, envelope `1004 LIMIT_EXCEEDED`로 거부하고 `Retry-After`는 보내지 않는다. 클라이언트는 자동 재시도하지 않고 운영자가 대기를 처리한 뒤 다음 로그인 또는 명시적 재확인 때 다시 요청한다. 기존 대기와 다른 같은 ProductCode 요청의 `1002 CONFLICT`, `ALREADY_REGISTERED`와 그 밖의 비생성 결과는 기존 규칙을 유지한다.
 

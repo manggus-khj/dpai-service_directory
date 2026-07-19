@@ -172,8 +172,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                                 rawRequestBody,
                                 requestMac))
                         {
-                            throw new InvalidOperationException(
-                                "A role may not replace or re-encode its terminal pairing decision.");
+                            throw new PairingDecisionConflictException(
+                                _pairingId);
                         }
 
                         return new PairingRemoteDecisionResult(
@@ -239,6 +239,13 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
 
                     return result;
                 }
+                catch (PairingDecisionConflictException)
+                {
+                    // Keep K0 and the verified first decision alive only long
+                    // enough for the controller to sign the conflict response
+                    // and durably cancel the whole pairing.
+                    throw;
+                }
                 catch
                 {
                     FailIfBeforeBothConfirmed();
@@ -249,6 +256,238 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                     Clear(transcriptHash);
                     Clear(expectedRequestMac);
                     Clear(responseMac);
+                }
+            }
+        }
+
+        internal PeerControlResponse VerifyLocalDecisionResponse(
+            PairingLocalDecisionMessage localDecision,
+            int httpStatus,
+            byte[] rawResponseBody,
+            byte[] responseMac)
+        {
+            lock (_gate)
+            {
+                ThrowIfDisposed();
+                EnsureWindowActive();
+                byte[] requestBody = null;
+                byte[] requestMac = null;
+                byte[] expectedResponseMac = null;
+                try
+                {
+                    EnsureDecisionState();
+                    if (localDecision == null)
+                    {
+                        throw new ArgumentNullException(
+                            nameof(localDecision));
+                    }
+
+                    if (httpStatus < 100 || httpStatus > 599)
+                    {
+                        throw new ArgumentOutOfRangeException(
+                            nameof(httpStatus));
+                    }
+
+                    if (rawResponseBody == null
+                        || rawResponseBody.Length == 0)
+                    {
+                        throw new ArgumentException(
+                            "The pairing decision response body must not be empty.",
+                            nameof(rawResponseBody));
+                    }
+
+                    requestBody = localDecision.CopyRequestBody();
+                    requestMac = localDecision.CopyRequestMac();
+                    if (_localDecisionRequest == null
+                        || localDecision.Request.PairingId != _pairingId
+                        || localDecision.Request.KeyEpoch != _keyEpoch
+                        || !BytesEqual(_localDecisionBody, requestBody)
+                        || !PairingTerminalMessageAuthenticator.VerifyMac(
+                            _localDecisionMac,
+                            requestMac))
+                    {
+                        throw new InvalidOperationException(
+                            "The pairing decision response does not correspond to the active local decision.");
+                    }
+
+                    PeerControlResponse response = PeerSyncXmlCodec
+                        .ParsePairingDecisionResponse(rawResponseBody);
+                    PeerPairingRole remoteRole = OppositeRole(
+                        _localRole.Value);
+                    expectedResponseMac = _secretContext
+                        .CreateDecisionResponseMac(
+                            _pairingId,
+                            _keyEpoch,
+                            ToCryptographyRole(remoteRole),
+                            _peerInstanceId,
+                            _localInstanceId,
+                            requestMac,
+                            httpStatus,
+                            response.Result,
+                            checked((uint)response.Code),
+                            rawResponseBody);
+                    if (!PairingTerminalMessageAuthenticator.VerifyMac(
+                            expectedResponseMac,
+                            responseMac))
+                    {
+                        throw new InvalidOperationException(
+                            "The pairing decision response MAC is invalid.");
+                    }
+
+                    return response;
+                }
+                finally
+                {
+                    Clear(requestBody);
+                    Clear(requestMac);
+                    Clear(expectedResponseMac);
+                }
+            }
+        }
+
+        // Creates a purpose-bound error MAC for a request that already
+        // passed the exact decision MAC and binding checks.  The successful
+        // replay response cached by ProcessRemoteDecision is deliberately
+        // left unchanged so a later persistence retry can still return the
+        // canonical success bytes.
+        internal byte[] CreateRemoteDecisionResponseMac(
+            byte[] rawRequestBody,
+            byte[] requestMac,
+            int httpStatus,
+            byte[] rawResponseBody)
+        {
+            lock (_gate)
+            {
+                ThrowIfDisposed();
+                // ProcessRemoteDecision already linearized authentication
+                // and expiry for this exact verified request.
+                EnsureDecisionState();
+                if (_remoteDecisionRequest == null
+                    || !BytesEqual(
+                        _remoteDecisionBody,
+                        rawRequestBody)
+                    || requestMac == null
+                    || requestMac.Length
+                        != PairingCryptography.AuthenticationCodeLength
+                    || !PairingCryptography.FixedTimeEquals32(
+                        _remoteDecisionMac,
+                        requestMac))
+                {
+                    throw new InvalidOperationException(
+                        "The pairing decision error does not correspond to the verified remote request.");
+                }
+
+                if (httpStatus < 100 || httpStatus > 599)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(httpStatus));
+                }
+
+                if (rawResponseBody == null
+                    || rawResponseBody.Length == 0)
+                {
+                    throw new ArgumentException(
+                        "The pairing decision response body must not be empty.",
+                        nameof(rawResponseBody));
+                }
+
+                PeerControlResponse response = PeerSyncXmlCodec
+                    .ParsePairingDecisionResponse(rawResponseBody);
+                return _secretContext.CreateDecisionResponseMac(
+                    _pairingId,
+                    _keyEpoch,
+                    ToCryptographyRole(_localRole.Value),
+                    _localInstanceId,
+                    _peerInstanceId,
+                    requestMac,
+                    httpStatus,
+                    response.Result,
+                    checked((uint)response.Code),
+                    rawResponseBody);
+            }
+        }
+
+        internal byte[] CreateConflictingRemoteDecisionResponseMac(
+            byte[] rawRequestBody,
+            byte[] requestMac,
+            int httpStatus,
+            byte[] rawResponseBody)
+        {
+            lock (_gate)
+            {
+                ThrowIfDisposed();
+                // ProcessRemoteDecision already linearized authentication
+                // and expiry for this exact conflicting request. Rechecking
+                // the monotonic deadline here could erase K0 between that
+                // decision and its mandatory signed conflict response.
+                EnsureDecisionState();
+                if (_remoteDecisionRequest == null)
+                {
+                    throw new InvalidOperationException(
+                        "No verified first remote decision exists.");
+                }
+
+                byte[] transcriptHash = null;
+                byte[] expectedRequestMac = null;
+                try
+                {
+                    PeerPairingDecision request = PeerSyncXmlCodec
+                        .ParsePairingDecisionRequest(rawRequestBody);
+                    ValidateRemoteDecisionBinding(
+                        request,
+                        out transcriptHash);
+                    expectedRequestMac = _secretContext
+                        .CreateDecisionRequestMac(
+                            _pairingId,
+                            _keyEpoch,
+                            ToCryptographyRole(request.SenderRole),
+                            request.SenderInstanceId,
+                            request.ReceiverInstanceId,
+                            ToTerminalDecision(request.Decision));
+                    if (!PairingTerminalMessageAuthenticator.VerifyMac(
+                            expectedRequestMac,
+                            requestMac)
+                        || CachedRemoteDecisionMatches(
+                            request,
+                            rawRequestBody,
+                            requestMac))
+                    {
+                        throw new InvalidOperationException(
+                            "The request is not an authenticated conflicting decision.");
+                    }
+
+                    if (httpStatus < 100 || httpStatus > 599)
+                    {
+                        throw new ArgumentOutOfRangeException(
+                            nameof(httpStatus));
+                    }
+
+                    if (rawResponseBody == null
+                        || rawResponseBody.Length == 0)
+                    {
+                        throw new ArgumentException(
+                            "The pairing decision response body must not be empty.",
+                            nameof(rawResponseBody));
+                    }
+
+                    PeerControlResponse response = PeerSyncXmlCodec
+                        .ParsePairingDecisionResponse(rawResponseBody);
+                    return _secretContext.CreateDecisionResponseMac(
+                        _pairingId,
+                        _keyEpoch,
+                        ToCryptographyRole(_localRole.Value),
+                        _localInstanceId,
+                        _peerInstanceId,
+                        requestMac,
+                        httpStatus,
+                        response.Result,
+                        checked((uint)response.Code),
+                        rawResponseBody);
+                }
+                finally
+                {
+                    Clear(transcriptHash);
+                    Clear(expectedRequestMac);
                 }
             }
         }

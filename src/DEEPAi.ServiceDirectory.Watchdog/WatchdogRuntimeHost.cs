@@ -6,7 +6,16 @@ using DEEPAi.ServiceDirectory.Infrastructure.WatchdogProtocol;
 
 namespace DEEPAi.ServiceDirectory.Watchdog
 {
-    internal sealed class WatchdogRuntimeHost : IDisposable
+    internal interface IWatchdogRuntime : IDisposable
+    {
+        Task Completion { get; }
+
+        void Start();
+
+        bool Stop(TimeSpan timeout);
+    }
+
+    internal sealed class WatchdogRuntimeHost : IWatchdogRuntime
     {
         internal static readonly TimeSpan MonitorInterval =
             TimeSpan.FromSeconds(10);
@@ -27,6 +36,8 @@ namespace DEEPAi.ServiceDirectory.Watchdog
         private readonly IWatchdogClock _clock;
         private readonly WatchdogMonitorPolicy _monitorPolicy;
         private readonly WatchdogPipeServer _pipeServer;
+        private readonly Func<CancellationToken, Task> _monitorWorker;
+        private readonly Func<CancellationToken, Task> _pipeWorker;
         private CancellationTokenSource _cancellation;
         private Task _completion;
         private bool _started;
@@ -58,6 +69,18 @@ namespace DEEPAi.ServiceDirectory.Watchdog
                     ?? throw new ArgumentNullException(
                         nameof(securityAuditLogger)),
                 HandlePipeCommand);
+            _monitorWorker = RunMonitorAsync;
+            _pipeWorker = _pipeServer.RunAsync;
+        }
+
+        internal WatchdogRuntimeHost(
+            Func<CancellationToken, Task> monitorWorker,
+            Func<CancellationToken, Task> pipeWorker)
+        {
+            _monitorWorker = monitorWorker
+                ?? throw new ArgumentNullException(nameof(monitorWorker));
+            _pipeWorker = pipeWorker
+                ?? throw new ArgumentNullException(nameof(pipeWorker));
         }
 
         internal Task Completion
@@ -71,6 +94,8 @@ namespace DEEPAi.ServiceDirectory.Watchdog
             }
         }
 
+        Task IWatchdogRuntime.Completion => Completion;
+
         internal bool LastAutomaticRestartFailed
         {
             get
@@ -78,6 +103,17 @@ namespace DEEPAi.ServiceDirectory.Watchdog
                 lock (_operationGate)
                 {
                     return _lastAutomaticRestartFailed;
+                }
+            }
+        }
+
+        internal bool IsDisposed
+        {
+            get
+            {
+                lock (_lifecycleGate)
+                {
+                    return _disposed;
                 }
             }
         }
@@ -112,14 +148,79 @@ namespace DEEPAi.ServiceDirectory.Watchdog
                 }
 
                 _cancellation = new CancellationTokenSource();
-                Task monitor = RunMonitorAsync(_cancellation.Token);
-                Task pipe = _pipeServer.RunAsync(_cancellation.Token);
-                _completion = ObserveWorkersAsync(
-                    monitor,
-                    pipe,
-                    _cancellation);
-                _started = true;
+                Task monitor = null;
+                Task pipe = null;
+                try
+                {
+                    monitor = _monitorWorker(_cancellation.Token);
+                    if (monitor == null)
+                    {
+                        throw new InvalidOperationException(
+                            "The watchdog monitor did not return a completion task.");
+                    }
+
+                    pipe = _pipeWorker(_cancellation.Token);
+                    if (pipe == null)
+                    {
+                        throw new InvalidOperationException(
+                            "The watchdog pipe server did not return a completion task.");
+                    }
+
+                    _completion = ObserveWorkersAsync(
+                        monitor,
+                        pipe,
+                        _cancellation);
+                    _started = true;
+                }
+                catch (Exception workerStartFailure)
+                {
+                    Exception cancellationFailure = null;
+                    try
+                    {
+                        _cancellation.Cancel();
+                    }
+                    catch (Exception exception)
+                    {
+                        cancellationFailure = exception;
+                    }
+
+                    if (monitor != null && pipe != null)
+                    {
+                        _completion = Task.WhenAll(monitor, pipe);
+                    }
+                    else
+                    {
+                        _completion = monitor ?? pipe;
+                    }
+
+                    if (_completion == null)
+                    {
+                        _cancellation.Dispose();
+                        _cancellation = null;
+                    }
+                    else
+                    {
+                        // A worker started before its sibling failed. Retain
+                        // lifecycle ownership so Dispose must drain that task.
+                        _started = true;
+                    }
+
+                    if (cancellationFailure != null)
+                    {
+                        throw new AggregateException(
+                            "A watchdog worker failed to start and cancellation also failed.",
+                            workerStartFailure,
+                            cancellationFailure);
+                    }
+
+                    throw;
+                }
             }
+        }
+
+        void IWatchdogRuntime.Start()
+        {
+            Start();
         }
 
         internal bool Stop(TimeSpan timeout)
@@ -155,7 +256,17 @@ namespace DEEPAi.ServiceDirectory.Watchdog
             }
         }
 
+        bool IWatchdogRuntime.Stop(TimeSpan timeout)
+        {
+            return Stop(timeout);
+        }
+
         public void Dispose()
+        {
+            Dispose(TimeSpan.FromSeconds(5));
+        }
+
+        internal void Dispose(TimeSpan timeout)
         {
             lock (_lifecycleGate)
             {
@@ -165,14 +276,24 @@ namespace DEEPAi.ServiceDirectory.Watchdog
                 }
             }
 
-            bool stopped = Stop(TimeSpan.FromSeconds(5));
+            bool stopped = Stop(timeout);
             lock (_lifecycleGate)
             {
-                if (stopped)
+                if (_disposed)
                 {
-                    _cancellation?.Dispose();
+                    return;
                 }
 
+                if (!stopped
+                    || (_completion != null && !_completion.IsCompleted))
+                {
+                    throw new InvalidOperationException(
+                        "The watchdog runtime cannot be disposed while workers are still running.");
+                }
+
+                _cancellation?.Dispose();
+                _cancellation = null;
+                _started = false;
                 _disposed = true;
             }
         }

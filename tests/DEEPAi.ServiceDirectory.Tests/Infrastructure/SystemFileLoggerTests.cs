@@ -249,6 +249,44 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void AppliedRetentionOverridesStaleEventProducerValue()
+        {
+            string dataRoot = CreateDataRoot();
+            try
+            {
+                string logDirectory = GetLogDirectory(dataRoot);
+                string longTermLog = CreateLogFile(
+                    logDirectory,
+                    "dpai-sd_2026-01-01.log");
+                var localNow = new DateTimeOffset(
+                    2026,
+                    7,
+                    18,
+                    12,
+                    0,
+                    0,
+                    TimeSpan.FromHours(9));
+                var logger = new SystemFileLogger(
+                    dataRoot,
+                    () => localNow);
+
+                logger.ApplyRetention(1095);
+                localNow = localNow.AddDays(1);
+                logger.WriteSyncSucceeded(
+                    new Guid(
+                        "55555555-5555-5555-5555-555555555555"),
+                    "PERIODIC",
+                    30);
+
+                Assert.IsTrue(File.Exists(longTermLog));
+            }
+            finally
+            {
+                DeleteDataRoot(dataRoot);
+            }
+        }
+
+        [TestMethod]
         public void RejectsLineBreaksAndNonCanonicalDetailTokensBeforeWriting()
         {
             string dataRoot = CreateDataRoot();

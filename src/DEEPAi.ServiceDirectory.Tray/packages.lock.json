@@ -4,7 +4,7 @@
     ".NETFramework,Version=v4.8": {
       "H.NotifyIcon.Wpf": {
         "type": "Direct",
-        "requested": "[2.4.1, )",
+        "requested": "[2.4.1, 2.4.1]",
         "resolved": "2.4.1",
         "contentHash": "aDfDSHCCOWgQoIvAApiog/MhriXibacqANQm+b5GaRCgRg92u5J2QcoW2C+wIblgxhtGx3o32/DCKWRR5C/KLw==",
         "dependencies": {

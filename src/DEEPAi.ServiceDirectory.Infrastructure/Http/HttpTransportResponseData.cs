@@ -1,16 +1,20 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.Http
 {
     internal sealed class HttpTransportResponseData
     {
         private readonly byte[] _body;
+        private readonly IReadOnlyDictionary<string, string> _headers;
 
         private HttpTransportResponseData(
             int statusCode,
             string contentType,
             byte[] body,
-            int? retryAfterSeconds)
+            int? retryAfterSeconds,
+            IDictionary<string, string> headers)
         {
             if (statusCode < 100 || statusCode > 599)
             {
@@ -48,6 +52,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             ContentType = contentType;
             RetryAfterSeconds = retryAfterSeconds;
             _body = (byte[])body.Clone();
+            _headers = CopyHeaders(headers);
         }
 
         internal int StatusCode { get; }
@@ -57,6 +62,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         internal int ContentLength => _body.Length;
 
         internal int? RetryAfterSeconds { get; }
+
+        internal IReadOnlyDictionary<string, string> Headers => _headers;
 
         internal byte[] GetBody()
         {
@@ -75,7 +82,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 response.StatusCode,
                 response.ContentType,
                 response.GetBody(),
-                response.RetryAfterSeconds);
+                response.RetryAfterSeconds,
+                null);
         }
 
         internal static HttpTransportResponseData FromAdmin(
@@ -90,7 +98,32 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 response.StatusCode,
                 response.ContentType,
                 response.GetBody(),
-                response.RetryAfterSeconds);
+                response.RetryAfterSeconds,
+                null);
+        }
+
+        internal static HttpTransportResponseData FromPeer(
+            PeerHttpResponseData response)
+        {
+            if (response == null)
+            {
+                throw new ArgumentNullException(nameof(response));
+            }
+
+            var headers = new Dictionary<string, string>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, string> header
+                in response.Headers)
+            {
+                headers.Add(header.Key, header.Value);
+            }
+
+            return new HttpTransportResponseData(
+                response.StatusCode,
+                response.ContentType,
+                response.GetBody(),
+                response.RetryAfterSeconds,
+                headers);
         }
 
         internal static HttpTransportResponseData Bodyless(int statusCode)
@@ -106,7 +139,34 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 statusCode,
                 null,
                 new byte[0],
+                null,
                 null);
+        }
+
+        private static IReadOnlyDictionary<string, string> CopyHeaders(
+            IDictionary<string, string> headers)
+        {
+            var copy = new Dictionary<string, string>(
+                StringComparer.OrdinalIgnoreCase);
+            if (headers != null)
+            {
+                foreach (KeyValuePair<string, string> header in headers)
+                {
+                    if (string.IsNullOrEmpty(header.Key)
+                        || string.IsNullOrEmpty(header.Value)
+                        || header.Value.IndexOf('\r') >= 0
+                        || header.Value.IndexOf('\n') >= 0)
+                    {
+                        throw new ArgumentException(
+                            "A transport response contains an invalid header.",
+                            nameof(headers));
+                    }
+
+                    copy.Add(header.Key, header.Value);
+                }
+            }
+
+            return new ReadOnlyDictionary<string, string>(copy);
         }
     }
 }

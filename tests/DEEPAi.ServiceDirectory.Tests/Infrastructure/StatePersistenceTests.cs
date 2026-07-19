@@ -56,7 +56,32 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void StoreCreatesBothDocumentsAndReloadsCommittedSnapshot()
+        public void StateXmlCodecUsesInstallerCanonicalEmptyDocuments()
+        {
+            const string ExpectedDirectoryXml =
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n"
+                + "<Directory SchemaVersion=\"1\">\r\n"
+                + "  <LogicalClock>0</LogicalClock>\r\n"
+                + "  <Records />\r\n"
+                + "</Directory>";
+            const string ExpectedPendingXml =
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n"
+                + "<PendingRegistrations SchemaVersion=\"1\">\r\n"
+                + "  <Items />\r\n"
+                + "</PendingRegistrations>";
+            var codec = new StateXmlCodec();
+            DirectorySnapshot empty = DirectorySnapshot.Empty();
+
+            CollectionAssert.AreEqual(
+                StrictUtf8.GetBytes(ExpectedDirectoryXml),
+                codec.SerializeDirectory(empty));
+            CollectionAssert.AreEqual(
+                StrictUtf8.GetBytes(ExpectedPendingXml),
+                codec.SerializePending(empty));
+        }
+
+        [TestMethod]
+        public void StoreLoadsInstallerInitializedDocumentsAndReloadsCommittedSnapshot()
         {
             string stateDirectory = CreateStateDirectory();
             try
@@ -120,11 +145,11 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 Assert.IsTrue(recovered.IsSuccess);
                 Assert.AreEqual(0, recovered.Snapshot.Records.Count);
                 Assert.AreEqual(0UL, recovered.Snapshot.LogicalClock);
-                Assert.IsFalse(File.Exists(
+                Assert.IsTrue(File.Exists(
                     Path.Combine(stateDirectory, "directory.xml")));
-                Assert.IsFalse(File.Exists(
+                Assert.IsTrue(File.Exists(
                     Path.Combine(stateDirectory, "pending.xml")));
-                Assert.IsFalse(File.Exists(
+                Assert.IsTrue(File.Exists(
                     Path.Combine(stateDirectory, "directory.xml.bak")));
                 Assert.IsFalse(File.Exists(
                     Path.Combine(stateDirectory, "pending.xml.bak")));
@@ -205,9 +230,9 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 Assert.IsTrue(reloaded.IsSuccess);
                 Assert.AreEqual(0, reloaded.Snapshot.Records.Count);
                 Assert.AreEqual(0UL, reloaded.Snapshot.LogicalClock);
-                Assert.IsFalse(File.Exists(
+                Assert.IsTrue(File.Exists(
                     Path.Combine(stateDirectory, "directory.xml")));
-                Assert.IsFalse(File.Exists(
+                Assert.IsTrue(File.Exists(
                     Path.Combine(stateDirectory, "pending.xml")));
                 AssertJournalIsEmpty(stateDirectory);
             }
@@ -299,7 +324,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 Assert.AreEqual(
                     StateCommitFailureCode.RecoveryRequired,
                     commit.FailureCode);
-                Assert.IsFalse(File.Exists(
+                Assert.IsTrue(File.Exists(
                     Path.Combine(stateDirectory, "directory.xml")));
                 Assert.IsTrue(initial.IsSuccess);
             }
@@ -312,7 +337,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         [TestMethod]
         public void LoadFailsClosedWhenAStateTargetIsADirectory()
         {
-            string stateDirectory = CreateStateDirectory();
+            string stateDirectory = CreateStateDirectory(false);
             try
             {
                 Directory.CreateDirectory(Path.Combine(
@@ -338,7 +363,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         [TestMethod]
         public void LoadFailsClosedWhenOnlyABackupStateFileRemains()
         {
-            string stateDirectory = CreateStateDirectory();
+            string stateDirectory = CreateStateDirectory(false);
             try
             {
                 File.WriteAllBytes(
@@ -352,6 +377,28 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 Assert.IsFalse(loaded.IsSuccess);
                 Assert.AreEqual(
                     StateLoadFailureCode.RecoveryFailed,
+                    loaded.FailureCode);
+                Assert.IsNull(loaded.Snapshot);
+            }
+            finally
+            {
+                DeleteStateDirectory(stateDirectory);
+            }
+        }
+
+        [TestMethod]
+        public void LoadFailsClosedWhenBothPrimaryStateDocumentsAreMissing()
+        {
+            string stateDirectory = CreateStateDirectory(false);
+            try
+            {
+                StateLoadResult loaded =
+                    new XmlServiceDirectoryStateStore(
+                        stateDirectory).Load();
+
+                Assert.IsFalse(loaded.IsSuccess);
+                Assert.AreEqual(
+                    StateLoadFailureCode.InvalidData,
                     loaded.FailureCode);
                 Assert.IsNull(loaded.Snapshot);
             }
@@ -432,7 +479,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void PreparedAbsenceRollbackResumesWithDurableDiscardFiles()
+        public void PreparedRollbackResumesAfterInterruptedCleanup()
         {
             string stateDirectory = CreateStateDirectory();
             try
@@ -469,11 +516,11 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     Path.Combine(stateDirectory, "journal"),
                     "*.discard.bin",
                     SearchOption.AllDirectories);
-                Assert.IsTrue(discardFiles.Length > 0);
-                Assert.IsFalse(File.Exists(Path.Combine(
+                Assert.AreEqual(0, discardFiles.Length);
+                Assert.IsTrue(File.Exists(Path.Combine(
                     stateDirectory,
                     "directory.xml")));
-                Assert.IsFalse(File.Exists(Path.Combine(
+                Assert.IsTrue(File.Exists(Path.Combine(
                     stateDirectory,
                     "directory.xml.bak")));
 
@@ -526,12 +573,25 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 4UL);
         }
 
-        private static string CreateStateDirectory()
+        private static string CreateStateDirectory(
+            bool initializeState = true)
         {
             string path = Path.Combine(
                 Path.GetTempPath(),
                 "dpai-sd-state-tests-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(path);
+            if (initializeState)
+            {
+                var codec = new StateXmlCodec();
+                DirectorySnapshot empty = DirectorySnapshot.Empty();
+                File.WriteAllBytes(
+                    Path.Combine(path, "directory.xml"),
+                    codec.SerializeDirectory(empty));
+                File.WriteAllBytes(
+                    Path.Combine(path, "pending.xml"),
+                    codec.SerializePending(empty));
+            }
+
             return path;
         }
 
