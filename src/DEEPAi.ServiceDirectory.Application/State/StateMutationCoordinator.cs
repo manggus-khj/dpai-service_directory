@@ -4,6 +4,7 @@ using System.Threading;
 using DEEPAi.ServiceDirectory.Application.Persistence;
 using DEEPAi.ServiceDirectory.Domain;
 using DEEPAi.ServiceDirectory.Domain.Registration;
+using DEEPAi.ServiceDirectory.Domain.Synchronization;
 
 namespace DEEPAi.ServiceDirectory.Application.State
 {
@@ -188,6 +189,22 @@ namespace DEEPAi.ServiceDirectory.Application.State
                 productCode,
                 localInstanceId,
                 utcNow));
+        }
+
+        // The caller must pass only a snapshot whose peer authentication and
+        // complete batch set have already been validated outside the mutation gate.
+        public StateMutationResult<SynchronizationMergeResult>
+            MergeVerifiedSynchronizationSnapshot(
+                SynchronizationSnapshot verifiedRemoteSnapshot)
+        {
+            if (verifiedRemoteSnapshot == null)
+            {
+                throw new ArgumentNullException(nameof(verifiedRemoteSnapshot));
+            }
+
+            return ExecuteMutation(current => SynchronizationMerger.Merge(
+                current,
+                verifiedRemoteSnapshot));
         }
 
         public StateLoadResult Recover()

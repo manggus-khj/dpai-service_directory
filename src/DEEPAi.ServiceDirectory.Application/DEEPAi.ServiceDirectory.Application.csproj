@@ -44,6 +44,7 @@
     <Compile Include="Queries\ApprovedServiceLookup.cs" />
     <Compile Include="State\StateMutationCoordinator.cs" />
     <Compile Include="State\StateMutationResult.cs" />
+    <Compile Include="Synchronization\InboundSynchronizationStaging.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

@@ -44,6 +44,8 @@
     <Compile Include="ServiceDefinition.cs" />
     <Compile Include="ServiceRecord.cs" />
     <Compile Include="ServiceRecordRevisionComparer.cs" />
+    <Compile Include="Synchronization\SynchronizationMerge.cs" />
+    <Compile Include="Synchronization\SynchronizationSnapshot.cs" />
     <Compile Include="Time\LogicalVersionClock.cs" />
     <Compile Include="Validation\ServiceDefinitionValidator.cs" />
   </ItemGroup>

@@ -147,6 +147,13 @@ namespace DEEPAi.ServiceDirectory.Domain.Registration
                 return ApprovalResult.Failure(current, DomainErrorCode.LimitExceeded);
             }
 
+            if (current.LogicalClock == ulong.MaxValue)
+            {
+                return ApprovalResult.Failure(
+                    current,
+                    DomainErrorCode.LogicalClockExhausted);
+            }
+
             ulong logicalVersion = LogicalVersionClock.Next(current.LogicalClock);
             ServiceRecord approvedRecord = ServiceRecord.CreateActive(
                 pending.Requested,
@@ -214,6 +221,13 @@ namespace DEEPAi.ServiceDirectory.Domain.Registration
             if (!current.TryGetRecord(productCode, out existingRecord) || existingRecord.Deleted)
             {
                 return DeleteResult.Failure(current, DomainErrorCode.NotFound);
+            }
+
+            if (current.LogicalClock == ulong.MaxValue)
+            {
+                return DeleteResult.Failure(
+                    current,
+                    DomainErrorCode.LogicalClockExhausted);
             }
 
             ulong logicalVersion = LogicalVersionClock.Next(current.LogicalClock);

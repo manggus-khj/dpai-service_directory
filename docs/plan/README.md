@@ -1,10 +1,10 @@
 # 서비스 디렉토리 계획 문서 안내
 
 > 문서 묶음 상태: 설계 초안
-> 구현 상태: 초기 기반과 UI 부분 구현 중, 기존 기반 Debug|x64 빌드 확인·현재 작업 트리 빌드·실행 미검증
+> 구현 상태: 초기 기반·UI·저장 복구·External/Admin/Peer protocol·공용 `HttpListener` transport host·와치독 실행체 부분 구현, 기존 기반 Debug|x64 빌드 확인·현재 작업 트리 빌드·실행 미검증
 > 최종 정리일: 2026-07-18
 
-이 디렉터리는 서비스 디렉토리의 제품 설계, API 계약, 공통 보안 기준을 관리한다. 현재 저장소에는 x64 솔루션, `LogicalVersion`·snapshot `LogicalClock` 도메인 모델과 결정적 revision 비교, 등록 상태 전이·승인 서비스 조회와 mutation coordinator, 저장 계약, External 일일 API 키 코덱·헤더 검증 경계, 원자 파일 교체, 시스템 파일 로그·보존, Windows Application Event Log 보안 진단·flood limiter primitive, bounded XML 입력, 상세 상태를 처리하는 Named Pipe wire codec, `ListenAddress` prefix·요청 endpoint guard, Admin Windows identity 인가와 Peer P-256 pairing 암호 primitive가 있다. InternalProtocol의 Admin XML DTO·codec와 `H.NotifyIcon.Wpf` 기반 WPF Tray 프로젝트·loopback 클라이언트·라이트 테마 UI 소스도 추가되어 있다. 2026-07-18 Visual Studio Build Tools 2022에서 이 두 프로젝트 추가 전 기존 기반의 Debug|x64 빌드를 경고·오류 없이 확인했지만 현재 작업 트리의 빌드·실행, Release, 테스트와 패키징은 검증하지 않았다. Windows Service와 HTTP host·서버 측 API 라우팅, XML serializer·다중 파일 복구와 durable logical clock 저장, 실제 sync 병합, 설정 영속화, 보안 진단 host·installer 통합, 와치독 Windows Service 실행체, 실제 Inno Setup 설치 프로그램과 테스트는 구현되지 않았다. 문서에서 “확정”이라고 표시한 내용도 구현 또는 검증 완료를 뜻하지 않는다.
+이 디렉터리는 서비스 디렉토리의 제품 설계, API 계약, 공통 보안 기준을 관리한다. 현재 저장소에는 x64 솔루션, 논리 버전 snapshot·결정적 sync 병합과 mutation coordinator, canonical 저장 XML v1·config/state store·복구 저널, 시스템 로그·보안 진단 primitive가 있다. External 세 endpoint·`WDOG` loopback health와 Admin 12개 endpoint의 transport-neutral HTTP 경계, strict External·Admin·Peer XML codec, Peer pairing/session MAC·KDF·replay·Push staging·불변 Pull snapshot primitive도 소스와 계약 테스트로 구현했다. 설정된 원격 IP literal과 `127.0.0.1` 두 prefix만 등록하고 exact raw target으로 인증·경계를 선택하며 세 어댑터에 요청을 전달하고 응답·전체 deadline·중지 경합을 관리하는 공용 `HttpListener` transport host와 가상 transport 계약 테스트 소스도 추가됐다. WPF Tray UI·클라이언트와 별도 Watchdog Windows Service에는 10초 health, 연결부터 전체 응답 완료까지 3초 deadline, restart latch, 제한된 ServiceController 및 BOM 없는 UTF-8 한 줄·보호 DACL·client token 이중 검증 Named Pipe server가 추가됐다. .NET Framework 4.8 x64 MSTest 프로젝트와 `tools/test.ps1`도 있다. 2026-07-18 초기 NuGet restore와 PackageReference lock 생성을 완료했지만 이후 프로젝트 참조가 늘어난 현재 작업 트리는 빌드·실행·테스트·lock 재생성을 검증하지 않았다. 메인 Windows Service와 host 수명주기 연결, 실제 Windows `HttpListener`·Negotiate/NTLM·deadline·중지 경합 실행 검증, Admin application handler, Peer 상태 머신·HTTP/session/DPAPI/scheduler, config·PeerSecret 복합 transaction, Inno Setup 설치 프로그램과 package 명령은 아직 구현되지 않았고, installer의 와치독 가상 서비스 계정·서비스 SID 활성화·메인 서비스 제어 DACL도 아직 구성되지 않았다. 문서에서 “확정” 또는 “구현”이라고 표시한 내용도 별도 검증 표기가 없으면 빌드·실행 완료를 뜻하지 않는다.
 
 ## 확정 운영 기준
 
@@ -25,7 +25,7 @@
 - 시스템 파일 로그 보존은 기본 `30`일, 허용 범위 `1..1095`일. 인증·인가·신뢰 경계 실패는 9개 파일 이벤트와 분리해 Windows Application Event Log source `DEEPAi.ServiceDirectory.Security`에 기록하고 비밀값 배제·flood 억제 적용
 - 외부 등록 결과용 별도 API와 거절 이력을 제공하지 않고 외부 앱은 `/api/services` 재조회로 승인 반영 여부만 확인
 - 일반 제거는 `%ProgramData%\DEEPAi\ServiceDirectory\`의 운영 데이터·로그·Peer 자격 증명을 보존하고 명시적 전체 삭제 선택 때만 제거
-- 최종 설치 파일과 분리 SHA-256 manifest는 저장소 루트 [`installer`](../../installer/)에 출력한다. Release PDB는 설치 파일·payload·운영 장비에서 제외하고 실제 배포 바이너리와 일치하는 심볼 세트를 접근 통제된 내부 저장소에 별도 보관
+- 최종 Inno Setup 설치 EXE만 저장소 루트 [`installer`](../../installer/)에 출력한다. 코드 서명과 설치용 체크섬·manifest는 생성·배포·검증하지 않고 수동 오프라인 설치에서 EXE를 직접 실행한다는 승인 예외를 적용한다. Release PDB는 설치 파일·payload·운영 장비에서 제외하고 실제 배포 바이너리와 일치하는 심볼 세트를 접근 통제된 내부 저장소에 별도 보관
 
 상세 요청 제한과 보안 wire contract는 [외부 API 명세](./서비스디렉토리_외부애플리케이션_API명세.md)와 [내부 API 명세](./서비스디렉토리_내부_API명세.md)를 단일 원본으로 사용한다.
 
@@ -69,14 +69,14 @@
 | 와치독 | 헬스체크, 제한된 서비스 제어 | 디렉토리 데이터 변경 |
 | 상대 서비스 디렉토리 | `/api/sync/*` | `/admin/*`, 승인 대기 큐 |
 
-“외부”는 다른 애플리케이션이 지속적으로 의존할 안정된 공개 계약이라는 뜻이며 현재 문서 상태는 초안이다. 요청은 4바이트 ProductCode와 일일 API 키를 검증하지만, 별도 secret이 없는 프로젝트 예외이므로 이를 강한 호출자 인증으로 표현하지 않는다.
+“외부”는 다른 애플리케이션이 지속적으로 의존할 확정된 wire 계약이라는 뜻이다. 현재 저장소 어셈블리는 재배포 가능한 client SDK가 아니므로 연동 애플리케이션은 외부 API 명세와 XSD를 단일 원본으로 사용한다. 요청은 4바이트 ProductCode와 일일 API 키를 검증하지만, 별도 secret이 없는 프로젝트 예외이므로 이를 강한 호출자 인증으로 표현하지 않는다.
 
-## 구현 전에 해소할 결정
+## 확정된 기반 계약과 구현 상태
 
-다음 항목은 문서를 정리하면서 발견한 구현 차단 사항이다.
+다음 항목의 선택은 확정됐다. 문서 확정은 코드·실행 검증 완료를 뜻하지 않으며 현재 구현이 없는 항목을 완료로 표시하지 않는다.
 
-- 테스트 프레임워크와 재현 가능한 test/package 진입점. InternalProtocol·Tray 추가 전 기존 기반의 Debug|x64 MSBuild 진입점만 실행 확인됨
-- XML `SchemaVersion`·마이그레이션과 여러 파일 변경용 트랜잭션 저널
-- 코드 서명 없는 오프라인 패치 manifest·체크섬의 별도 신뢰 채널과 운영 절차
+- 테스트는 exact `MSTest.TestFramework`·`MSTest.TestAdapter` `4.3.2`와 PackageReference lock을 사용한다. x64 테스트 프로젝트, lock과 `powershell -NoProfile -File .\tools\test.ps1 -Configuration Debug`는 구현됐으나 아직 실행하지 않았다. `powershell -NoProfile -File .\tools\package.ps1 -Configuration Release`와 Inno Setup 소스는 미구현이다.
+- `directory.xml`·`pending.xml`·`config.xml`은 루트 `SchemaVersion="1"`로 시작하고 명시적인 순차 migration만 허용한다. directory·pending serializer, snapshot store, before·after image와 `PREPARED`·`COMMITTED` 저널 실행체 및 in-process fault-injection 테스트 소스는 구현됐다. config·PeerSecret store 결합, `.bak` 단독 복구, 실제 프로세스 종료·빌드·테스트 검증은 남아 있다.
+- 코드 서명과 오프라인 설치용 체크섬·manifest를 만들거나 확인하지 않고 설치 EXE를 직접 실행한다. 공통 하드닝 기준과 다른 이 선택의 잔여 위험은 개발계획 §8.4의 승인 예외에 기록하며 실제 Inno Setup package·설치 검증은 아직 미구현이다.
 
-해결되지 않은 항목을 임시 규칙이나 제한 없는 네트워크 노출로 대체해 완료 처리하지 않는다. 평문 HTTP와 External 일일 API 키는 개발계획 §8.2·§8.3의 승인된 예외 범위에서만 허용하며 Admin·Peer에 확장하지 않는다.
+구현되지 않은 항목을 임시 규칙이나 제한 없는 네트워크 노출로 대체해 완료 처리하지 않는다. 평문 HTTP, External 일일 API 키와 무검증 오프라인 패치는 각각 개발계획 §8.2·§8.3·§8.4의 승인된 예외 범위에서만 허용하며 다른 신뢰 경계나 자동 업데이트에 확장하지 않는다.

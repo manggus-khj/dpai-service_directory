@@ -31,15 +31,52 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Security" />
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\DEEPAi.ServiceDirectory.Application\DEEPAi.ServiceDirectory.Application.csproj">
+      <Project>{D9501542-E687-4603-AA5F-9107605B11F2}</Project>
+      <Name>DEEPAi.ServiceDirectory.Application</Name>
+    </ProjectReference>
     <ProjectReference Include="..\DEEPAi.ServiceDirectory.Domain\DEEPAi.ServiceDirectory.Domain.csproj">
       <Project>{3DDACBF2-4EC4-4950-A6AA-8242A3BB837C}</Project>
       <Name>DEEPAi.ServiceDirectory.Domain</Name>
     </ProjectReference>
+    <ProjectReference Include="..\DEEPAi.ServiceDirectory.ExternalProtocol\DEEPAi.ServiceDirectory.ExternalProtocol.csproj">
+      <Project>{B380F00C-9518-4907-9EA9-03759DB0B37A}</Project>
+      <Name>DEEPAi.ServiceDirectory.ExternalProtocol</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\DEEPAi.ServiceDirectory.InternalProtocol\DEEPAi.ServiceDirectory.InternalProtocol.csproj">
+      <Project>{47D9AE4E-20A8-4E39-A188-F7326EC829B7}</Project>
+      <Name>DEEPAi.ServiceDirectory.InternalProtocol</Name>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Configuration\ConfigurationValueComparer.cs" />
+    <Compile Include="Configuration\IServiceDirectoryConfigurationStore.cs" />
+    <Compile Include="Configuration\ServiceDirectoryConfiguration.cs" />
+    <Compile Include="Http\AdminHttpAdapter.cs" />
+    <Compile Include="Http\AdminHttpHandlerContract.cs" />
+    <Compile Include="Http\AdminHttpRequestData.cs" />
+    <Compile Include="Http\AdminHttpResponseData.cs" />
+    <Compile Include="Http\AdminQueryStringParser.cs" />
+    <Compile Include="Http\AdminRequestAdmissionController.cs" />
+    <Compile Include="Http\AdminSecurityBoundary.cs" />
+    <Compile Include="Http\ExternalHttpAdapter.cs" />
+    <Compile Include="Http\ExternalHttpRequestData.cs" />
+    <Compile Include="Http\ExternalHttpResponseData.cs" />
+    <Compile Include="Http\ExternalQueryStringParser.cs" />
+    <Compile Include="Http\ExternalRequestAdmissionController.cs" />
+    <Compile Include="Http\ExternalSecurityAuditWriter.cs" />
+    <Compile Include="Http\HttpListenerTransport.cs" />
+    <Compile Include="Http\HttpListenerRequestRouting.cs" />
+    <Compile Include="Http\HttpTransportResponseData.cs" />
+    <Compile Include="Http\RawHttpRequestTarget.cs" />
+    <Compile Include="Http\RawHttpRequestTargetParser.cs" />
+    <Compile Include="Http\ServiceDirectoryHttpListenerHost.cs" />
+    <Compile Include="Http\WatchdogHealthHttpAdapter.cs" />
+    <Compile Include="Http\WatchdogHealthSecurityAuditWriter.cs" />
     <Compile Include="Logging\SecurityAuditContract.cs" />
     <Compile Include="Logging\SecurityAuditEventLogger.cs" />
     <Compile Include="Logging\SecurityAuditRateLimiter.cs" />
@@ -47,9 +84,55 @@
     <Compile Include="Logging\SystemLogEventCode.cs" />
     <Compile Include="Networking\HttpRequestEndpointGuard.cs" />
     <Compile Include="Networking\ServiceDirectoryListenerAddress.cs" />
+    <Compile Include="PeerProtocol\ActivePeerSession.cs" />
     <Compile Include="PeerProtocol\P256PublicKeyBlob.cs" />
     <Compile Include="PeerProtocol\PairingCryptography.cs" />
+    <Compile Include="PeerProtocol\PairingMacHeaderCodec.cs" />
+    <Compile Include="PeerProtocol\PairedPeerCredential.cs" />
+    <Compile Include="PeerProtocol\PairingNegotiationModels.cs" />
+    <Compile Include="PeerProtocol\PairingNegotiationStateMachine.cs" />
+    <Compile Include="PeerProtocol\PairingNegotiationStateMachine.Decisions.cs" />
+    <Compile Include="PeerProtocol\PairingNegotiationStateMachine.Lifecycle.cs" />
+    <Compile Include="PeerProtocol\PairingSecretContext.cs" />
+    <Compile Include="PeerProtocol\PairingTerminalMessageAuthenticator.cs" />
+    <Compile Include="PeerProtocol\PairingTranscript.cs" />
+    <Compile Include="PeerProtocol\PeerAuthenticatedMessageData.cs" />
+    <Compile Include="PeerProtocol\PeerAuthenticationContract.cs" />
+    <Compile Include="PeerProtocol\PeerAuthenticationHeaderCodec.cs" />
+    <Compile Include="PeerProtocol\PeerCanonicalRequestTarget.cs" />
+    <Compile Include="PeerProtocol\PeerInboundRequestCoordinator.cs" />
+    <Compile Include="PeerProtocol\PeerKeyDerivation.cs" />
+    <Compile Include="PeerProtocol\PeerMessageAuthenticator.cs" />
+    <Compile Include="PeerProtocol\PeerMessageCanonicalizer.cs" />
+    <Compile Include="PeerProtocol\PeerNonceReplayCache.cs" />
+    <Compile Include="PeerProtocol\PeerOutboundSnapshotLease.cs" />
+    <Compile Include="PeerProtocol\PeerPairAuthenticationContext.cs" />
+    <Compile Include="PeerProtocol\PeerPushBatchProcessor.cs" />
+    <Compile Include="PeerProtocol\PeerRequestRateLimiter.cs" />
     <Compile Include="Persistence\AtomicFileWriter.cs" />
+    <Compile Include="Persistence\ConfigurationXmlCodec.cs" />
+    <Compile Include="Persistence\DirectorySnapshotValueComparer.cs" />
+    <Compile Include="Persistence\PeerCredentialBinaryCodec.cs" />
+    <Compile Include="Persistence\PeerCredentialConfigurationValidator.cs" />
+    <Compile Include="Persistence\PeerCredentialFile.cs" />
+    <Compile Include="Persistence\PeerCredentialProtector.cs" />
+    <Compile Include="Persistence\PeerCredentialValueComparer.cs" />
+    <Compile Include="Persistence\PeerConfigurationTransactionStore.cs" />
+    <Compile Include="Persistence\PeerSecretAccessPolicy.cs" />
+    <Compile Include="Persistence\RecoveryJournalCodec.cs" />
+    <Compile Include="Persistence\RecoveryJournalFaults.cs" />
+    <Compile Include="Persistence\RecoveryJournalManager.cs" />
+    <Compile Include="Persistence\RecoveryJournalManager.Validation.cs" />
+    <Compile Include="Persistence\SerializationModel\ConfigurationXmlDocuments.cs" />
+    <Compile Include="Persistence\SerializationModel\RecoveryJournalDocuments.cs" />
+    <Compile Include="Persistence\SerializationModel\StateXmlDocuments.cs" />
+    <Compile Include="Persistence\StateFileChange.cs" />
+    <Compile Include="Persistence\StateFileTarget.cs" />
+    <Compile Include="Persistence\StateStoragePathPolicy.cs" />
+    <Compile Include="Persistence\StateXmlCodec.cs" />
+    <Compile Include="Persistence\WindowsFileSystem.cs" />
+    <Compile Include="Persistence\XmlServiceDirectoryConfigurationStore.cs" />
+    <Compile Include="Persistence\XmlServiceDirectoryStateStore.cs" />
     <Compile Include="Protocol\BoundedRequestBody.cs" />
     <Compile Include="Protocol\BoundedUtf8XmlInput.cs" />
     <Compile Include="Protocol\XmlInputLimits.cs" />

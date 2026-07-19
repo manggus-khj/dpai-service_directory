@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("DEEPAi Service Directory Internal Protocol")]
-[assembly: AssemblyDescription("Service directory Admin API wire contracts")]
+[assembly: AssemblyDescription("Service directory Admin and Peer API wire contracts")]
 [assembly: AssemblyCompany("DEEPAi")]
 [assembly: AssemblyProduct("DEEPAi Service Directory")]
 [assembly: ComVisible(false)]

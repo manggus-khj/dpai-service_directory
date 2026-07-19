@@ -1,7 +1,7 @@
 # 서비스 디렉토리 API 명세 안내
 
 > 문서 상태: 분리 완료, 세부 wire 계약 확정
-> 구현 상태: 승인 서비스 조회, 일일 API 키·헤더 검증, bounded XML 입력, Named Pipe wire codec, listener endpoint guard, Admin 인가, 보안 진단 Event Log·flood limiter와 Peer pairing 암호 primitive 부분 구현. Admin DTO·strict XML client codec와 Tray loopback client 소스 추가, 현재 작업 트리 빌드 미검증, HTTP 서버·host 통합 미구현
+> 구현 상태: External 세 endpoint·`WDOG` loopback health·Admin 12개 endpoint 경계와 이를 연결하는 공용 `HttpListener` transport host, strict External·Admin·Peer XML codec, Peer 인증·sync primitive, Tray client 및 Watchdog Windows Service 실행체 소스 추가. 현재 작업 트리 빌드·테스트 미검증, 메인 Windows Service 연결·Admin application handler·Peer HTTP 상태/session/DPAPI·wire orchestration 미구현
 > 최종 정리일: 2026-07-18
 
 기존의 단일 API 명세를 호출 주체와 신뢰 경계에 따라 두 문서로 분리했다. 이 파일은 호환되는 진입점과 문서 색인으로만 사용하며, 요청·응답의 단일 원본은 아래 두 상세 명세다.
@@ -51,7 +51,7 @@
 
 ## 현재 호환성 상태
 
-아직 HTTP API 서버 실행체는 없고 Tray의 Admin client도 실행 검증하지 않았지만 두 상세 명세의 wire 계약은 확정했다. 경로와 wire에는 API 버전 필드를 두지 않으며 현재 `/api/*`, `/admin/*`, `/api/sync/*` 경로를 영구 유지한다. 공개 뒤에는 기존 소비자가 계속 동작하는 호환 추가만 허용한다.
+두 IP literal prefix, raw request-target, 경로별 인증 선택, 세 완성 어댑터 dispatch, 응답 기록과 endpoint별 deadline을 담당하는 `HttpListener` transport host 소스는 추가됐지만 메인 Windows Service에 연결하지 않았고 실제 Windows listener·Negotiate/NTLM·중지 경합을 실행 검증하지 않았다. Peer wire handler가 없으므로 `/api/sync/*`는 host에서 body 없는 `404`로 닫혀 있다. Tray의 Admin client도 실행 검증하지 않았지만 두 상세 명세의 wire 계약은 확정했다. 경로와 wire에는 API 버전 필드를 두지 않으며 현재 `/api/*`, `/admin/*`, `/api/sync/*` 경로를 영구 유지한다. 공개 뒤에는 기존 소비자가 계속 동작하는 호환 추가만 허용한다.
 
 - External 일일 API 키 헤더는 현재 44자 알고리즘에 영구 결합한다. 불가피한 교체는 기존 wire 변경이 아니라 별도 인증 헤더와 endpoint의 병렬 계약 및 명시적 migration으로만 수행한다.
 - HTTP 상태와 envelope 오류 매핑은 각 상세 명세에서 확정했다.

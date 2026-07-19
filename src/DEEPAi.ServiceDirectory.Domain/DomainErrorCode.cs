@@ -6,6 +6,9 @@ namespace DEEPAi.ServiceDirectory.Domain
         NotFound = 1001,
         Conflict = 1002,
         LimitExceeded = 1004,
+        RevisionCollision = 2005,
+        DirectoryCapacity = 2006,
+        LogicalClockExhausted = 2007,
         Internal = 3000
     }
 }

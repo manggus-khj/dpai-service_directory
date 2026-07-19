@@ -31,8 +31,14 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\DEEPAi.ServiceDirectory.Application\DEEPAi.ServiceDirectory.Application.csproj">
+      <Project>{D9501542-E687-4603-AA5F-9107605B11F2}</Project>
+      <Name>DEEPAi.ServiceDirectory.Application</Name>
+    </ProjectReference>
     <ProjectReference Include="..\DEEPAi.ServiceDirectory.Domain\DEEPAi.ServiceDirectory.Domain.csproj">
       <Project>{3DDACBF2-4EC4-4950-A6AA-8242A3BB837C}</Project>
       <Name>DEEPAi.ServiceDirectory.Domain</Name>
@@ -41,7 +47,20 @@
   <ItemGroup>
     <Compile Include="Authentication\DailyApiKeyAuthenticator.cs" />
     <Compile Include="Authentication\DailyApiKeyCodec.cs" />
+    <Compile Include="ExternalApi\ExternalApiContract.cs" />
+    <Compile Include="ExternalApi\ExternalApiHandler.cs" />
+    <Compile Include="ExternalApi\ExternalApiHandlerRequest.cs" />
+    <Compile Include="ExternalApi\ExternalApiHandlerResponse.cs" />
+    <Compile Include="ExternalApi\ExternalApiModels.cs" />
+    <Compile Include="ExternalApi\ExternalXmlCodec.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="RateLimiting\ExternalRequestConcurrencyLimiter.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\docs\plan\xsd\external.xsd">
+      <Link>Schema\external.xsd</Link>
+      <LogicalName>DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi.external.xsd</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

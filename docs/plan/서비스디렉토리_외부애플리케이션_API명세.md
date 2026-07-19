@@ -1,7 +1,7 @@
 # 서비스 디렉토리 외부 애플리케이션 API 명세
 
 > 문서 상태: 외부 wire 계약 확정
-> 구현 상태: 승인 서비스 조회 projection, 일일 API 키·exactly-one 헤더 검증, bounded strict UTF-8 XML 입력과 listener endpoint guard primitive 부분 구현, HTTP API 미구현·미검증
+> 구현 상태: External DTO와 embedded `external.xsd` 기반 strict parser·serializer, 승인 서비스 조회 projection, 일일 키·bounded 입력·endpoint guard 및 원격 External·loopback 와치독 transport-neutral 경계 소스 추가. 두 exact IP literal prefix, raw target handoff, 응답 기록과 `5/5/10초` 전체 deadline을 담당하는 공용 `HttpListener` host 소스도 추가됐지만 메인 Windows Service 연결·실제 Windows 실행과 현재 작업 트리 빌드·테스트는 미검증
 > 대상 독자: 서비스 디렉토리에 자기 서비스 정보를 조회·등록하는 다른 애플리케이션 개발자
 > 배포 범위: 사내 연동 개발자와 승인된 운영 담당자
 > 최종 정리일: 2026-07-18
@@ -19,6 +19,8 @@
 | `POST /api/registration` | 신규 등록 또는 기존 정보 변경 승인 요청 | 승인 대기 요청 생성 |
 
 다른 애플리케이션은 `/admin/*`, `/api/sync/*`, Named Pipe, 서비스 디렉토리의 XML 파일에 의존하면 안 된다.
+
+현재 transport-neutral External 어댑터는 설치된 non-loopback `ListenAddress`의 위 세 원격 endpoint만 담당한다. 와치독의 `http://127.0.0.1:21000/api/health` 호출은 응답 wire 형식만 공유하며, local endpoint `127.0.0.1:21000`과 loopback remote address를 함께 확인하는 별도 내부 경계다. 공용 host는 actual local endpoint와 exact raw `/api/*` 후보를 기준으로 두 어댑터를 분리하고 encoded fixed-route 시도도 decode하지 않은 채 해당 경계로 넘겨 인증·공유 동시 실행 뒤 `404`가 결정되게 한다. `/api/sync/*`와 명백한 경계 밖 경로는 body 없는 `404`로 닫는다. 메인 Windows Service 연결과 실제 Windows listener 실행은 아직 검증하지 않았으며 와치독 계약은 [내부 API 명세 §2.4](./서비스디렉토리_내부_API명세.md#24-health)를 따른다.
 
 ### 1.1 지원 규모와 호출 특성
 
@@ -40,6 +42,7 @@
 - 규범 스키마는 [`xsd/external.xsd`](./xsd/external.xsd)다. 요청은 DTD·외부 엔터티·본문 크기·깊이 제한을 먼저 적용한 뒤 스키마의 root, 순서, cardinality와 값을 엄격히 검증한다. 알 수 없는 요청 요소·속성, 중복 요소와 mixed content는 허용하지 않는다.
 - 응답의 호환 확장은 `Response`의 마지막 선택 요소인 `Extensions` 자식에서만 허용한다. 클라이언트는 `Extensions` 안의 모르는 요소를 무시해야 하며, 그 밖의 위치에 요소를 추가하거나 기존 필드 의미를 바꾸거나 새 필수 필드를 추가하지 않는다. 요청에는 `Extensions`를 허용하지 않는다.
 - 본문을 보내는 요청은 `Content-Type`을 지정하고, 클라이언트는 `Accept: application/xml`을 보낸다.
+- 요청 본문 압축은 지원하지 않는다. 비어 있지 않은 raw `Content-Encoding` 헤더 값이 있으면 본문을 읽기 전에 body 없는 `415`로 거부한다.
 - API payload의 모든 시각은 UTC ISO 8601 형식(예: `2026-07-17T02:00:00Z`)이다. §2.3 일일 API 키의 날짜만 시스템 로컬 날짜를 사용한다.
 
 ### 2.2 운영 보안 요구
@@ -100,14 +103,14 @@ X-DPAI-API-Key    = AAECAwQFBgcICQoLDA0OD37MVf5dYeif4Ss6OjGAC+g=
 
 ### 2.4 일일 API 키 검증 계약
 
-서비스 디렉토리는 요청을 라우팅하거나 본문을 처리하기 전에 다음 순서로 검증한다.
+서비스는 실제 local endpoint와 remote endpoint를 순서대로 확인한 뒤 시스템 로컬 `DateTimeOffset`을 요청당 한 번만 캡처한다. 그 값 하나로 아래 일일 API 키 검증을 한 번 수행하고, 같은 값을 health 응답 시각과 registration `RequestedUtc` 계산에도 사용한다. 자정이 처리 중간에 지나더라도 키를 두 번째 시각으로 다시 검증하지 않는다.
 
 1. `X-DPAI-API-Key` 헤더가 정확히 하나이며 44자 Base64인지 확인한다.
 2. 32바이트로 디코딩하고 앞 16바이트를 IV, 뒤 16바이트를 CipherText로 분리한다.
 3. 검증 시점 서비스 디렉토리 호스트의 시스템 로컬 날짜를 `yyyyMMdd`로 만든다.
 4. 해당 날짜의 SHA-256 결과를 AES-256 key로 사용해 CBC/PKCS#7로 복호화한다.
 5. 결과가 정확히 12바이트 ASCII이며 앞 4바이트가 유효한 ProductCode, 뒤 8바이트가 서버의 현재 LocalDate와 같은지 확인한다.
-6. 서비스 조회와 등록 요청은 복원한 ProductCode가 쿼리 또는 XML의 정규화된 ProductCode와 같은지 추가 확인한다. health는 이 비교 대상이 없다.
+5단계까지 통과한 뒤 fixed method·path를 분류하고 §2.6의 전체 동시 실행과 해당 endpoint token bucket을 적용한다. 정의되지 않은 method·path도 인증과 전체 동시 실행 제한은 통과해야 하지만 rate bucket은 만들거나 소비하지 않고 body 없는 `404`를 반환한다. 정의된 endpoint는 query·`Content-Type`·`Content-Encoding`과 bounded raw body를 검증한 뒤 기존 protocol handler로 넘긴다. 서비스 조회와 등록 요청은 이 단계에서 복원한 ProductCode가 query 또는 XML의 정규화된 ProductCode와 같은지 확인하며, 불일치하면 다른 키 오류와 같은 `401`·`1003`·`4101`로 처리한다. health는 ProductCode payload 비교 대상이 없다.
 
 서버의 현재 로컬 날짜만 허용하며 이전·다음 날짜에 대한 유예는 두지 않는다. 자정 경계에서 `401`을 받은 호출자는 새 로컬 날짜로 API 키를 다시 생성해 한 번 재시도할 수 있다. 참여 호스트는 동일한 timezone과 동기화된 시스템 시계를 사용해야 한다.
 
@@ -137,8 +140,14 @@ X-DPAI-API-Key    = AAECAwQFBgcICQoLDA0OD37MVf5dYeif4Ss6OjGAC+g=
 
 - ProductCode 제한과 IP 제한이 함께 있는 엔드포인트는 두 제한을 모두 통과해야 한다.
 - External 요청의 전체 동시 실행 수는 **32개**로 제한한다.
-- rate limit, burst 또는 동시 실행 제한을 초과하면 HTTP `429`, envelope `1004 LIMIT_EXCEEDED`와 `Retry-After` 헤더를 반환한다.
-- `Retry-After`는 해당 요청이 다시 허용될 때까지 남은 초를 나타낸다. 클라이언트는 이 값보다 먼저 재시도하면 안 된다.
+- `GET /api/health`는 `(ProductCode, 원격 IP)` 조합별 capacity `5`, 분당 `30` token refill의 bucket 하나를 사용한다.
+- `GET /api/services`는 ProductCode별 capacity `1`, 분당 `12` token refill bucket과 원격 IP별 capacity `1`, 분당 `60` token refill bucket을 사용한다. “별도 burst 없음”은 두 bucket의 capacity가 각각 `1`이라는 뜻이다.
+- `POST /api/registration`은 ProductCode별 capacity `2`, 분당 `3` token refill bucket과 원격 IP별 capacity `20`, 분당 `20` token refill bucket을 사용한다.
+- 두 bucket이 있는 endpoint는 둘 다 token이 있을 때만 각각 하나를 소비한다. 하나라도 부족하면 어느 bucket에서도 token을 소비하지 않는다.
+- ProductCode 계열 bucket map과 원격 IP 계열 bucket map은 endpoint prefix를 key에 포함하며 각각 최대 `4,096`개 key를 세 endpoint 전체에서 합산해 추적한다. health의 조합 bucket은 ProductCode 계열 map에 포함하며 별도 원격 IP bucket은 만들지 않는다. 새 key 공간을 만들 때는 bucket이 완전히 refill됐고 마지막 요청으로부터 `2분` 이상 지난 상태만 제거한다. 제한 중인 상태는 조기 제거하지 않으며 안전하게 제거할 상태가 없어 새 key를 수용할 수 없으면 fail closed로 HTTP `429`, envelope `1004 LIMIT_EXCEEDED`를 반환하고 `Retry-After`는 보내지 않는다.
+- token 부족처럼 해제 시각을 계산할 수 있는 rate limit은 HTTP `429`, envelope `1004 LIMIT_EXCEEDED`와 정수 초 `Retry-After`를 반환한다. 값은 해당 endpoint의 모든 필수 bucket이 다시 허용되는 시점까지의 남은 초를 올림한 값이며, 클라이언트는 이 값보다 먼저 재시도하면 안 된다.
+- 전체 동시 실행 `32`개 제한은 해제 시각을 계산할 수 없으므로 HTTP `429`, envelope `1004 LIMIT_EXCEEDED`를 반환하되 `Retry-After`는 보내지 않는다.
+- 인증된 정의되지 않은 method·path는 전체 동시 실행 제한만 적용하고 endpoint rate bucket key를 생성하거나 token을 소비하지 않는다.
 - 승인 대기 전체 cap은 해제 시각을 계산할 수 없으므로 이 절의 `Retry-After` 계약을 적용하지 않는다.
 
 ## 3. 공통 XML 계약
@@ -161,6 +170,8 @@ X-DPAI-API-Key    = AAECAwQFBgcICQoLDA0OD37MVf5dYeif4Ss6OjGAC+g=
 | `Result` | `OK` 또는 `ERROR` |
 | `Code` | 성공은 `0`, 실패는 오류 코드 |
 | `Message` | 사용자에게 보여 줄 수 있는 일반 설명. 스택, 내부 경로, API 키와 시크릿은 포함 금지 |
+
+성공 응답의 `Message`는 빈 문자열로 고정한다. 오류 응답은 아래 닫힌 `Code`별로 서버가 정한 일반 문구만 생성하며, handler가 요청값이나 `Exception.Message`를 전달하는 임의 문자열 입력 경로를 두지 않는다.
 
 ### 3.2 외부 오류 코드
 
@@ -191,7 +202,7 @@ HTTP `200`은 `Code=0`인 성공 응답에만 사용한다. 클라이언트는 H
 | `404` | `1001 NOT_FOUND` 또는 body 없음 | 승인 서비스가 없거나 정의되지 않은 경로 |
 | `409` | `1002 CONFLICT` | 같은 ProductCode의 상이한 대기 등 현재 상태 충돌 |
 | `413` | body 없음 | raw 요청 본문 제한 초과 |
-| `415` | body 없음 | 지원하지 않는 `Content-Type` |
+| `415` | body 없음 | 지원하지 않는 `Content-Type` 또는 `Content-Encoding` |
 | `429` | `1004 LIMIT_EXCEEDED` | rate limit, burst, 동시 실행 또는 승인 대기 cap 초과 |
 | `500` | `3000 INTERNAL` | 처리되지 않은 내부 오류. 상세 예외 비노출 |
 
@@ -319,20 +330,25 @@ HTTP `200`은 `Code=0`인 성공 응답에만 사용한다. 클라이언트는 H
 
 | 필드 | 확정 규칙 |
 |---|---|
-| `Name` | 필수. trim 후 1~128 Unicode scalar, UTF-8 인코딩 시 최대 512바이트. 제어문자 금지. 비교는 Ordinal 대소문자 구분 |
+| `Name` | 필수. trim 후 1~128 Unicode scalar, UTF-8 인코딩 시 최대 512바이트. 제어문자와 XML 1.0에서 기록할 수 없는 `U+FFFE`·`U+FFFF` 금지. 비교는 Ordinal 대소문자 구분 |
 | `ProductCode` | 필수. trim 후 `ToUpperInvariant()`, `[A-Z0-9]{4}` 형식의 정확히 4바이트 ASCII, `OrdinalIgnoreCase` 유일 키 |
 | `ServerAddress` | 필수. [개발계획 §5.1](./서비스디렉토리_개발계획.md#51-도메인-레코드)의 공통 `ServerAddress` 문법과 정규화·비교 규칙을 그대로 적용 |
 | `Port` | 정수 `1..65535` |
 
-`RegistrationRequest`의 XSD는 ProductCode 입력에만 선후행 XML whitespace와 ASCII 소문자를 허용한다. 서버는 trim·대문자 정규화와 4바이트 검증을 다시 수행한 뒤 비교·저장하며, `Service`를 포함한 모든 응답 ProductCode는 공백 없는 대문자 canonical 형식만 반환한다.
+`RegistrationRequest`의 XSD는 정규화 전 원문을 받는 `NameInputType`·`ServerAddressInputType`과 canonical 응답의 `NameType`·`ServerAddressType`을 분리한다. 입력 두 type에는 trim 전 길이로 유효한 값을 조기에 거부하지 않도록 길이 facet을 두지 않는다. 서버는 XSD 통과 여부와 별개로 `Name`과 `ServerAddress`를 trim한 뒤 위 표의 도메인 규칙을 다시 검증하며, 응답에는 정규화된 값만 직렬화한다.
+
+canonical 응답 `NameType`의 `maxLength=256`은 .NET의 UTF-16 표현에서 supplementary Unicode scalar 하나가 code unit 두 개를 차지하는 점을 수용하는 wire envelope다. 이는 의미상 길이 제한을 256자로 늘리는 규칙이 아니다. 요청 파싱과 응답 모델 생성 모두 trim 후 **1~128 Unicode scalar이면서 UTF-8 최대 512바이트**인 도메인 제한을 적용한다. canonical `ServerAddressType`은 ASCII 주소 문법에 따라 최대 253자다. ProductCode 입력은 선후행 XML whitespace와 ASCII 소문자를 허용하며, 서버는 trim·대문자 정규화와 4바이트 검증을 다시 수행한 뒤 비교·저장한다. `Service`를 포함한 모든 응답 ProductCode는 공백 없는 대문자 canonical 형식만 반환한다.
 
 추가 요구:
 
 - XML DTD와 외부 엔터티를 금지하고 안전한 reader 설정을 사용한다.
 - 중복 필드, 필수 필드 누락, 잘못된 정수·시각은 `BAD_REQUEST`다.
 - ProductCode의 비ASCII 문자, 영문·숫자 이외 문자, 4바이트 미만·초과와 일일 API 키 ProductCode 불일치를 거부한다.
+- raw query는 optional leading `?`를 포함해 최대 **2,048바이트 ASCII**이고 field는 최대 **16개**다. 이 한계를 percent decode나 field 배열 할당 전에 검사한다.
+- query는 RFC 3986 query 문자만 raw ASCII로 허용하고 `%HH` octet을 strict UTF-8로 decode한다. 잘못된 percent triplet·UTF-8·raw 비ASCII·공백·fragment 문자는 `BAD_REQUEST`다. `+`는 공백이 아니라 literal plus이며 같은 이름의 중복 field를 합치지 않고 모두 보존한 뒤 endpoint 계약에서 거부한다.
+- 실제 `HttpListener` host는 `Url.AbsolutePath`의 decode·정규화 결과를 넘기지 않는다. `RawUrl` request-target에서 첫 `?` 앞의 exact raw path와 첫 `?`부터 끝까지의 raw ASCII query를 분리해 transport 경계에 전달한다. `%2f` 같은 encoded path가 fixed route로 decode되어 일치하지 않게 하며, fixed method·path 비교는 이 raw path에 `Ordinal`로 수행한다.
 - 모든 GET 요청은 body를 허용하지 않는다.
-- `POST /api/registration` body는 UTF-8 원문 기준 최대 **16 KiB(16,384바이트)** 다.
+- 모든 External raw body는 읽기 전에 선언 길이를 포함해 최대 **16 KiB(16,384바이트)** 로 제한한다. GET은 이 경계를 적용한 뒤에도 body가 비어 있어야 하고, `POST /api/registration` XML은 UTF-8 원문 기준 같은 한계를 사용한다.
 - XML 문서의 최대 깊이는 root 요소를 포함해 **16**이다.
 - 오류 응답이나 로그에 일일 API 키, AES key·IV·평문·암호문 중간값, 요청 원문 전체 또는 내부 예외를 남기지 않는다.
 
@@ -341,10 +357,10 @@ HTTP `200`은 `Code=0`인 성공 응답에만 사용한다. 클라이언트는 H
 ### 6.1 timeout과 재시도
 
 - 클라이언트 연결 timeout은 **3초**다.
-- 서버 처리 제한은 `GET /api/health`와 `GET /api/services` 각각 **5초**, `POST /api/registration` **10초**다.
+- 서버 처리 제한은 `GET /api/health`와 `GET /api/services` 각각 **5초**, `POST /api/registration` **10초**다. 공용 `HttpListener` host 소스는 bounded body read·어댑터 처리·응답 완료 전체에 endpoint별 timer를 적용하고 만료 시 request stream과 response context를 abort한다. `Thread.Abort`는 사용하지 않으며 실제 Windows에서 동기 `Stream.Read` 해제와 deadline 경합은 아직 실행 검증하지 않았다.
 - 연결 실패, timeout 또는 재시도 가능한 서버 오류에 대해 GET 요청과 동일 payload의 registration 요청은 최초 시도 뒤 최대 2회 재시도할 수 있다. 첫 재시도 전 1초, 두 번째 재시도 전 3초를 기다리고 각각 작은 무작위 jitter를 더한다.
 - registration 재시도는 정규화된 XML payload를 바꾸지 않되 일일 API 키는 매 시도 새 IV로 다시 생성한다.
-- HTTP `429`에 `Retry-After`가 있으면 일반 backoff보다 그 값을 우선한다. 헤더가 없으면 승인 대기 cap으로 보고 자동 재시도를 중단한다.
+- HTTP `429`에 `Retry-After`가 있으면 일반 backoff보다 그 값을 우선한다. 헤더가 없으면 승인 대기 cap, 동시 실행 한계 또는 rate-limit 추적 key 수용 한계처럼 해제 시각을 계산할 수 없는 거부이므로 자동 재시도를 중단한다.
 - 서버 로컬 자정 경계로 추정되는 `401 INVALID_API_KEY`는 현재 로컬 날짜로 키를 다시 생성해 한 번만 추가 재시도한다. 다시 `401`이면 중단한다.
 
 ### 6.2 권장 호출 흐름

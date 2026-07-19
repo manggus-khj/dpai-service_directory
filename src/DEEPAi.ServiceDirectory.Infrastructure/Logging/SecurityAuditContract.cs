@@ -36,7 +36,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Logging
         PeerExchange = 11,
         PeerRelease = 12,
         PeerRevoke = 13,
-        PipeConnect = 14
+        PipeConnect = 14,
+        ExternalUnknown = 15
     }
 
     public enum SecurityAuditReason
@@ -154,6 +155,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Logging
                     return "PEER_REVOKE";
                 case SecurityAuditOperation.PipeConnect:
                     return "PIPE_CONNECT";
+                case SecurityAuditOperation.ExternalUnknown:
+                    return "EXTERNAL_UNKNOWN";
                 default:
                     throw new ArgumentOutOfRangeException(
                         nameof(operation),
@@ -266,7 +269,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Logging
             return boundary == SecurityAuditBoundary.External
                 && (operation == SecurityAuditOperation.ExternalHealth
                     || operation == SecurityAuditOperation.ExternalServiceLookup
-                    || operation == SecurityAuditOperation.ExternalRegistration);
+                    || operation == SecurityAuditOperation.ExternalRegistration
+                    || operation == SecurityAuditOperation.ExternalUnknown);
         }
 
         private static bool IsHttpBoundaryOperation(

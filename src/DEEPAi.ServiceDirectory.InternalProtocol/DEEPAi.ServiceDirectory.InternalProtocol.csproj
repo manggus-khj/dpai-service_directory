@@ -35,16 +35,37 @@
     <Reference Include="System.Xml.Linq" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\DEEPAi.ServiceDirectory.Domain\DEEPAi.ServiceDirectory.Domain.csproj">
+      <Project>{3DDACBF2-4EC4-4950-A6AA-8242A3BB837C}</Project>
+      <Name>DEEPAi.ServiceDirectory.Domain</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
     <Compile Include="Admin\AdminApiContract.cs" />
     <Compile Include="Admin\AdminApiModels.cs" />
     <Compile Include="Admin\AdminPeerEndpoint.cs" />
+    <Compile Include="Admin\AdminServerRequestModels.cs" />
+    <Compile Include="Admin\AdminServerResponseModels.cs" />
+    <Compile Include="Admin\AdminServerResponseXmlCodec.cs" />
+    <Compile Include="Admin\AdminServerXmlCodec.cs" />
     <Compile Include="Admin\AdminXmlCodec.cs" />
+    <Compile Include="Peer\PeerControlModels.cs" />
+    <Compile Include="Peer\PeerSyncContract.cs" />
+    <Compile Include="Peer\PeerSyncModels.cs" />
+    <Compile Include="Peer\PeerSyncXmlCodec.Control.cs" />
+    <Compile Include="Peer\PeerSyncXmlCodec.Exchange.cs" />
+    <Compile Include="Peer\PeerSyncXmlCodec.Pairing.cs" />
+    <Compile Include="Peer\PeerSyncXmlCodec.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="..\..\docs\plan\xsd\admin.xsd">
       <Link>Schema\admin.xsd</Link>
       <LogicalName>DEEPAi.ServiceDirectory.InternalProtocol.Admin.admin.xsd</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\docs\plan\xsd\peer.xsd">
+      <Link>Schema\peer.xsd</Link>
+      <LogicalName>DEEPAi.ServiceDirectory.InternalProtocol.Peer.peer.xsd</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

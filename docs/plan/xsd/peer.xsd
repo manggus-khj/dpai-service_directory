@@ -214,7 +214,12 @@
     </xs:restriction>
   </xs:simpleType>
   <xs:simpleType name="MessageType"><xs:restriction base="xs:string"><xs:maxLength value="512"/></xs:restriction></xs:simpleType>
-  <xs:simpleType name="NameType"><xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="128"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="NameType">
+    <xs:annotation>
+      <xs:documentation>Canonical service-name envelope. The maxLength of 256 accommodates up to 128 supplementary Unicode scalar values in the target .NET Framework XML Schema validator's UTF-16 representation. The domain validator still enforces 1..128 Unicode scalar values and at most 512 UTF-8 bytes.</xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="256"/></xs:restriction>
+  </xs:simpleType>
   <xs:simpleType name="ProductCodeType"><xs:restriction base="xs:string"><xs:pattern value="[A-Z0-9]{4}"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="ServerAddressType"><xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="253"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="EndpointType"><xs:restriction base="xs:string"><xs:minLength value="18"/><xs:maxLength value="80"/></xs:restriction></xs:simpleType>

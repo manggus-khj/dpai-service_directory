@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
@@ -7,74 +6,58 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
     internal sealed class AtomicFileWriter
     {
         private const string BackupSuffix = ".bak";
-        private static readonly ISet<string> AllowedFileNames = new HashSet<string>(
-            new[] { "config.xml", "directory.xml", "pending.xml" },
-            StringComparer.OrdinalIgnoreCase);
-        private readonly string _stateDirectoryPath;
+        private readonly StateStoragePathPolicy _pathPolicy;
 
         public AtomicFileWriter(string stateDirectoryPath)
+            : this(new StateStoragePathPolicy(stateDirectoryPath))
         {
-            if (string.IsNullOrWhiteSpace(stateDirectoryPath))
+        }
+
+        internal AtomicFileWriter(StateStoragePathPolicy pathPolicy)
+        {
+            if (pathPolicy == null)
             {
-                throw new ArgumentException("State directory path is required.", nameof(stateDirectoryPath));
+                throw new ArgumentNullException(nameof(pathPolicy));
             }
 
-            if (!IsFullyQualifiedLocalPath(stateDirectoryPath))
-            {
-                throw new ArgumentException(
-                    "State directory path must be a fully qualified local drive path.",
-                    nameof(stateDirectoryPath));
-            }
-
-            string fullPath = Path.GetFullPath(stateDirectoryPath);
-            if (fullPath.StartsWith(@"\\", StringComparison.Ordinal)
-                || fullPath.StartsWith("//", StringComparison.Ordinal))
-            {
-                throw new NotSupportedException("State files must be stored on a local path.");
-            }
-
-            var drive = new DriveInfo(Path.GetPathRoot(fullPath));
-            if (drive.DriveType == DriveType.Network)
-            {
-                throw new NotSupportedException(
-                    "State files must not be stored on a mapped network drive.");
-            }
-
-            _stateDirectoryPath = fullPath.TrimEnd(
-                Path.DirectorySeparatorChar,
-                Path.AltDirectorySeparatorChar);
-            string volumeRoot = Path.GetPathRoot(fullPath).TrimEnd(
-                Path.DirectorySeparatorChar,
-                Path.AltDirectorySeparatorChar);
-            if (StringComparer.OrdinalIgnoreCase.Equals(_stateDirectoryPath, volumeRoot))
-            {
-                throw new ArgumentException("A volume root cannot be used as the state directory.", nameof(stateDirectoryPath));
-            }
-
-            EnsureStateDirectoryIsSafe();
+            _pathPolicy = pathPolicy;
+            _pathPolicy.EnsureStateDirectoryIsSafe();
         }
 
         public void Write(string fileName, byte[] contents)
         {
-            if (!AllowedFileNames.Contains(fileName))
+            StateFileTarget target;
+            if (!StateFileTargets.TryParseXmlFileName(fileName, out target))
             {
                 throw new ArgumentException(
                     "File name is not an approved service directory state document.",
                     nameof(fileName));
             }
 
+            Write(target, contents);
+        }
+
+        internal void Write(StateFileTarget target, byte[] contents)
+        {
             if (contents == null)
             {
                 throw new ArgumentNullException(nameof(contents));
             }
 
-            EnsureStateDirectoryIsSafe();
-            string fullDestinationPath = Path.Combine(_stateDirectoryPath, fileName);
+            _pathPolicy.EnsureTargetParentIsSafe(target);
+            string fullDestinationPath = _pathPolicy.GetTargetPath(target);
             string fullBackupPath = fullDestinationPath + BackupSuffix;
-            EnsureExistingFileIsNotReparsePoint(fullDestinationPath);
-            EnsureExistingFileIsNotReparsePoint(fullBackupPath);
+            bool maintainBackup = target != StateFileTarget.PeerSecret;
+            _pathPolicy.EnsureExistingFileIsSafe(fullDestinationPath);
+            _pathPolicy.EnsureExistingFileIsSafe(fullBackupPath);
+            if (!maintainBackup && File.Exists(fullBackupPath))
+            {
+                throw new InvalidDataException(
+                    "A peer secret backup credential is not allowed.");
+            }
+
             string temporaryPath = Path.Combine(
-                _stateDirectoryPath,
+                Path.GetDirectoryName(fullDestinationPath),
                 Path.GetFileName(fullDestinationPath) + "." + Guid.NewGuid().ToString("N") + ".tmp");
 
             bool temporaryFileCreated = false;
@@ -95,15 +78,21 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                     stream.Flush(true);
                 }
 
-                if (File.Exists(fullDestinationPath))
+                bool destinationExists = File.Exists(fullDestinationPath);
+                if (destinationExists && maintainBackup)
                 {
-                    File.Replace(temporaryPath, fullDestinationPath, fullBackupPath, false);
-                }
-                else
-                {
-                    File.Move(temporaryPath, fullDestinationPath);
+                    ReplaceBackupFromTargetDurably(
+                        fullDestinationPath,
+                        fullBackupPath);
                 }
 
+                WindowsFileSystem.MoveWriteThrough(
+                    temporaryPath,
+                    fullDestinationPath,
+                    destinationExists);
+                temporaryFileCreated = false;
+
+                FlushExistingFile(fullDestinationPath);
                 writeCompleted = true;
             }
             catch (Exception exception)
@@ -135,45 +124,291 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             }
         }
 
-        private void EnsureStateDirectoryIsSafe()
+        internal void Delete(StateFileTarget target)
         {
-            var directory = new DirectoryInfo(_stateDirectoryPath);
-            if (!directory.Exists)
+            _pathPolicy.EnsureTargetParentIsSafe(target);
+            string targetPath = _pathPolicy.GetTargetPath(target);
+            string backupPath = _pathPolicy.GetBackupPath(target);
+            _pathPolicy.EnsureExistingFileIsSafe(targetPath);
+            _pathPolicy.EnsureExistingFileIsSafe(backupPath);
+            if (target == StateFileTarget.PeerSecret)
             {
-                throw new DirectoryNotFoundException(
-                    "The installer-provisioned service directory state path does not exist.");
+                throw new InvalidOperationException(
+                    "Peer secret deletion requires a recovery transaction.");
             }
 
-            for (DirectoryInfo current = directory;
-                current != null;
-                current = current.Parent)
-            {
-                if ((current.Attributes & FileAttributes.ReparsePoint) != 0)
-                {
-                    throw new IOException(
-                        "The service directory state path and its parents must not be reparse points.");
-                }
-            }
-        }
-
-        private static bool IsFullyQualifiedLocalPath(string path)
-        {
-            return path.Length >= 3
-                && ((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z'))
-                && path[1] == Path.VolumeSeparatorChar
-                && (path[2] == Path.DirectorySeparatorChar || path[2] == Path.AltDirectorySeparatorChar);
-        }
-
-        private static void EnsureExistingFileIsNotReparsePoint(string path)
-        {
-            if (!File.Exists(path))
+            if (!File.Exists(targetPath))
             {
                 return;
             }
 
-            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            WindowsFileSystem.MoveWriteThrough(
+                targetPath,
+                backupPath,
+                true);
+        }
+
+        internal void RestorePreparedImage(
+            StateFileTarget target,
+            bool exists,
+            byte[] contents,
+            string transactionPath)
+        {
+            if (exists != (contents != null))
             {
-                throw new IOException("State files and backups must not be reparse points.");
+                throw new ArgumentException(
+                    "Prepared recovery image metadata is inconsistent.",
+                    nameof(contents));
+            }
+
+            _pathPolicy.EnsureTargetParentIsSafe(target);
+            _pathPolicy.EnsureDirectoryIsSafe(transactionPath);
+            string targetPath = _pathPolicy.GetTargetPath(target);
+            string backupPath = _pathPolicy.GetBackupPath(target);
+            _pathPolicy.EnsureExistingFileIsSafe(targetPath);
+            _pathPolicy.EnsureExistingFileIsSafe(backupPath);
+
+            if (!exists)
+            {
+                MoveTargetAndBackupToDiscards(
+                    target,
+                    targetPath,
+                    backupPath,
+                    transactionPath);
+                return;
+            }
+
+            Write(target, contents);
+            if (target == StateFileTarget.PeerSecret)
+            {
+                _pathPolicy.EnsureExistingFileIsSafe(backupPath);
+                if (File.Exists(backupPath))
+                {
+                    throw new InvalidDataException(
+                        "A peer secret backup credential is not allowed.");
+                }
+
+                return;
+            }
+
+            _pathPolicy.EnsureExistingFileIsSafe(targetPath);
+            _pathPolicy.EnsureExistingFileIsSafe(backupPath);
+            ReplaceBackupFromTargetDurably(
+                targetPath,
+                backupPath);
+        }
+
+        internal void DeleteForTransaction(
+            StateFileTarget target,
+            string transactionPath)
+        {
+            if (target != StateFileTarget.PeerSecret)
+            {
+                Delete(target);
+                return;
+            }
+
+            _pathPolicy.EnsureTargetParentIsSafe(target);
+            _pathPolicy.EnsureDirectoryIsSafe(transactionPath);
+            string targetPath = _pathPolicy.GetTargetPath(target);
+            string backupPath = _pathPolicy.GetBackupPath(target);
+            _pathPolicy.EnsureExistingFileIsSafe(targetPath);
+            _pathPolicy.EnsureExistingFileIsSafe(backupPath);
+            if (target == StateFileTarget.PeerSecret
+                && File.Exists(backupPath))
+            {
+                throw new InvalidDataException(
+                    "A peer secret backup credential is not allowed.");
+            }
+
+            MoveTargetAndBackupToDiscards(
+                target,
+                targetPath,
+                backupPath,
+                transactionPath);
+        }
+
+        private void MoveTargetAndBackupToDiscards(
+            StateFileTarget target,
+            string targetPath,
+            string backupPath,
+            string transactionPath)
+        {
+            if (target == StateFileTarget.PeerSecret
+                && File.Exists(backupPath))
+            {
+                throw new InvalidDataException(
+                    "A peer secret backup credential is not allowed.");
+            }
+
+            StateFileTargetDescriptor descriptor =
+                StateFileTargets.Get(target);
+            MoveToTransactionDiscard(
+                targetPath,
+                Path.Combine(
+                    transactionPath,
+                    descriptor.PrimaryDiscardFileName));
+            if (target == StateFileTarget.PeerSecret)
+            {
+                return;
+            }
+
+            MoveToTransactionDiscard(
+                backupPath,
+                Path.Combine(
+                    transactionPath,
+                    descriptor.BackupDiscardFileName));
+        }
+
+        private void MoveToTransactionDiscard(
+            string sourcePath,
+            string discardPath)
+        {
+            _pathPolicy.EnsurePathIsInsideStateDirectory(discardPath);
+            _pathPolicy.EnsureExistingFileIsSafe(sourcePath);
+            _pathPolicy.EnsureExistingFileIsSafe(discardPath);
+            if (!File.Exists(sourcePath))
+            {
+                return;
+            }
+
+            WindowsFileSystem.MoveWriteThrough(
+                sourcePath,
+                discardPath,
+                true);
+            _pathPolicy.EnsureExistingFileIsSafe(discardPath);
+        }
+
+        internal bool Exists(StateFileTarget target)
+        {
+            _pathPolicy.EnsureTargetParentIsSafe(target);
+            string path = _pathPolicy.GetTargetPath(target);
+            _pathPolicy.EnsureExistingFileIsSafe(path);
+            return File.Exists(path);
+        }
+
+        internal bool BackupExists(StateFileTarget target)
+        {
+            _pathPolicy.EnsureTargetParentIsSafe(target);
+            string path = _pathPolicy.GetBackupPath(target);
+            _pathPolicy.EnsureExistingFileIsSafe(path);
+            return File.Exists(path);
+        }
+
+        internal byte[] Read(StateFileTarget target, int maximumBytes)
+        {
+            if (maximumBytes <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maximumBytes));
+            }
+
+            _pathPolicy.EnsureTargetParentIsSafe(target);
+            string path = _pathPolicy.GetTargetPath(target);
+            _pathPolicy.EnsureExistingFileIsSafe(path);
+            return ReadExistingFile(path, maximumBytes);
+        }
+
+        internal byte[] ReadBackup(
+            StateFileTarget target,
+            int maximumBytes)
+        {
+            if (maximumBytes <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maximumBytes));
+            }
+
+            _pathPolicy.EnsureTargetParentIsSafe(target);
+            string path = _pathPolicy.GetBackupPath(target);
+            _pathPolicy.EnsureExistingFileIsSafe(path);
+            return ReadExistingFile(path, maximumBytes);
+        }
+
+        private static byte[] ReadExistingFile(
+            string path,
+            int maximumBytes)
+        {
+            using (var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                4096,
+                FileOptions.SequentialScan))
+            {
+                if (stream.Length > maximumBytes)
+                {
+                    throw new InvalidDataException(
+                        "The state file exceeds its configured size limit.");
+                }
+
+                var bytes = new byte[(int)stream.Length];
+                int offset = 0;
+                while (offset < bytes.Length)
+                {
+                    int read = stream.Read(bytes, offset, bytes.Length - offset);
+                    if (read == 0)
+                    {
+                        throw new EndOfStreamException(
+                            "The state file ended before its declared length.");
+                    }
+
+                    offset += read;
+                }
+
+                if (stream.ReadByte() != -1)
+                {
+                    throw new InvalidDataException(
+                        "The state file changed while it was being read.");
+                }
+
+                return bytes;
+            }
+        }
+
+        private void FlushExistingFile(string path)
+        {
+            _pathPolicy.EnsureExistingFileIsSafe(path);
+            using (var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.Read,
+                4096,
+                FileOptions.WriteThrough))
+            {
+                stream.Flush(true);
+            }
+        }
+
+        private void ReplaceBackupFromTargetDurably(
+            string targetPath,
+            string backupPath)
+        {
+            string temporaryPath = backupPath
+                + "."
+                + Guid.NewGuid().ToString("N")
+                + ".tmp";
+            bool temporaryFileMayExist = true;
+            try
+            {
+                File.Copy(
+                    targetPath,
+                    temporaryPath,
+                    false);
+                FlushExistingFile(temporaryPath);
+                WindowsFileSystem.MoveWriteThrough(
+                    temporaryPath,
+                    backupPath,
+                    true);
+                temporaryFileMayExist = false;
+            }
+            finally
+            {
+                if (temporaryFileMayExist
+                    && File.Exists(temporaryPath))
+                {
+                    File.Delete(temporaryPath);
+                }
             }
         }
     }

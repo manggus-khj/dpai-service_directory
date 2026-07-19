@@ -92,7 +92,9 @@ namespace DEEPAi.ServiceDirectory.Domain.Validation
                 else
                 {
                     if (char.IsLowSurrogate(current)
-                        || CharUnicodeInfo.GetUnicodeCategory(current) == UnicodeCategory.Control)
+                        || CharUnicodeInfo.GetUnicodeCategory(current) == UnicodeCategory.Control
+                        || current == '\ufffe'
+                        || current == '\uffff')
                     {
                         error = ServiceDefinitionValidationError.NameContainsInvalidCharacter;
                         return false;

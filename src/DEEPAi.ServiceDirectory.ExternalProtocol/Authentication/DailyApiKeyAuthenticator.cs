@@ -10,6 +10,17 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.Authentication
             IEnumerable<string> headerValues,
             out ProductCode authenticatedProductCode)
         {
+            return TryAuthenticate(
+                headerValues,
+                DateTimeOffset.Now,
+                out authenticatedProductCode);
+        }
+
+        internal static bool TryAuthenticate(
+            IEnumerable<string> headerValues,
+            DateTimeOffset localNow,
+            out ProductCode authenticatedProductCode)
+        {
             authenticatedProductCode = default(ProductCode);
             if (headerValues == null)
             {
@@ -37,6 +48,7 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.Authentication
 
                 return DailyApiKeyCodec.TryValidate(
                     onlyValue,
+                    localNow,
                     out authenticatedProductCode);
             }
         }

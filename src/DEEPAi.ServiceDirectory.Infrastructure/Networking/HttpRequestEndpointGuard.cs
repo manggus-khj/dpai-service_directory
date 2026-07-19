@@ -9,23 +9,32 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Networking
             HttpListenerRequest request,
             ServiceDirectoryListenerAddress configuredAddress)
         {
-            if (request == null || configuredAddress == null)
-            {
-                return false;
-            }
+            return request != null
+                && IsConfiguredLocalEndpointAllowed(
+                    request.LocalEndPoint,
+                    configuredAddress);
+        }
 
-            return configuredAddress.Matches(request.LocalEndPoint);
+        public static bool IsConfiguredLocalEndpointAllowed(
+            IPEndPoint localEndpoint,
+            ServiceDirectoryListenerAddress configuredAddress)
+        {
+            return configuredAddress != null
+                && configuredAddress.Matches(localEndpoint);
         }
 
         public static bool IsLoopbackScopeAllowed(HttpListenerRequest request)
         {
-            if (request == null)
-            {
-                return false;
-            }
+            return request != null
+                && IsLoopbackScopeAllowed(
+                    request.LocalEndPoint,
+                    request.RemoteEndPoint);
+        }
 
-            IPEndPoint localEndpoint = request.LocalEndPoint;
-            IPEndPoint remoteEndpoint = request.RemoteEndPoint;
+        public static bool IsLoopbackScopeAllowed(
+            IPEndPoint localEndpoint,
+            IPEndPoint remoteEndpoint)
+        {
             if (localEndpoint == null
                 || localEndpoint.Address == null
                 || localEndpoint.Port != ServiceDirectoryListenerAddress.Port

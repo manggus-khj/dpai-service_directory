@@ -23,23 +23,27 @@ namespace DEEPAi.ServiceDirectory.Domain
                 return false;
             }
 
-            string normalized = rawValue.Trim().ToUpperInvariant();
-            if (normalized.Length != 4)
+            string trimmed = rawValue.Trim();
+            if (trimmed.Length != 4)
             {
                 return false;
             }
 
-            for (int index = 0; index < normalized.Length; index++)
+            for (int index = 0; index < trimmed.Length; index++)
             {
-                char value = normalized[index];
+                char value = trimmed[index];
                 bool isUpperAsciiLetter = value >= 'A' && value <= 'Z';
+                bool isLowerAsciiLetter = value >= 'a' && value <= 'z';
                 bool isAsciiDigit = value >= '0' && value <= '9';
-                if (!isUpperAsciiLetter && !isAsciiDigit)
+                if (!isUpperAsciiLetter
+                    && !isLowerAsciiLetter
+                    && !isAsciiDigit)
                 {
                     return false;
                 }
             }
 
+            string normalized = trimmed.ToUpperInvariant();
             productCode = new ProductCode(normalized);
             return true;
         }

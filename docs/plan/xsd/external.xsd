@@ -15,9 +15,9 @@
 
   <xs:complexType name="RegistrationRequestType">
     <xs:sequence>
-      <xs:element name="Name" type="tns:NameType" />
+      <xs:element name="Name" type="tns:NameInputType" />
       <xs:element name="ProductCode" type="tns:ProductCodeInputType" />
-      <xs:element name="ServerAddress" type="tns:ServerAddressType" />
+      <xs:element name="ServerAddress" type="tns:ServerAddressInputType" />
       <xs:element name="Port" type="tns:PortType" />
     </xs:sequence>
   </xs:complexType>
@@ -90,10 +90,20 @@
   </xs:simpleType>
 
   <xs:simpleType name="NameType">
+    <xs:annotation>
+      <xs:documentation>Canonical response envelope. The maxLength of 256 accommodates up to 128 supplementary Unicode scalar values in the target .NET Framework XML Schema validator's UTF-16 representation. The domain validator still enforces 1..128 Unicode scalar values and at most 512 UTF-8 bytes.</xs:documentation>
+    </xs:annotation>
     <xs:restriction base="xs:string">
       <xs:minLength value="1" />
-      <xs:maxLength value="128" />
+      <xs:maxLength value="256" />
     </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="NameInputType">
+    <xs:annotation>
+      <xs:documentation>Raw registration input. Length facets are intentionally omitted because the server trims and then enforces the normative Name limits in the domain validator.</xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string" />
   </xs:simpleType>
 
   <xs:simpleType name="ProductCodeType">
@@ -114,6 +124,13 @@
       <xs:minLength value="1" />
       <xs:maxLength value="253" />
     </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ServerAddressInputType">
+    <xs:annotation>
+      <xs:documentation>Raw registration input. Length facets are intentionally omitted because the server trims and then enforces the canonical address grammar and length in the domain validator.</xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string" />
   </xs:simpleType>
 
   <xs:simpleType name="PortType">

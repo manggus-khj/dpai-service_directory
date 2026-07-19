@@ -7,6 +7,7 @@ using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using System.Xml.Schema;
+using DEEPAi.ServiceDirectory.Domain;
 
 namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
 {
@@ -469,24 +470,46 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
         private static AdminServiceDefinition ParseServiceDefinition(
             XElement element)
         {
+            string name = ReadRequiredString(element, "Name");
             string productCode = ReadRequiredString(element, "ProductCode");
-            if (productCode.Length != 4 || !IsUpperAsciiAlphaNumeric(productCode))
+            string serverAddress = ReadRequiredString(
+                element,
+                "ServerAddress");
+            int port = ReadRequiredInt(element, "Port");
+
+            ServiceDefinition definition;
+            ServiceDefinitionValidationError validationError;
+            if (!ServiceDefinition.TryCreate(
+                    name,
+                    productCode,
+                    serverAddress,
+                    port,
+                    out definition,
+                    out validationError))
             {
                 throw new AdminProtocolException(
-                    "Admin ProductCode must contain four uppercase ASCII letters or digits.");
+                    "The Admin service definition is invalid: "
+                    + validationError
+                    + ".");
             }
 
-            int port = ReadRequiredInt(element, "Port");
-            if (port < 1 || port > 65535)
+            if (!StringComparer.Ordinal.Equals(name, definition.Name)
+                || !StringComparer.Ordinal.Equals(
+                    productCode,
+                    definition.ProductCode.Value)
+                || !StringComparer.Ordinal.Equals(
+                    serverAddress,
+                    definition.ServerAddress))
             {
-                throw new AdminProtocolException("Admin service port is out of range.");
+                throw new AdminProtocolException(
+                    "The Admin service definition is not canonical.");
             }
 
             return new AdminServiceDefinition(
-                ReadRequiredString(element, "Name"),
-                productCode,
-                ReadRequiredString(element, "ServerAddress"),
-                port);
+                definition.Name,
+                definition.ProductCode.Value,
+                definition.ServerAddress,
+                definition.Port);
         }
 
         private static byte[] Serialize(XElement root)
@@ -808,21 +831,6 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
             }
 
             return parsed.UtcDateTime;
-        }
-
-        private static bool IsUpperAsciiAlphaNumeric(string value)
-        {
-            for (int index = 0; index < value.Length; index++)
-            {
-                char current = value[index];
-                if ((current < 'A' || current > 'Z')
-                    && (current < '0' || current > '9'))
-                {
-                    return false;
-                }
-            }
-
-            return true;
         }
 
         private sealed class EnvelopeHeader
