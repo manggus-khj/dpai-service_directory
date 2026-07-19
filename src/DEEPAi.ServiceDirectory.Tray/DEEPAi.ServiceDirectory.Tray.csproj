@@ -98,6 +98,7 @@
     <Compile Include="ViewModels\ObservableObject.cs" />
     <Compile Include="ViewModels\StatusMonitorViewModel.cs" />
     <Compile Include="ViewModels\StatusMonitorViewModel.Actions.cs" />
+    <Compile Include="ViewModels\StatusMonitorViewModel.Certificates.cs" />
     <Compile Include="ViewModels\StatusMonitorViewModel.Polling.cs" />
   </ItemGroup>
   <ItemGroup>

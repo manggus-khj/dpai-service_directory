@@ -4,9 +4,11 @@ using System.Security;
 using System.Threading;
 using DEEPAi.ServiceDirectory.Application.State;
 using DEEPAi.ServiceDirectory.Domain;
+using DEEPAi.ServiceDirectory.Domain.Certificates;
 using DEEPAi.ServiceDirectory.Domain.Registration;
 using DEEPAi.ServiceDirectory.Infrastructure.Configuration;
 using DEEPAi.ServiceDirectory.Infrastructure.Logging;
+using DEEPAi.ServiceDirectory.Infrastructure.Pki;
 using DEEPAi.ServiceDirectory.InternalProtocol.Admin;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.Http
@@ -22,6 +24,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             _synchronizationController;
         private readonly Func<DateTime> _utcNowProvider;
         private readonly AdminCursorCodec _cursorCodec;
+        private readonly ICertificateAuthorityAdministration
+            _certificateAuthorityAdministration;
         private readonly object _loggingGate = new object();
         private int _disposed;
 
@@ -36,7 +40,26 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 new AdminSystemFileLogSink(systemFileLogger),
                 synchronizationController,
                 () => DateTime.UtcNow,
-                new AdminCursorCodec())
+                new AdminCursorCodec(),
+                new UnavailableCertificateAuthorityAdministration())
+        {
+        }
+
+        public AdminApplicationHttpRequestHandler(
+            StateMutationCoordinator stateCoordinator,
+            IAdminConfigurationState configurationState,
+            SystemFileLogger systemFileLogger,
+            IAdminSynchronizationController synchronizationController,
+            ICertificateAuthorityAdministration
+                certificateAuthorityAdministration)
+            : this(
+                stateCoordinator,
+                configurationState,
+                new AdminSystemFileLogSink(systemFileLogger),
+                synchronizationController,
+                () => DateTime.UtcNow,
+                new AdminCursorCodec(),
+                certificateAuthorityAdministration)
         {
         }
 
@@ -47,6 +70,26 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             IAdminSynchronizationController synchronizationController,
             Func<DateTime> utcNowProvider,
             AdminCursorCodec cursorCodec)
+            : this(
+                stateCoordinator,
+                configurationState,
+                systemLog,
+                synchronizationController,
+                utcNowProvider,
+                cursorCodec,
+                new UnavailableCertificateAuthorityAdministration())
+        {
+        }
+
+        internal AdminApplicationHttpRequestHandler(
+            StateMutationCoordinator stateCoordinator,
+            IAdminConfigurationState configurationState,
+            IAdminSystemLogSink systemLog,
+            IAdminSynchronizationController synchronizationController,
+            Func<DateTime> utcNowProvider,
+            AdminCursorCodec cursorCodec,
+            ICertificateAuthorityAdministration
+                certificateAuthorityAdministration)
         {
             _stateCoordinator = stateCoordinator
                 ?? throw new ArgumentNullException(nameof(stateCoordinator));
@@ -61,6 +104,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 ?? throw new ArgumentNullException(nameof(utcNowProvider));
             _cursorCodec = cursorCodec
                 ?? throw new ArgumentNullException(nameof(cursorCodec));
+            _certificateAuthorityAdministration =
+                certificateAuthorityAdministration
+                ?? throw new ArgumentNullException(
+                    nameof(certificateAuthorityAdministration));
         }
 
         public AdminHandlerResult<AdminServerUnitResponse> ApprovePending(
@@ -538,6 +585,39 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             {
                 throw new ObjectDisposedException(
                     nameof(AdminApplicationHttpRequestHandler));
+            }
+        }
+
+        private sealed class UnavailableCertificateAuthorityAdministration
+            : ICertificateAuthorityAdministration
+        {
+            public CertificateAuthorityStatus GetStatus()
+            {
+                return new CertificateAuthorityStatus(
+                    CertificateAuthorityOperationalState.NotProvisioned);
+            }
+
+            public CertificateAuthorityBackupResult CreateBackup(
+                string password,
+                DateTime createdUtc)
+            {
+                throw new InvalidOperationException(
+                    "The CA administration owner is unavailable.");
+            }
+
+            public CertificateLedgerSnapshot GetLedgerSnapshot()
+            {
+                throw new InvalidOperationException(
+                    "The CA administration owner is unavailable.");
+            }
+
+            public CertificateRevocationResult Revoke(
+                string serialNumber,
+                CertificateRevocationReason reason,
+                DateTime revokedUtc)
+            {
+                throw new InvalidOperationException(
+                    "The CA administration owner is unavailable.");
             }
         }
     }

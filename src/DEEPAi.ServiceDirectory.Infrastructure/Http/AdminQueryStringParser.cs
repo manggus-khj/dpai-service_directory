@@ -79,6 +79,29 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             return true;
         }
 
+        public static bool TryParseCertificates(
+            string rawQuery,
+            out AdminCertificatesQuery query)
+        {
+            query = null;
+            Dictionary<string, string> values;
+            if (!TryParse(rawQuery, out values)
+                || !ContainsOnly(values, "pageSize", "cursor"))
+            {
+                return false;
+            }
+
+            int pageSize;
+            string cursor;
+            if (!TryReadPage(values, out pageSize, out cursor))
+            {
+                return false;
+            }
+
+            query = new AdminCertificatesQuery(pageSize, cursor);
+            return true;
+        }
+
         public static bool IsEmpty(string rawQuery)
         {
             return string.IsNullOrEmpty(rawQuery)

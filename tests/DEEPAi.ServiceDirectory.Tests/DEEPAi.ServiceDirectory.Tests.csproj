@@ -38,6 +38,7 @@
     <Reference Include="System.ServiceProcess" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="BouncyCastle.Cryptography" Version="[2.6.2, 2.6.2]" />
     <PackageReference Include="MSTest.TestAdapter" Version="[4.3.2]">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -73,7 +74,9 @@
   <ItemGroup>
     <Compile Include="Application\InboundSynchronizationStagingTests.cs" />
     <Compile Include="Application\StateMutationCoordinatorTests.cs" />
+    <Compile Include="Domain\CertificateLedgerTests.cs" />
     <Compile Include="Domain\LogicalVersionClockTests.cs" />
+    <Compile Include="Domain\EndpointIdentityTests.cs" />
     <Compile Include="Domain\ProductCodeTests.cs" />
     <Compile Include="Domain\RegistrationStateMachineTests.cs" />
     <Compile Include="Domain\ServiceDefinitionTests.cs" />
@@ -88,6 +91,8 @@
     <Compile Include="Infrastructure\AdminHttpAdapterTests.cs" />
     <Compile Include="Infrastructure\AdminRequestAdmissionControllerTests.cs" />
     <Compile Include="Infrastructure\ConfigurationPersistenceTests.cs" />
+    <Compile Include="Infrastructure\CertificateSigningRequestValidatorTests.cs" />
+    <Compile Include="Infrastructure\CaBackupCodecTests.cs" />
     <Compile Include="Infrastructure\ExternalHttpAdapterTests.cs" />
     <Compile Include="Infrastructure\ExternalQueryStringParserTests.cs" />
     <Compile Include="Infrastructure\ExternalRequestAdmissionControllerTests.cs" />
@@ -95,6 +100,7 @@
     <Compile Include="Infrastructure\HttpRequestEndpointGuardTests.cs" />
     <Compile Include="Infrastructure\HttpTransportResponseDataTests.cs" />
     <Compile Include="Infrastructure\PairingCryptographyTests.cs" />
+    <Compile Include="Infrastructure\PkiSerialNumberTests.cs" />
     <Compile Include="Infrastructure\PairingDecisionReplayEntryTests.cs" />
     <Compile Include="Infrastructure\PeerSynchronizationSchedulingTests.cs" />
     <Compile Include="Infrastructure\PeerConfigurationTransactionStoreTests.cs" />
@@ -115,6 +121,7 @@
     <Compile Include="Infrastructure\ServiceDirectoryListenerAddressTests.cs" />
     <Compile Include="Infrastructure\StatePersistenceTests.cs" />
     <Compile Include="Infrastructure\SystemFileLoggerTests.cs" />
+    <Compile Include="Infrastructure\SiteCertificateAuthorityTests.cs" />
     <Compile Include="Infrastructure\WatchdogHealthHttpAdapterTests.cs" />
     <Compile Include="Infrastructure\WatchdogPipeCodecTests.cs" />
     <Compile Include="InternalProtocol\AdminServerResponseXmlCodecTests.cs" />
@@ -124,6 +131,7 @@
     <Compile Include="InternalProtocol\PeerSyncXmlCodecTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="TestSupport\TestData.cs" />
+    <Compile Include="TestSupport\PkiTestData.cs" />
     <Compile Include="Watchdog\MainServiceControllerMappingTests.cs" />
     <Compile Include="Watchdog\WatchdogHealthResponseValidatorTests.cs" />
     <Compile Include="Watchdog\WatchdogLifecycleTests.cs" />

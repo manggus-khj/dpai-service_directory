@@ -1,7 +1,7 @@
 # 서비스 디렉토리 내부 API 명세
 
 > 문서 상태: 인증서 기반 목표 내부 계약 확정
-> 구현 상태: 미구현. 현재 코드는 pending 승인 3 endpoint와 평문 Peer HTTP를 구현하며 등록 모드·CA/CRL·Peer HTTPS 목표 계약으로 전환 필요
+> 구현 상태: PKI core 1차 소스만 부분 구현. 현재 코드는 pending 승인 3 endpoint와 평문 Peer HTTP를 사용하며 등록 모드·CA 저장·CRL publish·Peer HTTPS 목표 계약으로 전환 필요
 > 대상 독자: 메인 서비스, 트레이 앱, 와치독, 피어 동기화 구현 개발자
 > 최종 정리일: 2026-07-19
 
@@ -68,8 +68,9 @@
 
 ### 2.5 Site CA와 issuer 역할
 
-- 기본 site CA private key는 메인 서비스 account만 사용할 수 있는 OS 보호 key store와 제한 ACL에 둔다.
-- CA backup은 운영자가 지정한 암호로 암호화하고 평문 export를 금지한다. 일반 uninstall은 보존하고 명시적 전체 삭제에서만 제거한다.
+- 기본 site CA private key PKCS#8은 DPAPI `LocalMachine`으로 보호해 `secrets\ca.key`에 저장하고 상속을 차단한 exact ACL로 메인 서비스 SID·`SYSTEM`·로컬 `Administrators`만 허용한다. `ca.key.bak`과 평문 key file을 금지하며, DPAPI 평문은 서명·backup 처리 중 메모리에서만 사용하고 byte buffer를 즉시 지운다. 로컬 관리자는 이 위협 모델의 신뢰된 복구 주체다.
+- 기본 site CA와 Directory leaf key는 RSA 3072다. CA·leaf·CRL은 SHA-256 with RSA PKCS#1 v1.5로 서명하고 CA는 `pathLen=0`·`keyCertSign`·`cRLSign`·SAN 없음 profile을 사용한다. 등록 서비스 CSR·leaf의 세부 profile은 [외부 명세 §9.1](./서비스디렉토리_외부애플리케이션_API명세.md#91-csr-생성)이 단일 원본이다.
+- CA backup은 운영자가 지정한 암호로 암호화하고 평문 export를 금지한다. 서비스는 임의 client 경로를 받지 않고 제한 ACL의 `%ProgramData%\DEEPAi\ServiceDirectory\backups\ca\`에 생성한다. API에는 내부 절대 경로·암호·key를 반환하지 않고 canonical 파일명과 SHA-256만 반환한다. 일반 uninstall은 보존하고 명시적 전체 삭제에서만 제거한다.
 - 같은 site의 Peer는 동일 CA trust anchor를 사용한다. 서로 다른 CA를 자동 병합하거나 pairing만으로 상대 CA를 무조건 신뢰하지 않는다.
 - serial ledger와 CRL split-brain을 막기 전에는 active CA issuer를 하나만 허용한다. 보조 Directory는 조회·sync를 제공하되 신규 발급·폐기는 active issuer로 전달하거나 fail closed한다.
 - issuer 승격, CA restore와 key rotation은 로컬 운영자 확인과 감사 로그를 요구하며 네트워크 partition에서 양쪽 자동 승격을 금지한다.
@@ -258,7 +259,7 @@ request body와 query는 없다.
 
 - 활성 항목을 물리적으로 제거하지 않고 `Deleted=true`와 `DeletedUtc`를 기록한다.
 - 로컬 `InstanceId`를 `OriginInstanceId`로 기록한다.
-- 해당 ProductCode의 모든 active certificate serial을 revoke하고 CRL number를 증가시켜 새 CRL을 publish한다.
+- 해당 ProductCode의 모든 active certificate serial을 `CessationOfOperation` reason으로 revoke하고 CRL number를 증가시켜 새 CRL을 publish한다. `Unspecified`·`CertificateHold`·`RemoveFromCRL`로 대체하지 않는다.
 - directory tombstone, certificate ledger revoke와 CRL publish는 하나의 복구 가능한 transaction이다. 어느 하나만 성공한 부분 삭제를 반환하지 않는다.
 - 응답에는 폐기한 serial 수와 새 CRL number를 포함한다. private key·CSR·CA 내부 경로는 포함하지 않는다.
 - 성공 후 즉시 동기화 사이클을 예약한다.
@@ -346,7 +347,7 @@ request body와 query는 없다.
 ```
 
 - `Unpaired`에서 호출하면 지정한 endpoint만 허용하는 5분 페어링 창을 열고 `PairingWindowOpen`으로 전이한다. 운영자는 상대 서버에서도 해당 endpoint를 반대로 지정해 독립적으로 호출해야 한다.
-- `PeerEndpoint`는 scheme `https`, canonical IPv4 literal host와 고정 포트 `21000`만 허용하며 IPv6, userinfo, DNS hostname, path, query, fragment를 금지한다. 요청 문자열 자체가 선후행 공백 없는 `https://{a.b.c.d}:21000` 형식이어야 하고 IPv4 octet에는 선행 0을 허용하지 않는다. 상대 leaf의 필수 DNS hostname SAN과 이 endpoint IPv4 SAN, 같은 site CA·pin 검증을 모두 통과해야 한다.
+- `PeerEndpoint`는 scheme `https`, canonical IPv4 literal host와 고정 포트 `21000`만 허용하며 IPv6, userinfo, DNS hostname, path, query, fragment를 금지한다. 요청 문자열 자체가 선후행 공백 없는 `https://{a.b.c.d}:21000` 형식이어야 하고 IPv4 octet에는 선행 0을 허용하지 않는다. 상대 leaf의 필수 DNS hostname SAN과 이 endpoint IPv4 SAN, 같은 site CA·pin 검증을 모두 통과해야 한다. leaf CRL Distribution Point에는 상대 path가 아니라 상대 Directory DNS·IPv4의 두 absolute HTTPS `/pki/crl` URI가 있어야 하며 현재 PeerEndpoint와 같은 IPv4 authority의 URI에서 받은 CRL을 signature·CRLNumber·시각까지 검증한다.
 - `RePair=true`는 기존 관계를 먼저 비활성화하고 새 페어링을 시작한다. `config.xml`에 남긴 마지막 발급 epoch보다 1 큰 epoch를 예약하며 실패·취소·timeout 시 상태는 `Unpaired`가 되고 이전 root를 다시 사용하지 않는다.
 - 성공적인 페어링 commit 뒤 양쪽은 `PairedDisabled`다. 이 상태에서 같은 endpoint로 다시 호출하면 로컬을 `Enabled`로 전이한다. 양쪽이 `Enabled`일 때만 일반 handshake와 exchange가 성공한다.
 - 이미 `Enabled`인데 `RePair=false`인 요청, 상태와 endpoint가 맞지 않는 요청은 `1002 CONFLICT`다.
@@ -448,6 +449,120 @@ request body와 query는 없다.
 - 성공 응답은 GET과 같은 `LoggingSettings` payload를 반환한다.
 
 파일명과 레코드 시각, 이벤트 목록의 단일 원본은 [개발계획의 시스템 로그 정책](./서비스디렉토리_개발계획.md#9-시스템-로그-정책)이다.
+
+### 4.12 `GET /admin/ca/status`
+
+현재 site CA와 issuer 상태를 반환한다. query와 body는 없다.
+
+```xml
+<Response xmlns="urn:deepai:service-directory:admin">
+  <Result>OK</Result>
+  <Code>0</Code>
+  <Message />
+  <CaStatus>
+    <State>READY</State>
+    <Role>ACTIVE_ISSUER</Role>
+    <SiteId>4ed36c2a-84d0-4fdb-94ef-8e25a8ee0da1</SiteId>
+    <IssuerInstanceId>9f2ed127-9834-42b4-a379-eaad9df8fcec</IssuerInstanceId>
+    <CaSerialNumber>01A4B5C6D7E8F90123456789ABCDEF01</CaSerialNumber>
+    <CaSpkiSha256>base64-sha256</CaSpkiSha256>
+    <NotBeforeUtc>2026-07-19T02:00:00Z</NotBeforeUtc>
+    <NotAfterUtc>2046-07-19T02:05:00Z</NotAfterUtc>
+    <PkiRevision>43</PkiRevision>
+    <CrlNumber>19</CrlNumber>
+    <LastBackupUtc>2026-07-19T03:00:00Z</LastBackupUtc>
+  </CaStatus>
+</Response>
+```
+
+- `State`는 `NOT_PROVISIONED`, `BACKUP_REQUIRED`, `READY`다. `NOT_PROVISIONED`는 PKI를 한 번도 만든 적 없는 설치 전환 경계에서만 사용한다. CA certificate·DPAPI key·ledger·CRL 중 하나라도 일부 존재하거나 backup artifact가 있는데 primary가 없거나 검증되지 않으면 상태 API로 축소해 계속 기동하지 않고 서비스 기동 자체를 fail closed한다.
+- `Role`은 `ACTIVE_ISSUER`, `STANDBY`다. `STANDBY`는 조회·CRL 제공만 가능하고 발급·폐기·등록 모드 open을 거부한다.
+- `CaSpkiSha256`은 32바이트 SHA-256의 canonical base64다. CA certificate·private key·내부 경로는 반환하지 않는다.
+- 최초 승인 backup 완료 전에는 `BACKUP_REQUIRED`이며 등록 모드 open·발급·폐기를 거부한다. backup 성공과 상태 영속화가 모두 완료된 뒤 `READY`다.
+
+### 4.13 `POST /admin/ca/backup`
+
+운영자 암호로 전체 복구에 필요한 CA certificate·private key, PKI metadata, full certificate ledger와 현재 signed CRL을 하나의 encrypted backup으로 만든다. query는 없다.
+
+```xml
+<CreateCaBackup xmlns="urn:deepai:service-directory:admin">
+  <Password>operator-supplied-passphrase</Password>
+</CreateCaBackup>
+```
+
+- `Password`는 trim하거나 정규화하지 않는 12..128 Unicode scalar, strict UTF-8 최대 512바이트다. NUL과 XML control character를 금지하고 로그·응답·설정·명령행에 기록하지 않는다.
+- backup container는 PBKDF2-HMAC-SHA256의 무작위 16바이트 salt와 600,000회 반복으로 서로 다른 AES-256-CBC encryption key와 HMAC-SHA256 authentication key를 파생한다. 무작위 16바이트 IV, PKCS#7 padding과 encrypt-then-MAC을 사용하고 header·salt·IV·ciphertext 전체를 MAC에 포함한다. 복원은 MAC을 고정 시간 비교로 검증하기 전 plaintext를 해석하지 않는다.
+- 서비스는 `%ProgramData%\DEEPAi\ServiceDirectory\backups\ca\` 밖의 caller path를 받지 않는다. 임시 파일에도 plaintext를 쓰지 않고 encrypted bytes만 write-through 원자 생성한다.
+- backup snapshot은 같은 mutation gate 안에서 일관된 PKI revision·CRL number를 고정하되, 오래 걸리는 KDF·암호화·파일 쓰기는 snapshot 복사 뒤 gate 밖에서 수행한다. 마지막 상태 commit에서 snapshot이 현재 state와 같은지 다시 확인하고 `LastBackupUtc`를 영속화한다. 달라졌으면 생성 파일을 승인 backup으로 표시하지 않고 `409 CONFLICT`로 재시도한다.
+- 성공 응답은 다음과 같으며 절대 경로를 포함하지 않는다.
+
+```xml
+<Response xmlns="urn:deepai:service-directory:admin">
+  <Result>OK</Result>
+  <Code>0</Code>
+  <Message />
+  <CaBackup>
+    <FileName>site-ca-4ed36c2a-84d0-4fdb-94ef-8e25a8ee0da1-20260719T030000000Z.dpca</FileName>
+    <CreatedUtc>2026-07-19T03:00:00Z</CreatedUtc>
+    <Sha256>base64-sha256</Sha256>
+  </CaBackup>
+</Response>
+```
+
+### 4.14 `GET /admin/certificates`
+
+full certificate ledger를 serial의 Ordinal 오름차순으로 조회한다. `GET /admin/certificates?pageSize=100&cursor=...` 형식을 사용하며 공통 pageSize·opaque cursor·16 KiB 응답 제한을 적용한다.
+
+```xml
+<Response xmlns="urn:deepai:service-directory:admin">
+  <Result>OK</Result>
+  <Code>0</Code>
+  <Message />
+  <Certificates>
+    <Certificate>
+      <SerialNumber>01A4B5C6D7E8F90123456789ABCDEF01</SerialNumber>
+      <ProductCode>ABCD</ProductCode>
+      <IssuanceKind>REGISTRATION</IssuanceKind>
+      <ServiceHostName>vms-bridge.example.local</ServiceHostName>
+      <ServiceIpv4Address>10.0.0.5</ServiceIpv4Address>
+      <Status>CURRENT</Status>
+      <IssuedUtc>2026-07-19T02:00:00Z</IssuedUtc>
+      <NotBeforeUtc>2026-07-19T01:55:00Z</NotBeforeUtc>
+      <NotAfterUtc>2027-07-19T02:00:00Z</NotAfterUtc>
+      <LeafSha256>base64-sha256</LeafSha256>
+    </Certificate>
+  </Certificates>
+  <TotalCount>324</TotalCount>
+  <NextCursor>opaque-server-value</NextCursor>
+</Response>
+```
+
+- `IssuanceKind`는 `REGISTRATION`, `RENEWAL`, `Status`는 `CURRENT`, `RETIRING`, `REVOKED`다.
+- `ScheduledRevocationUtc`는 `RETIRING` 또는 갱신 overlap을 거쳐 폐기된 항목에만, `RevokedUtc`·`RevocationReason`은 `REVOKED`에만 포함한다.
+- `RevocationReason`은 `KEY_COMPROMISE`, `CA_COMPROMISE`, `AFFILIATION_CHANGED`, `SUPERSEDED`, `CESSATION_OF_OPERATION`, `PRIVILEGE_WITHDRAWN`, `AA_COMPROMISE`다. `UNSPECIFIED`, `CERTIFICATE_HOLD`, `REMOVE_FROM_CRL`은 반환하거나 저장하지 않는다.
+- CSR·request payload·private key와 내부 저장 경로는 반환하지 않는다.
+
+### 4.15 `POST /admin/certificates/{serial}/revoke`
+
+한 certificate serial을 운영자가 명시적으로 폐기한다. `{serial}`은 정확히 32자 uppercase hexadecimal canonical positive serial이다. query는 없다.
+
+```xml
+<RevokeCertificate xmlns="urn:deepai:service-directory:admin">
+  <Reason>KEY_COMPROMISE</Reason>
+</RevokeCertificate>
+```
+
+- 허용 reason은 §4.14의 값 중 `SUPERSEDED`, `CESSATION_OF_OPERATION`을 제외한 운영자 사유다. 이 두 값은 갱신·재등록과 서비스 삭제의 자동 처리만 사용한다.
+- 현재 `CURRENT` 또는 `RETIRING` 항목만 폐기할 수 있다. 없는 serial은 `404 NOT_FOUND`, 이미 `REVOKED`이면 같은 reason의 exact retry만 현재 결과를 반환하고 다른 reason은 `409 CONFLICT`다.
+- active issuer와 `READY` 상태에서만 수행한다. ledger entry revoke, `PkiRevision+1`, `CrlNumber+1`과 새 signed DER CRL publish를 하나의 복구 transaction으로 commit한다. unsigned wrap, CA key·DPAPI·ACL·CRL 검증 또는 저장 실패에서는 부분 상태를 게시하지 않는다.
+- 명시적 serial 폐기는 service directory record를 자동 삭제하지 않는다. 폐기한 인증서가 해당 ProductCode의 `CURRENT`이면 서비스 조회는 인증서가 폐기된 상태임을 표시하고 운영자가 재등록하거나 서비스를 삭제해야 한다.
+- 성공 응답은 폐기 serial, `RevokedUtc`, reason과 새 `PkiRevision`·`CrlNumber`를 반환한다.
+
+### 4.16 CA 복원과 rotation 경계
+
+- CA restore Admin endpoint는 없다. installer repair만 메인·와치독 서비스를 중지하고 operator가 선택한 `.dpca`와 암호를 maintenance process의 표준 입력으로 전달한다. 암호를 installer parameter·process command line·환경 변수·setup log·임시 파일에 넣지 않는다.
+- repair는 container MAC, CA profile·private key 일치, SiteId, issuer identity, full ledger, CRL signature와 backup 내부 `PkiRevision`·`CrlNumber` 일관성을 모두 검증한다. 설치 state가 정상 판독되면 현재 high-water보다 낮은 backup을 거부한다. 설치 state가 손상되어 판독할 수 없으면 operator가 명시적으로 선택한 인증된 backup을 복구 기준으로 사용하되, 읽을 수 있는 모든 기존 target bytes를 journal before image로 먼저 고정한다. 그 뒤 CA key·certificate·metadata·ledger·CRL을 한 recovery journal transaction으로 복원한다. restore transaction 자체가 실패하면 journal rollback으로 기존 bytes를 보존하고 서비스를 중지 상태로 둔다. restore commit 뒤 별도 서비스 재기동이 실패한 경우에는 인증이 끝난 복원 상태를 다시 이전 손상 상태로 되돌리지 않고 서비스를 중지 상태로 유지해 운영자가 원인을 확인하게 한다.
+- CA key rotation·dual-pin 배포와 관련 Admin endpoint는 이번 릴리스 범위가 아니다. restore는 backup에 있던 같은 CA state를 복구하는 작업이며 새 CA 생성이나 rotation으로 사용하지 않는다.
 
 ## 5. 피어 동기화 데이터
 
@@ -1002,6 +1117,7 @@ PKI state는 일반 service revision처럼 다중 writer 병합하지 않는다.
 
 - 일반 Peer session·request/response HMAC, HTTPS site CA·pin과 exact endpoint 검증을 모두 적용한다.
 - `PkiRevision`, `CrlNumber`는 unsigned monotonic high-water이며 rollback을 거부한다.
+- `ActiveCertificates`에는 ProductCode별 ledger `CURRENT` 한 건만 넣는다. renewal overlap의 `RETIRING`과 CRL에 반영된 `REVOKED` history는 이 mapping에 넣지 않으며, 유효 여부는 current mapping과 별도로 signed CRL·ledger high-water의 일관성으로 검증한다.
 - peer는 CRL signature를 site CA로 검증하고 `CrlSha256`·number·issuer와 active certificate mapping을 검증한 뒤 원자적으로 cache를 교체한다.
 - 응답은 4 MiB 이하이며 active certificate는 최대 1,000개다. 전체 ledger history와 CA private key·backup·암호는 전송하지 않는다.
 - 같은 revision의 다른 bytes, 다른 active issuer의 state, 낮은 revision·CRL number는 split-brain 또는 손상으로 fail closed한다.
@@ -1072,14 +1188,14 @@ ERROR: 사용자에게 노출 가능한 일반 사유
 
 ### 7.1 목표 계약 상태
 
-이 문서의 등록 모드·사이트 CA·CRL·Peer HTTPS·PKI state 계약은 설계만 확정됐으며 소스·XSD·installer에는 아직 구현하지 않았다. 후속 구현은 적어도 다음 항목을 함께 완료해야 한다.
+사이트 CA·Directory/service leaf·CSR 검증·serial·CRL primitive에 더해 DPAPI `LocalMachine` CA key, canonical metadata·full ledger·signed CRL 저장, 공용 recovery journal, 암호화 backup, CA 상태·원장 조회·serial 폐기 Admin API/XSD와 설정 UI, installer repair의 표준 입력 복원 진입점 소스를 연결했다. 첫 서비스 기동에서 PKI가 전혀 없고 backup 흔적도 없는 전환 설치만 새 CA를 만들고 `BACKUP_REQUIRED`로 시작하며, backup 뒤 `READY`가 된다. 현재 작업 트리의 빌드·테스트·실제 DPAPI/ACL·설치 repair 실행은 검증하지 않았다. 등록 모드·실제 인증서 발급 연결·Peer HTTPS·PKI state wire 계약은 아직 연결하지 않았으며 후속 구현은 적어도 다음 항목을 함께 완료해야 한다.
 
-- `admin.xsd`: 등록 모드 조회·열기·닫기와 서비스 인증서 상태·폐기 응답
+- `admin.xsd`: 등록 모드 조회·열기·닫기와 서비스 등록 모드 결과. CA 상태·backup·원장·serial 폐기는 반영됨
 - `peer.xsd`: PKI state ledger·CRL high-water 교환
-- Admin handler와 설정 UI: pending 3 endpoint·승인 대기 화면 제거, 등록 서비스 화면의 모드·countdown·마지막 결과
+- Admin handler와 설정 UI: pending 3 endpoint·승인 대기 화면 제거, 등록 서비스 화면의 모드·countdown·마지막 결과. CA 상태·backup·원장·serial 폐기는 반영됨
 - Peer host·client: HTTPS binding·site CA/pin 검증과 session-authenticated PKI state 교환
-- 저장·복구: certificate ledger·CRL·CA state와 기존 directory/config/PeerSecret을 포함한 원자 transaction
-- 설치·운영: CA backup 확인, HTTPS binding·repair rollback, single active issuer 장애 절차
+- 저장·복구: 발급·재등록·삭제에서 directory와 certificate ledger·CRL을 함께 바꾸는 transaction. CA 단독 상태·폐기·backup marker와 기존 target을 아우르는 journal 확장은 반영됨
+- 설치·운영: HTTPS binding과 single active issuer 장애·승격 절차. CA backup 생성과 중지 repair 복원 진입점은 반영됐으나 실제 설치 실행 검증은 남음
 
 ### 7.2 변경 전 구현 기준선
 

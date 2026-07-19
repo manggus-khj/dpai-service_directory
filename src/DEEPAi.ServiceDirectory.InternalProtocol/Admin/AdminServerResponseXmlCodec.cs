@@ -5,7 +5,7 @@ using System.Xml.Linq;
 
 namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
 {
-    public static class AdminServerResponseXmlCodec
+    public static partial class AdminServerResponseXmlCodec
     {
         private const string UtcTimestampFormat =
             "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'";

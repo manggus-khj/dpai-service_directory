@@ -7,6 +7,7 @@ using DEEPAi.ServiceDirectory.Infrastructure.Configuration;
 using DEEPAi.ServiceDirectory.Infrastructure.Http;
 using DEEPAi.ServiceDirectory.Infrastructure.Logging;
 using DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol;
+using DEEPAi.ServiceDirectory.Infrastructure.Pki;
 
 namespace DEEPAi.ServiceDirectory.Service
 {
@@ -17,7 +18,9 @@ namespace DEEPAi.ServiceDirectory.Service
             ServiceDirectoryRuntimeConfigurationState configurationState,
             ServiceDirectoryConfiguration configuration,
             SystemFileLogger systemFileLogger,
-            SecurityAuditEventLogger securityAuditLogger)
+            SecurityAuditEventLogger securityAuditLogger,
+            ICertificateAuthorityAdministration
+                certificateAuthorityAdministration)
         {
             StateCoordinator = stateCoordinator
                 ?? throw new ArgumentNullException(
@@ -33,6 +36,10 @@ namespace DEEPAi.ServiceDirectory.Service
             SecurityAuditLogger = securityAuditLogger
                 ?? throw new ArgumentNullException(
                     nameof(securityAuditLogger));
+            CertificateAuthorityAdministration =
+                certificateAuthorityAdministration
+                ?? throw new ArgumentNullException(
+                    nameof(certificateAuthorityAdministration));
         }
 
         public StateMutationCoordinator StateCoordinator { get; }
@@ -51,6 +58,9 @@ namespace DEEPAi.ServiceDirectory.Service
         public SystemFileLogger SystemFileLogger { get; }
 
         internal SecurityAuditEventLogger SecurityAuditLogger { get; }
+
+        public ICertificateAuthorityAdministration
+            CertificateAuthorityAdministration { get; }
     }
 
     // The composition root owns persistence and listener primitives. The
@@ -105,7 +115,8 @@ namespace DEEPAi.ServiceDirectory.Service
                     context.StateCoordinator,
                     context.ConfigurationState,
                     context.SystemFileLogger,
-                    controller);
+                    controller,
+                    context.CertificateAuthorityAdministration);
                 lock (_gate)
                 {
                     _pendingControllers.Add(context, controller);
@@ -224,6 +235,7 @@ namespace DEEPAi.ServiceDirectory.Service
         private readonly IDisposable _adminLifetime;
         private readonly IDisposable _peerLifetime;
         private readonly PeerSynchronizationController _peerController;
+        private readonly IDisposable _certificateAuthorityLifetime;
         private readonly TaskCompletionSource<object> _completion =
             new TaskCompletionSource<object>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
@@ -234,12 +246,15 @@ namespace DEEPAi.ServiceDirectory.Service
 
         internal ApplicationComponentLifetime(
             IAdminHttpRequestHandler adminHandler,
-            IPeerHttpRequestHandler peerHandler)
+            IPeerHttpRequestHandler peerHandler,
+            IDisposable certificateAuthorityLifetime)
         {
             _adminLifetime = adminHandler as IDisposable;
             _peerLifetime = peerHandler as IDisposable;
             _peerController = peerHandler
                 as PeerSynchronizationController;
+            _certificateAuthorityLifetime =
+                certificateAuthorityLifetime;
             if (ReferenceEquals(_adminLifetime, _peerLifetime))
             {
                 _peerLifetime = null;
@@ -357,9 +372,10 @@ namespace DEEPAi.ServiceDirectory.Service
                     "Application components must drain before disposal.");
             }
 
-            var failures = new List<Exception>(2);
+            var failures = new List<Exception>(3);
             DisposeOne(_peerLifetime, failures);
             DisposeOne(_adminLifetime, failures);
+            DisposeOne(_certificateAuthorityLifetime, failures);
             _disposed = true;
             _completion.TrySetResult(null);
             if (failures.Count != 0)

@@ -33,7 +33,11 @@
     <Reference Include="System.Core" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Certificates\CertificateLedgerEntry.cs" />
+    <Compile Include="Certificates\CertificateLedgerSnapshot.cs" />
+    <Compile Include="Certificates\CertificateSerialNumber.cs" />
     <Compile Include="DirectoryBaseRevision.cs" />
+    <Compile Include="DirectoryEndpointIdentity.cs" />
     <Compile Include="DirectorySnapshot.cs" />
     <Compile Include="DomainErrorCode.cs" />
     <Compile Include="PendingRegistration.cs" />
@@ -42,12 +46,14 @@
     <Compile Include="Registration\RegistrationResults.cs" />
     <Compile Include="Registration\RegistrationStateMachine.cs" />
     <Compile Include="ServiceDefinition.cs" />
+    <Compile Include="ServiceEndpointIdentity.cs" />
     <Compile Include="ServiceRecord.cs" />
     <Compile Include="ServiceRecordRevisionComparer.cs" />
     <Compile Include="Synchronization\SynchronizationMerge.cs" />
     <Compile Include="Synchronization\SynchronizationSnapshot.cs" />
     <Compile Include="Time\LogicalVersionClock.cs" />
     <Compile Include="Validation\ServiceDefinitionValidator.cs" />
+    <Compile Include="Validation\ServiceEndpointIdentityValidator.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

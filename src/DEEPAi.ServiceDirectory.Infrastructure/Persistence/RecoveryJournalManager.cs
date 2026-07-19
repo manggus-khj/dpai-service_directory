@@ -340,7 +340,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 {
                     optionalDiscardFileNames.Add(
                         descriptor.PrimaryDiscardFileName);
-                    if (entry.Target != StateFileTarget.PeerSecret)
+                    if (!StateFileTargets.IsSecret(entry.Target))
                     {
                         optionalDiscardFileNames.Add(
                             descriptor.BackupDiscardFileName);
@@ -570,11 +570,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         {
             foreach (StateFileChange change in changes)
             {
-                if (change.Target == StateFileTarget.PeerSecret
+                if (StateFileTargets.IsSecret(change.Target)
                     && _targetWriter.BackupExists(change.Target))
                 {
                     throw new RecoveryRequiredException(
-                        "A peer secret backup credential requires operator recovery.",
+                        "A protected secret backup requires operator recovery.",
                         null);
                 }
 
@@ -619,21 +619,21 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
 
             if (!exists)
             {
-                if (target == StateFileTarget.PeerSecret
+                if (StateFileTargets.IsSecret(target)
                     && _targetWriter.BackupExists(target))
                 {
                     throw new IOException(
-                        "A committed peer secret deletion left a backup credential.");
+                        "A committed protected secret deletion left a backup.");
                 }
 
                 return;
             }
 
-            if (target == StateFileTarget.PeerSecret
+            if (StateFileTargets.IsSecret(target)
                 && _targetWriter.BackupExists(target))
             {
                 throw new IOException(
-                    "A peer secret state must not retain a backup credential.");
+                    "A protected secret state must not retain a backup.");
             }
 
             byte[] actualContents = _targetWriter.Read(

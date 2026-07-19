@@ -8,7 +8,7 @@ using System.Xml.Schema;
 
 namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
 {
-    public static class AdminServerXmlCodec
+    public static partial class AdminServerXmlCodec
     {
         private const string SchemaResourceName =
             "DEEPAi.ServiceDirectory.InternalProtocol.Admin.admin.xsd";

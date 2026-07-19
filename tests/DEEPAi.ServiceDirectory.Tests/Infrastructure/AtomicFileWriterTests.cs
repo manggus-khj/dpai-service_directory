@@ -83,7 +83,9 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 Directory.CreateDirectory(Path.Combine(
                     stateDirectory,
                     "secrets"));
-                var writer = new AtomicFileWriter(stateDirectory);
+                var writer = new AtomicFileWriter(
+                    new StateStoragePathPolicy(stateDirectory),
+                    new NoOpSecretAccessPolicy());
                 byte[] first = Encoding.UTF8.GetBytes("protected-first");
                 byte[] second = Encoding.UTF8.GetBytes("protected-second");
 
@@ -166,6 +168,18 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             if (Directory.Exists(path))
             {
                 Directory.Delete(path, true);
+            }
+        }
+
+        private sealed class NoOpSecretAccessPolicy
+            : ISecretFileAccessPolicy
+        {
+            public void ProtectExistingFile(string path)
+            {
+            }
+
+            public void ValidateExistingFile(string path)
+            {
             }
         }
     }

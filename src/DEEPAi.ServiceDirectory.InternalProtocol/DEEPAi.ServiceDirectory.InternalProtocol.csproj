@@ -43,6 +43,8 @@
   <ItemGroup>
     <Compile Include="Admin\AdminApiContract.cs" />
     <Compile Include="Admin\AdminApiModels.cs" />
+    <Compile Include="Admin\AdminCertificateModels.cs" />
+    <Compile Include="Admin\AdminCertificateXmlCodec.cs" />
     <Compile Include="Admin\AdminPeerEndpoint.cs" />
     <Compile Include="Admin\AdminServerRequestModels.cs" />
     <Compile Include="Admin\AdminServerResponseModels.cs" />

@@ -5,11 +5,15 @@ using System.Security.Principal;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
 {
-    internal interface IPeerSecretAccessPolicy
+    internal interface ISecretFileAccessPolicy
     {
         void ProtectExistingFile(string path);
 
         void ValidateExistingFile(string path);
+    }
+
+    internal interface IPeerSecretAccessPolicy : ISecretFileAccessPolicy
+    {
     }
 
     internal sealed class PeerSecretAccessPolicy

@@ -505,7 +505,8 @@
                 </TabItem>
 
                 <TabItem>
-                    <Grid>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
                         <Border HorizontalAlignment="Stretch" VerticalAlignment="Top" Style="{StaticResource CardStyle}">
                             <StackPanel>
                                 <TextBlock Text="시스템 로그 보존" Style="{StaticResource SectionTitleTextStyle}" />
@@ -516,7 +517,97 @@
                                 <Button Margin="0,12,0,0" HorizontalAlignment="Left" Content="설정 저장" Command="{Binding SaveLoggingCommand}" Style="{StaticResource PrimaryButtonStyle}" />
                             </StackPanel>
                         </Border>
-                    </Grid>
+
+                        <Border Margin="0,10,0,0" Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Site CA 상태와 백업" Style="{StaticResource SectionTitleTextStyle}" />
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="105" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="90" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="상태" Style="{StaticResource MutedTextStyle}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding CaStateText}" FontFamily="Consolas" />
+                                    <TextBlock Grid.Column="2" Text="역할" Style="{StaticResource MutedTextStyle}" />
+                                    <TextBlock Grid.Column="3" Text="{Binding CaRoleText}" FontFamily="Consolas" />
+                                    <TextBlock Grid.Row="1" Margin="0,5,0,0" Text="SiteId" Style="{StaticResource MutedTextStyle}" />
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,5,0,0" Text="{Binding CaSiteIdText}" FontFamily="Consolas" />
+                                    <TextBlock Grid.Row="2" Margin="0,5,0,0" Text="CA serial" Style="{StaticResource MutedTextStyle}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,5,0,0" Text="{Binding CaSerialText}" FontFamily="Consolas" />
+                                    <TextBlock Grid.Row="3" Margin="0,5,0,0" Text="Revision / CRL" Style="{StaticResource MutedTextStyle}" />
+                                    <TextBlock Grid.Row="3" Grid.Column="1" Margin="0,5,0,0" Text="{Binding CaRevisionAndCrlText}" FontFamily="Consolas" />
+                                    <TextBlock Grid.Row="3" Grid.Column="2" Margin="0,5,0,0" Text="마지막 백업" Style="{StaticResource MutedTextStyle}" />
+                                    <TextBlock Grid.Row="3" Grid.Column="3" Margin="0,5,0,0" Text="{Binding CaLastBackupText}" />
+                                </Grid>
+                                <TextBlock Margin="0,10,0,4" Text="백업 암호 (12~128자, 복원 시 필요)" Style="{StaticResource MutedTextStyle}" />
+                                <StackPanel Orientation="Horizontal">
+                                    <PasswordBox x:Name="CaBackupPasswordBox" Width="250" MaxLength="256" />
+                                    <Button
+                                        x:Name="CreateCaBackupButton"
+                                        Margin="8,0,0,0"
+                                        Content="암호화 백업 생성"
+                                        Click="OnCreateCaBackupClick"
+                                        Style="{StaticResource PrimaryButtonStyle}" />
+                                </StackPanel>
+                                <TextBlock Margin="0,6,0,4" Text="백업 암호 확인" Style="{StaticResource MutedTextStyle}" />
+                                <PasswordBox x:Name="CaBackupPasswordConfirmBox" Width="250" MaxLength="256" HorizontalAlignment="Left" />
+                                <TextBlock Margin="0,6,0,0" Text="{Binding LastCaBackupText}" TextWrapping="Wrap" Style="{StaticResource SmallMutedTextStyle}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Margin="0,10,0,0" Padding="0" Style="{StaticResource CardStyle}">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="42" />
+                                    <RowDefinition Height="210" />
+                                    <RowDefinition Height="42" />
+                                </Grid.RowDefinitions>
+                                <Grid Margin="12,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <TextBlock Text="인증서 원장" Style="{StaticResource SectionTitleTextStyle}" />
+                                    <Button Grid.Column="1" Padding="12,6" Content="새로 고침" Command="{Binding RefreshCurrentPageCommand}" />
+                                </Grid>
+                                <DataGrid Grid.Row="1" ItemsSource="{Binding Certificates}" SelectedItem="{Binding SelectedCertificate, Mode=TwoWay}" AutoGenerateColumns="False">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Width="150" Header="Serial" Binding="{Binding SerialNumber}" />
+                                        <DataGridTextColumn Width="65" Header="제품" Binding="{Binding ProductCode}" />
+                                        <DataGridTextColumn Width="*" Header="호스트명" Binding="{Binding ServiceHostName}" />
+                                        <DataGridTextColumn Width="95" Header="IPv4" Binding="{Binding ServiceIpv4Address}" />
+                                        <DataGridTextColumn Width="72" Header="상태" Binding="{Binding Status}" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                                <Grid Grid.Row="2" Margin="12,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding CertificatePageText}" Style="{StaticResource MutedTextStyle}" />
+                                    <StackPanel Grid.Column="1" Margin="0,0,8,0" Orientation="Horizontal">
+                                        <Button Margin="0,0,6,0" Content="이전" Command="{Binding PreviousCertificatePageCommand}" />
+                                        <Button Content="다음" Command="{Binding NextCertificatePageCommand}" />
+                                    </StackPanel>
+                                    <ComboBox
+                                        Grid.Column="2"
+                                        Width="145"
+                                        Margin="0,0,8,0"
+                                        ItemsSource="{Binding OperatorRevocationReasons}"
+                                        SelectedItem="{Binding SelectedRevocationReason}" />
+                                    <Button Grid.Column="3" Content="선택 serial 폐기" Command="{Binding RevokeCertificateCommand}" Style="{StaticResource DangerButtonStyle}" />
+                                </Grid>
+                            </Grid>
+                        </Border>
+                        </StackPanel>
+                    </ScrollViewer>
                 </TabItem>
             </TabControl>
 

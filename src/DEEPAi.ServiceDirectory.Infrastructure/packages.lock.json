@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "dependencies": {
+    ".NETFramework,Version=v4.8": {
+      "BouncyCastle.Cryptography": {
+        "type": "Direct",
+        "requested": "[2.6.2, 2.6.2]",
+        "resolved": "2.6.2",
+        "contentHash": "7oWOcvnntmMKNzDLsdxAYqApt+AjpRpP2CShjMfIa3umZ42UQMvH0tl1qAliYPNYO6vTdcGMqnRrCPmsfzTI1w=="
+      },
+      "deepai.servicedirectory.application": {
+        "type": "Project",
+        "dependencies": {
+          "DEEPAi.ServiceDirectory.Domain": "[1.0.0, )"
+        }
+      },
+      "deepai.servicedirectory.domain": {
+        "type": "Project"
+      },
+      "deepai.servicedirectory.externalprotocol": {
+        "type": "Project",
+        "dependencies": {
+          "DEEPAi.ServiceDirectory.Application": "[1.0.0, )",
+          "DEEPAi.ServiceDirectory.Domain": "[1.0.0, )"
+        }
+      },
+      "deepai.servicedirectory.internalprotocol": {
+        "type": "Project",
+        "dependencies": {
+          "DEEPAi.ServiceDirectory.Domain": "[1.0.0, )"
+        }
+      }
+    }
+  }
+}

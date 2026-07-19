@@ -107,6 +107,9 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             else if (SelectedPageIndex == 4)
             {
                 await RefreshLoggingAsync(cancellationToken, true);
+                await RefreshCertificateAdministrationAsync(
+                    cancellationToken,
+                    true);
             }
             else
             {

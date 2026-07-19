@@ -14,6 +14,8 @@ param(
 
     [string]$SetupStatePath,
 
+    [string]$CaRestorePath,
+
     [switch]$PurgeData
 )
 
@@ -606,12 +608,70 @@ function Remove-ServiceDefinition {
     }
 }
 
+function Invoke-CaRestore {
+    param(
+        [Parameter(Mandatory = $true)][string]$ExecutablePath,
+        [Parameter(Mandatory = $true)][string]$BackupPath
+    )
+
+    if ($BackupPath.IndexOf('"') -ge 0) {
+        throw 'The CA restore path contains an unsupported quote character.'
+    }
+
+    $securePassword = Read-Host `
+        -Prompt 'CA backup password' `
+        -AsSecureString
+    $passwordPointer = [IntPtr]::Zero
+    $password = $null
+    $process = $null
+    try {
+        $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR(
+            $securePassword)
+        $password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR(
+            $passwordPointer)
+        $startInfo = [Diagnostics.ProcessStartInfo]::new()
+        $startInfo.FileName = $ExecutablePath
+        $startInfo.Arguments = '--repair-pki-restore "' + $BackupPath + '"'
+        $startInfo.UseShellExecute = $false
+        $startInfo.CreateNoWindow = $true
+        $startInfo.RedirectStandardInput = $true
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+        $process = [Diagnostics.Process]::Start($startInfo)
+        $process.StandardInput.WriteLine($password)
+        $process.StandardInput.Close()
+        $standardOutput = $process.StandardOutput.ReadToEnd()
+        $standardError = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) {
+            throw "CA restore failed. $standardError"
+        }
+
+        if (-not [StringComparer]::Ordinal.Equals(
+                $standardOutput.Trim(),
+                'PKI_RESTORED')) {
+            throw 'CA restore returned an unexpected result.'
+        }
+    }
+    finally {
+        if ($null -ne $process) {
+            $process.Dispose()
+        }
+        if ($passwordPointer -ne [IntPtr]::Zero) {
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPointer)
+        }
+        $password = $null
+        $securePassword.Dispose()
+    }
+}
+
 function Invoke-Install {
     param(
         [Parameter(Mandatory = $true)][string]$RequestedInstallRoot,
         [Parameter(Mandatory = $true)][string]$RequestedDataRoot,
         [Parameter(Mandatory = $true)][string]$NewAddress,
-        [Parameter(Mandatory = $true)][string]$StatePath
+        [Parameter(Mandatory = $true)][string]$StatePath,
+        [string]$RequestedCaRestorePath
     )
 
     $paths = Assert-ExactInstallationPaths `
@@ -780,6 +840,11 @@ function Invoke-Install {
         Set-EventSource
         Set-ProductRegistration -NewAddress $NewAddress
         Set-OwnedTrayRunValue -InstallRoot $RequestedInstallRoot
+
+        if (-not [string]::IsNullOrWhiteSpace($RequestedCaRestorePath)) {
+            Invoke-CaRestore -ExecutablePath $mainExecutable `
+                -BackupPath $RequestedCaRestorePath
+        }
 
         Start-ServiceAndWait -Name $watchdogServiceName
         Start-ServiceAndWait -Name $mainServiceName
@@ -1137,7 +1202,8 @@ switch ($Mode) {
             -RequestedInstallRoot $InstallRoot `
             -RequestedDataRoot $DataRoot `
             -NewAddress $Address `
-            -StatePath $SetupStatePath
+            -StatePath $SetupStatePath `
+            -RequestedCaRestorePath $CaRestorePath
     }
     'Uninstall' {
         if ([string]::IsNullOrWhiteSpace($InstallRoot) `

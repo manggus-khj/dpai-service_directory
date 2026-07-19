@@ -9,7 +9,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         Directory = 0,
         Pending = 1,
         Config = 2,
-        PeerSecret = 3
+        PeerSecret = 3,
+        PkiMetadata = 4,
+        CertificateLedger = 5,
+        CertificateRevocationList = 6,
+        CaCertificate = 7,
+        CaPrivateKey = 8
     }
 
     internal sealed class StateFileTargetDescriptor
@@ -84,7 +89,47 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                         "peer.before.bin",
                         "peer.after.bin",
                         "peer.primary.discard.bin",
-                        "peer.backup.discard.bin")
+                        "peer.backup.discard.bin"),
+                    new StateFileTargetDescriptor(
+                        StateFileTarget.PkiMetadata,
+                        "PkiMetadata",
+                        @"pki\state.xml",
+                        "pki-state.before.bin",
+                        "pki-state.after.bin",
+                        "pki-state.primary.discard.bin",
+                        "pki-state.backup.discard.bin"),
+                    new StateFileTargetDescriptor(
+                        StateFileTarget.CertificateLedger,
+                        "CertificateLedger",
+                        @"pki\ledger.xml",
+                        "ledger.before.bin",
+                        "ledger.after.bin",
+                        "ledger.primary.discard.bin",
+                        "ledger.backup.discard.bin"),
+                    new StateFileTargetDescriptor(
+                        StateFileTarget.CertificateRevocationList,
+                        "CertificateRevocationList",
+                        @"pki\crl.der",
+                        "crl.before.bin",
+                        "crl.after.bin",
+                        "crl.primary.discard.bin",
+                        "crl.backup.discard.bin"),
+                    new StateFileTargetDescriptor(
+                        StateFileTarget.CaCertificate,
+                        "CaCertificate",
+                        @"pki\ca.der",
+                        "ca-certificate.before.bin",
+                        "ca-certificate.after.bin",
+                        "ca-certificate.primary.discard.bin",
+                        "ca-certificate.backup.discard.bin"),
+                    new StateFileTargetDescriptor(
+                        StateFileTarget.CaPrivateKey,
+                        "CaPrivateKey",
+                        @"secrets\ca.key",
+                        "ca-key.before.bin",
+                        "ca-key.after.bin",
+                        "ca-key.primary.discard.bin",
+                        "ca-key.backup.discard.bin")
                 });
 
         internal static IReadOnlyList<StateFileTargetDescriptor> All => Descriptors;
@@ -100,6 +145,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             }
 
             return Descriptors[index];
+        }
+
+        internal static bool IsSecret(StateFileTarget target)
+        {
+            return target == StateFileTarget.PeerSecret
+                || target == StateFileTarget.CaPrivateKey;
         }
 
         internal static bool TryParseJournalName(
@@ -125,7 +176,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         {
             foreach (StateFileTargetDescriptor descriptor in Descriptors)
             {
-                if (descriptor.Target == StateFileTarget.PeerSecret)
+                if (IsSecret(descriptor.Target)
+                    || !descriptor.RelativePath.EndsWith(
+                        ".xml",
+                        StringComparison.Ordinal))
                 {
                     continue;
                 }

@@ -1,7 +1,7 @@
 # 서비스 디렉토리 API 명세 안내
 
 > 문서 상태: 인증서 기반 목표 계약 확정
-> 구현 상태: 미구현. 현재 소스·XSD는 평문 HTTP·승인 대기 계약이며 목표 명세로 전환 필요
+> 구현 상태: PKI core 1차 소스만 부분 구현. 현재 wire·XSD·listener는 평문 HTTP·승인 대기 계약이며 목표 명세로 전환 필요
 > 최종 정리일: 2026-07-19
 
 이 파일은 호출 주체와 신뢰 경계별 상세 명세의 색인이다. 인증서 전환 범위와 구현 순서는 [인증서 전환 변경계획](./서비스디렉토리_인증서전환_변경계획.md), 실제 요청·응답과 호출 절차는 아래 외부·내부 명세가 단일 원본이다.
@@ -11,6 +11,7 @@
 - Milestone Management Server 주소는 같은 서버에 설치된 Directory의 위치다. 외부 앱은 성공한 Milestone session에서 얻은 `DirectoryHostName`·`DirectoryIpv4Address`를 같은 Directory identity로 저장하고 `https://{DirectoryHostName}:21000` 또는 `https://{DirectoryIpv4Address}:21000`으로 접속한다. 이 두 값은 Directory 위치·TLS 검증 전용이며 등록할 서비스 주소가 아니다.
 - 등록 서버 앱은 자기 서비스의 `ServiceHostName`과 `ServiceIpv4Address`를 사용자가 선택하게 하고 제한 ACL 설정에 한 쌍으로 영속화한다. 등록·조회 record, CSR와 등록 서비스 leaf SAN은 이 pair만 사용하고 Milestone/Directory 주소, TCP source IP와 DNS 역조회 값을 사용하지 않는다.
 - Directory listener, Peer와 등록 서비스 주소는 IPv4만 지원한다. CA certificate 자체에는 endpoint SAN을 넣지 않고, Directory leaf와 등록 서비스 leaf는 각각 자기 DNS+IPv4 pair를 섞지 않고 사용한다.
+- 모든 leaf의 CRL Distribution Point는 Directory identity로 만든 `https://{DirectoryHostName}:21000/pki/crl`과 `https://{DirectoryIpv4Address}:21000/pki/crl` 두 absolute URI다. 외부 응답의 `CrlUri=/pki/crl`은 현재 검증된 Directory base에 결합하는 상대 API path일 뿐 인증서 extension 값이 아니다.
 - 연결정보 파일, Directory 주소·CA pin·ProductCode의 설치 입력을 사용하지 않는다.
 - 첫 Directory 연결은 Directory leaf의 DNS·IPv4 SAN과 chain·CA 제약·키 강도를 검증한 제한적 TOFU이고, 이후에는 Milestone server identity별로 저장한 site CA와 SHA-256 SPKI pin을 강제한다.
 - 원격 External·Peer API는 TLS 1.2 이상을 지원하는 OS 보안 기본값의 HTTPS만 허용한다. protocol·cipher suite를 앱 코드에 고정하지 않으며 평문 HTTP remote listener와 redirect fallback은 제공하지 않는다.
@@ -71,4 +72,4 @@
 - 외부 승인 대기와 Admin approve/reject endpoint
 - HTTP canonical Peer endpoint
 
-현재 코드와 XSD는 아직 위 계약을 구현하지 않는다. 문서 변경만으로 빌드·실행·설치가 완료됐다고 표시하지 않으며, 후속 구현에서 XSD·DTO·상태·저장·listener·installer·UI·테스트를 같은 목표 계약으로 변경한다.
+CA·Directory/service leaf·CSR 검증·serial·CRL·certificate ledger 상태·endpoint identity primitive와 단위 테스트 소스는 추가됐지만 현재 코드의 wire와 XSD는 아직 위 계약을 구현하지 않는다. core 소스만으로 빌드·실행·설치가 완료됐다고 표시하지 않으며, 후속 구현에서 XSD·DTO·상태·저장·listener·installer·UI·테스트를 같은 목표 계약으로 변경한다.

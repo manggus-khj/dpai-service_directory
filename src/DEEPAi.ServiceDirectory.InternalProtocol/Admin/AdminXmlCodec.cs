@@ -11,7 +11,7 @@ using DEEPAi.ServiceDirectory.Domain;
 
 namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
 {
-    public static class AdminXmlCodec
+    public static partial class AdminXmlCodec
     {
         private static readonly Encoding StrictUtf8 = new UTF8Encoding(false, true);
         private static readonly XNamespace Namespace = AdminApiContract.XmlNamespace;

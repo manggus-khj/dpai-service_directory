@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using DEEPAi.ServiceDirectory.Infrastructure.Configuration;
 using DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol;
+using DEEPAi.ServiceDirectory.Infrastructure.Pki;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
 {
@@ -71,7 +72,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
     }
 
     // Owns config.xml + peer.dat transactions. Load also recovers and validates
-    // any of the four fixed state targets, so startup never has to guess which
+    // every approved fixed state target, so startup never has to guess which
     // scoped store created the single active recovery journal.
     internal sealed class PeerConfigurationTransactionStore : IDisposable
     {
@@ -84,6 +85,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         private readonly RecoveryJournalManager _journalManager;
         private readonly StateXmlCodec _stateCodec;
         private readonly PeerCredentialFile _peerCredentialFile;
+        private readonly StateStoragePathPolicy _pathPolicy;
+        private readonly IPeerSecretAccessPolicy _secretAccessPolicy;
 
         private PersistedPeerConfiguration _baseline;
         private long _generation;
@@ -109,6 +112,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         {
             var pathPolicy = new StateStoragePathPolicy(
                 stateDirectoryPath);
+            _pathPolicy = pathPolicy;
+            _secretAccessPolicy = accessPolicy;
             _fileWriter = new AtomicFileWriter(pathPolicy, accessPolicy);
             _journalManager = new RecoveryJournalManager(
                 pathPolicy,
@@ -374,6 +379,38 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             ValidateDirectoryAndPending();
             using (PersistedPeerConfiguration current = ReadCurrent(true))
             {
+            }
+
+            CertificateAuthorityStore.ValidateInstalledStateFiles(
+                _pathPolicy,
+                _secretAccessPolicy);
+        }
+
+        internal static void ValidateInstalledNonPkiStateFiles(
+            StateStoragePathPolicy pathPolicy,
+            IPeerSecretAccessPolicy accessPolicy)
+        {
+            var store = new PeerConfigurationTransactionStore(
+                pathPolicy.StateDirectoryPath,
+                new DpapiMachinePeerCredentialProtector(),
+                accessPolicy,
+                NoOpRecoveryJournalFaultInjector.Instance);
+            try
+            {
+                store.ValidateDirectoryAndPending();
+                using (PersistedPeerConfiguration current =
+                    store.ReadCurrent(true))
+                {
+                    if (!current.Exists)
+                    {
+                        throw new FileNotFoundException(
+                            "The installed config.xml is missing.");
+                    }
+                }
+            }
+            finally
+            {
+                store.Dispose();
             }
         }
 

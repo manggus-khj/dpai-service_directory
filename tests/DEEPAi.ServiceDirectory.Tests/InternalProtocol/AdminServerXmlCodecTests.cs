@@ -15,6 +15,50 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
             new UTF8Encoding(false, true);
 
         [TestMethod]
+        public void CertificateAdministrationRequestsRoundTripCanonicalXml()
+        {
+            const string password = "correct horse battery staple";
+            byte[] backupBody = AdminXmlCodec.SerializeCreateCaBackup(
+                password);
+            Assert.AreEqual(
+                password,
+                AdminServerXmlCodec.ParseCreateCaBackupRequest(backupBody)
+                    .Password);
+
+            byte[] revokeBody = AdminXmlCodec.SerializeRevokeCertificate(
+                AdminCertificateRevocationReason.KeyCompromise);
+            Assert.AreEqual(
+                AdminCertificateRevocationReason.KeyCompromise,
+                AdminServerXmlCodec.ParseRevokeCertificateRequest(
+                    revokeBody).Reason);
+            Assert.ThrowsExactly<ArgumentException>(() =>
+                AdminXmlCodec.SerializeRevokeCertificate(
+                    AdminCertificateRevocationReason.Superseded));
+        }
+
+        [TestMethod]
+        public void CertificateAdministrationRequestsRejectInvalidShapes()
+        {
+            Assert.ThrowsExactly<AdminProtocolException>(() =>
+                AdminServerXmlCodec.ParseCreateCaBackupRequest(Encode(
+                    "<CreateCaBackup xmlns=\""
+                    + XmlNamespace
+                    + "\"><Password>short</Password></CreateCaBackup>")));
+            Assert.ThrowsExactly<AdminProtocolException>(() =>
+                AdminServerXmlCodec.ParseCreateCaBackupRequest(Encode(
+                    "<CreateCaBackup xmlns=\""
+                    + XmlNamespace
+                    + "\"><Password>valid-length&#xA;password</Password>"
+                    + "</CreateCaBackup>")));
+            Assert.ThrowsExactly<AdminProtocolException>(() =>
+                AdminServerXmlCodec.ParseRevokeCertificateRequest(Encode(
+                    "<RevokeCertificate xmlns=\""
+                    + XmlNamespace
+                    + "\"><Reason>SUPERSEDED</Reason>"
+                    + "</RevokeCertificate>")));
+        }
+
+        [TestMethod]
         public void ParseRequestRejectsNullEmptyOversizedAndInvalidUtf8Bodies()
         {
             Assert.ThrowsExactly<ArgumentNullException>(

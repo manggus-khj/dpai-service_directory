@@ -3,6 +3,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using DEEPAi.ServiceDirectory.Domain;
+using DEEPAi.ServiceDirectory.Domain.Certificates;
 using DEEPAi.ServiceDirectory.Infrastructure.Logging;
 using DEEPAi.ServiceDirectory.Infrastructure.Networking;
 using DEEPAi.ServiceDirectory.Infrastructure.Protocol;
@@ -34,6 +35,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         private const string SyncNowPath = "/admin/sync/now";
         private const string LoggingSettingsPath =
             "/admin/settings/logging";
+        private const string CaStatusPath = "/admin/ca/status";
+        private const string CaBackupPath = "/admin/ca/backup";
+        private const string CertificatesPath = "/admin/certificates";
+        private const string CertificatesPrefix = "/admin/certificates/";
+        private const string RevokeSuffix = "/revoke";
 
         private readonly IAdminHttpRequestHandler _handler;
         private readonly IAdminAuthorizationEvaluator _authorizationEvaluator;
@@ -196,6 +202,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
 
             AdminServicesQuery servicesQuery = null;
             AdminPendingQuery pendingQuery = null;
+            AdminCertificatesQuery certificatesQuery = null;
             if (operation == AdminHttpOperation.GetServices)
             {
                 if (!AdminQueryStringParser.TryParseServices(
@@ -210,6 +217,15 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 if (!AdminQueryStringParser.TryParsePending(
                     request.RawQuery,
                     out pendingQuery))
+                {
+                    return BadRequest();
+                }
+            }
+            else if (operation == AdminHttpOperation.GetCertificates)
+            {
+                if (!AdminQueryStringParser.TryParseCertificates(
+                    request.RawQuery,
+                    out certificatesQuery))
                 {
                     return BadRequest();
                 }
@@ -250,6 +266,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             AdminPairingCancellationRequest pairingCancellationRequest = null;
             AdminDisableSyncRequest disableSyncRequest = null;
             AdminLoggingSettingsRequest loggingSettingsRequest = null;
+            AdminCreateCaBackupRequest createCaBackupRequest = null;
+            AdminRevokeCertificateRequest revokeCertificateRequest = null;
             try
             {
                 switch (operation)
@@ -273,6 +291,21 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                     case AdminHttpOperation.PutLoggingSettings:
                         loggingSettingsRequest = AdminServerXmlCodec
                             .ParseLoggingSettingsRequest(body);
+                        break;
+                    case AdminHttpOperation.CreateCaBackup:
+                        try
+                        {
+                            createCaBackupRequest = AdminServerXmlCodec
+                                .ParseCreateCaBackupRequest(body);
+                        }
+                        finally
+                        {
+                            Array.Clear(body, 0, body.Length);
+                        }
+                        break;
+                    case AdminHttpOperation.RevokeCertificate:
+                        revokeCertificateRequest = AdminServerXmlCodec
+                            .ParseRevokeCertificateRequest(body);
                         break;
                 }
             }
@@ -333,6 +366,23 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                         () => _handler.PutLoggingSettings(
                             loggingSettingsRequest),
                         AdminServerResponseXmlCodec.SerializeLoggingResponse);
+                case AdminHttpOperation.GetCaStatus:
+                    return Execute(
+                        _handler.GetCaStatus,
+                        AdminServerResponseXmlCodec.SerializeCaStatusResponse);
+                case AdminHttpOperation.CreateCaBackup:
+                    return Execute(
+                        () => _handler.CreateCaBackup(createCaBackupRequest),
+                        AdminServerResponseXmlCodec.SerializeCaBackupResponse);
+                case AdminHttpOperation.GetCertificates:
+                    return Execute(
+                        () => _handler.GetCertificates(certificatesQuery),
+                        AdminServerResponseXmlCodec
+                            .SerializeCertificatesResponse);
+                case AdminHttpOperation.RevokeCertificate:
+                    return ProcessCertificateRevocation(
+                        routeValue,
+                        revokeCertificateRequest);
                 default:
                     return InternalError();
             }
@@ -375,6 +425,26 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             return Execute(
                 () => _handler.DeleteService(productCode.Value),
                 AdminServerResponseXmlCodec.SerializeUnitResponse);
+        }
+
+        private AdminHttpResponseData ProcessCertificateRevocation(
+            string routeValue,
+            AdminRevokeCertificateRequest request)
+        {
+            CertificateSerialNumber serialNumber;
+            if (!CertificateSerialNumber.TryCreate(
+                    routeValue,
+                    out serialNumber))
+            {
+                return BadRequest();
+            }
+
+            return Execute(
+                () => _handler.RevokeCertificate(
+                    serialNumber.Hex,
+                    request),
+                AdminServerResponseXmlCodec
+                    .SerializeCertificateRevocationResponse);
         }
 
         private AdminHttpResponseData Execute<T>(
@@ -655,6 +725,34 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 return AdminHttpOperation.PutLoggingSettings;
             }
 
+            if (StringComparer.Ordinal.Equals(method, "GET")
+                && StringComparer.Ordinal.Equals(path, CaStatusPath))
+            {
+                return AdminHttpOperation.GetCaStatus;
+            }
+
+            if (StringComparer.Ordinal.Equals(method, "POST")
+                && StringComparer.Ordinal.Equals(path, CaBackupPath))
+            {
+                return AdminHttpOperation.CreateCaBackup;
+            }
+
+            if (StringComparer.Ordinal.Equals(method, "GET")
+                && StringComparer.Ordinal.Equals(path, CertificatesPath))
+            {
+                return AdminHttpOperation.GetCertificates;
+            }
+
+            if (StringComparer.Ordinal.Equals(method, "POST")
+                && TryExtractBetween(
+                    path,
+                    CertificatesPrefix,
+                    RevokeSuffix,
+                    out routeValue))
+            {
+                return AdminHttpOperation.RevokeCertificate;
+            }
+
             return AdminHttpOperation.Undefined;
         }
 
@@ -685,7 +783,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 || operation == AdminHttpOperation.ConfirmPairing
                 || operation == AdminHttpOperation.CancelPairing
                 || operation == AdminHttpOperation.DisableSync
-                || operation == AdminHttpOperation.PutLoggingSettings;
+                || operation == AdminHttpOperation.PutLoggingSettings
+                || operation == AdminHttpOperation.CreateCaBackup
+                || operation == AdminHttpOperation.RevokeCertificate;
         }
 
         private static bool IsSupportedXmlContentType(string contentType)

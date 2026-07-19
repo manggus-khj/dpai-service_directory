@@ -123,6 +123,80 @@ namespace DEEPAi.ServiceDirectory.Tray.Clients
                 cancellationToken);
         }
 
+        public Task<AdminServerCaStatusResponse> GetCaStatusAsync(
+            CancellationToken cancellationToken)
+        {
+            return SendAsync(
+                HttpMethod.Get,
+                "admin/ca/status",
+                null,
+                AdminXmlCodec.ParseCaStatusResponse,
+                cancellationToken);
+        }
+
+        public async Task<AdminServerCaBackupResponse> CreateCaBackupAsync(
+            string password,
+            CancellationToken cancellationToken)
+        {
+            byte[] body = AdminXmlCodec.SerializeCreateCaBackup(password);
+            try
+            {
+                return await SendAsync(
+                    HttpMethod.Post,
+                    "admin/ca/backup",
+                    body,
+                    AdminXmlCodec.ParseCaBackupResponse,
+                    cancellationToken);
+            }
+            finally
+            {
+                Array.Clear(body, 0, body.Length);
+            }
+        }
+
+        public Task<AdminServerCertificatesResponse> GetCertificatesAsync(
+            string cursor,
+            CancellationToken cancellationToken)
+        {
+            string path = "admin/certificates?pageSize="
+                + AdminApiContract.PageSize.ToString(
+                    CultureInfo.InvariantCulture);
+            if (!string.IsNullOrEmpty(cursor))
+            {
+                path += "&cursor=" + Uri.EscapeDataString(cursor);
+            }
+
+            return SendAsync(
+                HttpMethod.Get,
+                path,
+                null,
+                AdminXmlCodec.ParseCertificatesResponse,
+                cancellationToken);
+        }
+
+        public Task<AdminServerCertificateRevocationResponse>
+            RevokeCertificateAsync(
+                string serialNumber,
+                AdminCertificateRevocationReason reason,
+                CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(serialNumber))
+            {
+                throw new ArgumentException(
+                    "Certificate serial number is required.",
+                    nameof(serialNumber));
+            }
+
+            return SendAsync(
+                HttpMethod.Post,
+                "admin/certificates/"
+                    + Uri.EscapeDataString(serialNumber)
+                    + "/revoke",
+                AdminXmlCodec.SerializeRevokeCertificate(reason),
+                AdminXmlCodec.ParseCertificateRevocationResponse,
+                cancellationToken);
+        }
+
         public Task ApprovePendingAsync(Guid id, CancellationToken cancellationToken)
         {
             return SendUnitAsync(

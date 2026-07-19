@@ -23,6 +23,54 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
         }
 
         [TestMethod]
+        public void CertificateAdministrationResponsesRoundTrip()
+        {
+            DateTime issuedUtc = Utc(1);
+            var status = new AdminServerCaStatusResponse(
+                AdminCaState.Ready,
+                AdminCaRole.ActiveIssuer,
+                Guid.Parse("4ed36c2a-84d0-4fdb-94ef-8e25a8ee0da1"),
+                Guid.Parse("9f2ed127-9834-42b4-a379-eaad9df8fcec"),
+                "01A4B5C6D7E8F90123456789ABCDEF01",
+                new string('A', 43) + "=",
+                issuedUtc,
+                issuedUtc.AddYears(20),
+                43,
+                19,
+                issuedUtc.AddHours(1));
+            AdminServerCaStatusResponse parsedStatus = AdminXmlCodec
+                .ParseCaStatusResponse(AdminServerResponseXmlCodec
+                    .SerializeCaStatusResponse(status)).Payload;
+            Assert.AreEqual(AdminCaState.Ready, parsedStatus.State);
+            Assert.AreEqual((ulong)43, parsedStatus.PkiRevision.Value);
+
+            var item = new AdminServerCertificateItem(
+                "01A4B5C6D7E8F90123456789ABCDEF02",
+                "ABCD",
+                AdminCertificateIssuanceKind.Registration,
+                "service.example.local",
+                "10.0.0.5",
+                AdminCertificateStatus.Current,
+                issuedUtc,
+                issuedUtc.AddMinutes(-5),
+                issuedUtc.AddYears(1),
+                new string('B', 43) + "=",
+                null,
+                null,
+                null);
+            var response = new AdminServerCertificatesResponse(
+                new List<AdminServerCertificateItem> { item }.AsReadOnly(),
+                1,
+                null);
+            AdminServerCertificatesResponse parsedLedger = AdminXmlCodec
+                .ParseCertificatesResponse(AdminServerResponseXmlCodec
+                    .SerializeCertificatesResponse(response)).Payload;
+            Assert.AreEqual(1, parsedLedger.Items.Count);
+            Assert.AreEqual(item.SerialNumber,
+                parsedLedger.Items[0].SerialNumber);
+        }
+
+        [TestMethod]
         public void ServicesResponseRoundTripsCanonicalActiveAndDeletedItems()
         {
             DateTime activeUtc = Utc(2).AddTicks(1234000);

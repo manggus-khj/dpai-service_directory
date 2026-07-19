@@ -21,7 +21,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         DisableSync = 10,
         SynchronizeNow = 11,
         GetLoggingSettings = 12,
-        PutLoggingSettings = 13
+        PutLoggingSettings = 13,
+        GetCaStatus = 14,
+        CreateCaBackup = 15,
+        GetCertificates = 16,
+        RevokeCertificate = 17
     }
 
     internal sealed class AdminRequestAdmissionResult
@@ -273,7 +277,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             return operation == AdminHttpOperation.GetServices
                 || operation == AdminHttpOperation.GetPending
                 || operation == AdminHttpOperation.GetSyncStatus
-                || operation == AdminHttpOperation.GetLoggingSettings;
+                || operation == AdminHttpOperation.GetLoggingSettings
+                || operation == AdminHttpOperation.GetCaStatus
+                || operation == AdminHttpOperation.GetCertificates;
         }
 
         private long GetMonotonicTimestamp()

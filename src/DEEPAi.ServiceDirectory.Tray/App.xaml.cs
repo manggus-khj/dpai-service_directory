@@ -78,7 +78,7 @@ namespace DEEPAi.ServiceDirectory.Tray
             return MessageBox.Show(
                 _mainWindow,
                 message,
-                "등록 서비스 삭제",
+                "관리 작업 확인",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning,
                 MessageBoxResult.No) == MessageBoxResult.Yes;

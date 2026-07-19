@@ -6,9 +6,14 @@ namespace DEEPAi.ServiceDirectory.Service
 {
     internal static class Program
     {
-        private static void Main()
+        private static int Main(string[] args)
         {
             NativeLibrarySearchPolicy.Apply();
+
+            if (CertificateAuthorityRepairCommand.IsMaintenanceRequest(args))
+            {
+                return CertificateAuthorityRepairCommand.Execute(args);
+            }
 
             IServiceDirectoryRuntimeFactory runtimeFactory =
                 ProgramRuntimeFactory.Create();
@@ -17,6 +22,7 @@ namespace DEEPAi.ServiceDirectory.Service
                 {
                     new ServiceDirectoryWindowsService(runtimeFactory)
                 });
+            return 0;
         }
     }
 

@@ -35,6 +35,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="BouncyCastle.Cryptography" Version="[2.6.2, 2.6.2]" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\DEEPAi.ServiceDirectory.Application\DEEPAi.ServiceDirectory.Application.csproj">
       <Project>{D9501542-E687-4603-AA5F-9107605B11F2}</Project>
       <Name>DEEPAi.ServiceDirectory.Application</Name>
@@ -60,6 +63,7 @@
     <Compile Include="Http\AdminApplicationContracts.cs" />
     <Compile Include="Http\AdminApplicationHttpRequestHandler.cs" />
     <Compile Include="Http\AdminApplicationHttpRequestHandler.Paging.cs" />
+    <Compile Include="Http\AdminApplicationHttpRequestHandler.Certificates.cs" />
     <Compile Include="Http\AdminCursorCodec.cs" />
     <Compile Include="Http\AdminHttpAdapter.cs" />
     <Compile Include="Http\AdminHttpHandlerContract.cs" />
@@ -157,6 +161,21 @@
     <Compile Include="Persistence\WindowsFileSystem.cs" />
     <Compile Include="Persistence\XmlServiceDirectoryConfigurationStore.cs" />
     <Compile Include="Persistence\XmlServiceDirectoryStateStore.cs" />
+    <Compile Include="Pki\CertificateRevocationListArtifact.cs" />
+    <Compile Include="Pki\CaBackupCodec.cs" />
+    <Compile Include="Pki\CaBackupFileStore.cs" />
+    <Compile Include="Pki\CaPrivateKeyProtector.cs" />
+    <Compile Include="Pki\CertificateAuthorityAdministration.cs" />
+    <Compile Include="Pki\CertificateAuthorityRepair.cs" />
+    <Compile Include="Pki\CertificateAuthorityRuntimeAdministration.cs" />
+    <Compile Include="Pki\CertificateAuthorityState.cs" />
+    <Compile Include="Pki\CertificateAuthorityStateCodec.cs" />
+    <Compile Include="Pki\CertificateAuthorityStore.cs" />
+    <Compile Include="Pki\CertificateSigningRequestValidator.cs" />
+    <Compile Include="Pki\IssuedCertificateArtifact.cs" />
+    <Compile Include="Pki\PkiSerialNumber.cs" />
+    <Compile Include="Pki\SiteCertificateAuthority.cs" />
+    <Compile Include="Pki\ValidatedCertificateSigningRequest.cs" />
     <Compile Include="Protocol\BoundedRequestBody.cs" />
     <Compile Include="Protocol\BoundedUtf8XmlInput.cs" />
     <Compile Include="Protocol\XmlInputLimits.cs" />

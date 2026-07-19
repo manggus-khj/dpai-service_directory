@@ -7,7 +7,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
     {
         private const string BackupSuffix = ".bak";
         private readonly StateStoragePathPolicy _pathPolicy;
-        private readonly IPeerSecretAccessPolicy _peerSecretAccessPolicy;
+        private readonly ISecretFileAccessPolicy _secretAccessPolicy;
 
         public AtomicFileWriter(string stateDirectoryPath)
             : this(new StateStoragePathPolicy(stateDirectoryPath))
@@ -21,7 +21,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
 
         internal AtomicFileWriter(
             StateStoragePathPolicy pathPolicy,
-            IPeerSecretAccessPolicy peerSecretAccessPolicy)
+            ISecretFileAccessPolicy secretAccessPolicy)
         {
             if (pathPolicy == null)
             {
@@ -29,7 +29,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             }
 
             _pathPolicy = pathPolicy;
-            _peerSecretAccessPolicy = peerSecretAccessPolicy;
+            _secretAccessPolicy = secretAccessPolicy;
             _pathPolicy.EnsureStateDirectoryIsSafe();
         }
 
@@ -56,13 +56,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             _pathPolicy.EnsureTargetParentIsSafe(target);
             string fullDestinationPath = _pathPolicy.GetTargetPath(target);
             string fullBackupPath = fullDestinationPath + BackupSuffix;
-            bool maintainBackup = target != StateFileTarget.PeerSecret;
+            bool secretTarget = StateFileTargets.IsSecret(target);
+            bool maintainBackup = !secretTarget;
             _pathPolicy.EnsureExistingFileIsSafe(fullDestinationPath);
             _pathPolicy.EnsureExistingFileIsSafe(fullBackupPath);
             if (!maintainBackup && File.Exists(fullBackupPath))
             {
                 throw new InvalidDataException(
-                    "A peer secret backup credential is not allowed.");
+                    "A protected secret backup file is not allowed.");
             }
 
             string temporaryPath = Path.Combine(
@@ -83,19 +84,19 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                     FileOptions.WriteThrough))
                 {
                     temporaryFileCreated = true;
-                    if (target == StateFileTarget.PeerSecret)
+                    if (secretTarget)
                     {
-                        if (_peerSecretAccessPolicy == null)
+                        if (_secretAccessPolicy == null)
                         {
                             throw new InvalidOperationException(
-                                "A peer secret access policy is required.");
+                                "A protected secret access policy is required.");
                         }
 
                         // Apply the exact DACL before any DPAPI LocalMachine
                         // credential bytes reach the file.  Protecting only
                         // after the atomic move would leave a confidentiality
                         // window under the parent directory's inherited ACL.
-                        _peerSecretAccessPolicy.ProtectExistingFile(
+                        _secretAccessPolicy.ProtectExistingFile(
                             temporaryPath);
                     }
 
@@ -118,9 +119,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 temporaryFileCreated = false;
 
                 FlushExistingFile(fullDestinationPath);
-                if (target == StateFileTarget.PeerSecret)
+                if (secretTarget)
                 {
-                    _peerSecretAccessPolicy.ValidateExistingFile(
+                    _secretAccessPolicy.ValidateExistingFile(
                         fullDestinationPath);
                 }
                 writeCompleted = true;
@@ -161,10 +162,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             string backupPath = _pathPolicy.GetBackupPath(target);
             _pathPolicy.EnsureExistingFileIsSafe(targetPath);
             _pathPolicy.EnsureExistingFileIsSafe(backupPath);
-            if (target == StateFileTarget.PeerSecret)
+            if (StateFileTargets.IsSecret(target))
             {
                 throw new InvalidOperationException(
-                    "Peer secret deletion requires a recovery transaction.");
+                    "Protected secret deletion requires a recovery transaction.");
             }
 
             if (!File.Exists(targetPath))
@@ -209,13 +210,13 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             }
 
             Write(target, contents);
-            if (target == StateFileTarget.PeerSecret)
+            if (StateFileTargets.IsSecret(target))
             {
                 _pathPolicy.EnsureExistingFileIsSafe(backupPath);
                 if (File.Exists(backupPath))
                 {
                     throw new InvalidDataException(
-                        "A peer secret backup credential is not allowed.");
+                        "A protected secret backup file is not allowed.");
                 }
 
                 return;
@@ -232,7 +233,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             StateFileTarget target,
             string transactionPath)
         {
-            if (target != StateFileTarget.PeerSecret)
+            if (!StateFileTargets.IsSecret(target))
             {
                 Delete(target);
                 return;
@@ -244,11 +245,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             string backupPath = _pathPolicy.GetBackupPath(target);
             _pathPolicy.EnsureExistingFileIsSafe(targetPath);
             _pathPolicy.EnsureExistingFileIsSafe(backupPath);
-            if (target == StateFileTarget.PeerSecret
+            if (StateFileTargets.IsSecret(target)
                 && File.Exists(backupPath))
             {
                 throw new InvalidDataException(
-                    "A peer secret backup credential is not allowed.");
+                    "A protected secret backup file is not allowed.");
             }
 
             MoveTargetAndBackupToDiscards(
@@ -264,11 +265,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             string backupPath,
             string transactionPath)
         {
-            if (target == StateFileTarget.PeerSecret
+            if (StateFileTargets.IsSecret(target)
                 && File.Exists(backupPath))
             {
                 throw new InvalidDataException(
-                    "A peer secret backup credential is not allowed.");
+                    "A protected secret backup file is not allowed.");
             }
 
             StateFileTargetDescriptor descriptor =
@@ -278,7 +279,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 Path.Combine(
                     transactionPath,
                     descriptor.PrimaryDiscardFileName));
-            if (target == StateFileTarget.PeerSecret)
+            if (StateFileTargets.IsSecret(target))
             {
                 return;
             }

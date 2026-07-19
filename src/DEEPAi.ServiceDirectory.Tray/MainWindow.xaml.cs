@@ -57,5 +57,30 @@ namespace DEEPAi.ServiceDirectory.Tray
                 Hide();
             }
         }
+
+        private async void OnCreateCaBackupClick(
+            object sender,
+            RoutedEventArgs e)
+        {
+            StatusMonitorViewModel viewModel = ViewModel;
+            if (viewModel == null)
+            {
+                return;
+            }
+
+            CreateCaBackupButton.IsEnabled = false;
+            try
+            {
+                await viewModel.CreateCaBackupFromUiAsync(
+                    CaBackupPasswordBox.Password,
+                    CaBackupPasswordConfirmBox.Password);
+            }
+            finally
+            {
+                CaBackupPasswordBox.Clear();
+                CaBackupPasswordConfirmBox.Clear();
+                CreateCaBackupButton.IsEnabled = true;
+            }
+        }
     }
 }

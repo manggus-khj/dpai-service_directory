@@ -223,7 +223,9 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     "secrets"));
                 var pathPolicy = new StateStoragePathPolicy(
                     stateDirectory);
-                var writer = new AtomicFileWriter(pathPolicy);
+                var writer = new AtomicFileWriter(
+                    pathPolicy,
+                    new NoOpSecretAccessPolicy());
                 byte[] before = StrictUtf8.GetBytes("protected-peer-root");
                 writer.Write(StateFileTarget.PeerSecret, before);
                 var manager = new RecoveryJournalManager(
@@ -278,7 +280,9 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     "secrets"));
                 var pathPolicy = new StateStoragePathPolicy(
                     stateDirectory);
-                var writer = new AtomicFileWriter(pathPolicy);
+                var writer = new AtomicFileWriter(
+                    pathPolicy,
+                    new NoOpSecretAccessPolicy());
                 byte[] before = StrictUtf8.GetBytes("protected-peer-root");
                 writer.Write(StateFileTarget.PeerSecret, before);
                 var interruptedManager = new RecoveryJournalManager(
@@ -448,6 +452,18 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
 
                 _thrown = true;
                 throw new IOException("Injected recovery journal fault.");
+            }
+        }
+
+        private sealed class NoOpSecretAccessPolicy
+            : ISecretFileAccessPolicy
+        {
+            public void ProtectExistingFile(string path)
+            {
+            }
+
+            public void ValidateExistingFile(string path)
+            {
             }
         }
     }

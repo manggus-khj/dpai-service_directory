@@ -60,6 +60,7 @@
     <None Include="app.manifest" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CertificateAuthorityRepairCommand.cs" />
     <Compile Include="InstalledListenerAddressValidator.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

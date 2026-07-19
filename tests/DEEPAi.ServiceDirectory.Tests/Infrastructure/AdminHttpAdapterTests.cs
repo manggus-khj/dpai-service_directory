@@ -952,6 +952,65 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                         request.LogRetentionDays));
             }
 
+            public AdminHandlerResult<AdminServerCaStatusResponse>
+                GetCaStatus()
+            {
+                TotalCalls++;
+                LastOperation = "GetCaStatus";
+                return AdminHandlerResult<AdminServerCaStatusResponse>
+                    .Success(new AdminServerCaStatusResponse(
+                        AdminCaState.NotProvisioned));
+            }
+
+            public AdminHandlerResult<AdminServerCaBackupResponse>
+                CreateCaBackup(AdminCreateCaBackupRequest request)
+            {
+                TotalCalls++;
+                LastOperation = "CreateCaBackup";
+                return AdminHandlerResult<AdminServerCaBackupResponse>.Success(
+                    new AdminServerCaBackupResponse(
+                        "site-ca-00000000-0000-0000-0000-000000000001-20260719T000000000Z.dpca",
+                        new DateTime(2026, 7, 19, 0, 0, 0, DateTimeKind.Utc),
+                        new string('A', 43) + "="));
+            }
+
+            public AdminHandlerResult<AdminServerCertificatesResponse>
+                GetCertificates(AdminCertificatesQuery query)
+            {
+                TotalCalls++;
+                LastOperation = "GetCertificates";
+                return AdminHandlerResult<AdminServerCertificatesResponse>
+                    .Success(new AdminServerCertificatesResponse(
+                        new List<AdminServerCertificateItem>().AsReadOnly(),
+                        0,
+                        null));
+            }
+
+            public AdminHandlerResult<
+                AdminServerCertificateRevocationResponse> RevokeCertificate(
+                    string serialNumber,
+                    AdminRevokeCertificateRequest request)
+            {
+                TotalCalls++;
+                LastOperation = "RevokeCertificate";
+                return AdminHandlerResult<
+                    AdminServerCertificateRevocationResponse>.Success(
+                        new AdminServerCertificateRevocationResponse(
+                            serialNumber,
+                            new DateTime(
+                                2026,
+                                7,
+                                19,
+                                0,
+                                0,
+                                0,
+                                DateTimeKind.Utc),
+                            request.Reason,
+                            2,
+                            2,
+                            false));
+            }
+
             private static AdminHandlerResult<AdminServerUnitResponse>
                 UnitSuccess()
             {

@@ -6,7 +6,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
     internal enum AdminCursorKind : byte
     {
         Services = 1,
-        Pending = 2
+        Pending = 2,
+        Certificates = 3
     }
 
     internal sealed class AdminCursorCodec : IDisposable
@@ -258,7 +259,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         private static bool IsDefinedKind(AdminCursorKind kind)
         {
             return kind == AdminCursorKind.Services
-                || kind == AdminCursorKind.Pending;
+                || kind == AdminCursorKind.Pending
+                || kind == AdminCursorKind.Certificates;
         }
 
         private static void WriteInt32(

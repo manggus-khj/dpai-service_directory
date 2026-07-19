@@ -83,8 +83,11 @@ const
 
 var
   AddressPage: TInputOptionWizardPage;
+  CaRestorePage: TInputFileWizardPage;
   EligibleAddresses: TArrayOfString;
   SelectedListenAddress: String;
+  SelectedCaRestorePath: String;
+  ExistingInstallation: Boolean;
   PurgeDataOnUninstall: Boolean;
   ServicesPrepared: Boolean;
   PostInstallStarted: Boolean;
@@ -281,6 +284,24 @@ begin
     ResultCode);
 end;
 
+function RunPowerShellHelperVisible(
+  const HelperPath: String;
+  const Arguments: String;
+  var ResultCode: Integer): Boolean;
+var
+  Parameters: String;
+begin
+  Parameters := '-NoLogo -NoProfile -ExecutionPolicy Bypass -File ' +
+    QuoteArgument(HelperPath) + ' ' + Arguments;
+  Result := Exec(
+    PowerShellPath(),
+    Parameters,
+    '',
+    SW_SHOW,
+    ewWaitUntilTerminated,
+    ResultCode);
+end;
+
 function LoadEligibleAddresses(var Addresses: TArrayOfString): Boolean;
 var
   ResultCode: Integer;
@@ -340,6 +361,7 @@ begin
     True);
   SelectedIndex := 0;
   LoadExistingAddress(ExistingAddress);
+  ExistingInstallation := ExistingAddress <> '';
   for Index := 0 to GetArrayLength(EligibleAddresses) - 1 do
   begin
     AddressPage.Add(EligibleAddresses[Index]);
@@ -348,12 +370,29 @@ begin
   end;
   AddressPage.SelectedValueIndex := SelectedIndex;
 
+  CaRestorePage := CreateInputFilePage(
+    AddressPage.ID,
+    'Site CA restore',
+    'Optionally restore an encrypted Site CA backup during repair.',
+    'Leave this empty unless this is a repair and the existing Site CA state must be restored.');
+  CaRestorePage.Add(
+    'Encrypted CA backup:',
+    'DEEPAi CA backup files (*.dpca)|*.dpca',
+    '.dpca');
+
   if WizardSilent then
   begin
     SelectedListenAddress := ExpandConstant('{param:ListenAddress|}');
     if SelectedListenAddress = '' then
       RaiseException('Silent setup requires an explicit /ListenAddress=IP argument.');
+    if ExpandConstant('{param:CaRestorePath|}') <> '' then
+      RaiseException('Silent Site CA restore is not supported because the backup password must be entered through standard input.');
   end;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (PageID = CaRestorePage.ID) and not ExistingInstallation;
 end;
 
 function ValidateSelectedAddress(const Value: String): Boolean;
@@ -381,6 +420,22 @@ begin
         'The selected address is no longer a canonical address on an active Domain or Private interface.',
         mbError,
         MB_OK);
+  end;
+  if Result and (CurPageID = CaRestorePage.ID) then
+  begin
+    SelectedCaRestorePath := CaRestorePage.Values[0];
+    if SelectedCaRestorePath <> '' then
+    begin
+      Result := FileExists(SelectedCaRestorePath) and
+        (CompareStr(ExtractFileExt(SelectedCaRestorePath), '.dpca') = 0) and
+        (ExtractFileDrive(SelectedCaRestorePath) <> '') and
+        (Copy(SelectedCaRestorePath, 1, 2) <> '\\');
+      if not Result then
+        MsgBox(
+          'Select an existing local file with the exact .dpca extension.',
+          mbError,
+          MB_OK);
+    end;
   end;
 end;
 
@@ -436,14 +491,19 @@ begin
     ' -InstallRoot ' + QuoteArgument(ExpandConstant('{app}')) +
     ' -DataRoot ' + QuoteArgument(ExpandConstant('{commonappdata}\DEEPAi\ServiceDirectory')) +
     ' -SetupStatePath ' + QuoteArgument(SetupStatePath());
-  if not RunPowerShellHelper(
-      TemporaryHelperPath(),
-      Arguments,
-      ResultCode) or (ResultCode <> 0) then
+  if SelectedCaRestorePath <> '' then
+    Arguments := Arguments + ' -CaRestorePath ' +
+      QuoteArgument(SelectedCaRestorePath);
+  if SelectedCaRestorePath <> '' then
+    ConfigurationCompleted := RunPowerShellHelperVisible(
+      TemporaryHelperPath(), Arguments, ResultCode) and (ResultCode = 0)
+  else
+    ConfigurationCompleted := RunPowerShellHelper(
+      TemporaryHelperPath(), Arguments, ResultCode) and (ResultCode = 0);
+  if not ConfigurationCompleted then
     RaiseException(
       'Service configuration failed. Managed system changes were rolled back where possible, ' +
         'and the services remain stopped. Resolve the reported cause and run repair.');
-  ConfigurationCompleted := True;
   DeleteFile(SetupStatePath());
 end;
 

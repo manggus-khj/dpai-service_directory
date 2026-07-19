@@ -7,6 +7,7 @@ using DEEPAi.ServiceDirectory.Infrastructure.Http;
 using DEEPAi.ServiceDirectory.Infrastructure.Logging;
 using DEEPAi.ServiceDirectory.Infrastructure.Networking;
 using DEEPAi.ServiceDirectory.Infrastructure.Persistence;
+using DEEPAi.ServiceDirectory.Infrastructure.Pki;
 
 namespace DEEPAi.ServiceDirectory.Service
 {
@@ -42,6 +43,8 @@ namespace DEEPAi.ServiceDirectory.Service
             IDisposable applicationLifetime = null;
             IServiceDirectoryApplicationLifetime runtimeApplicationLifetime =
                 null;
+            CertificateAuthorityRuntimeAdministration
+                certificateAuthorityAdministration = null;
             try
             {
                 var mutationGate = new StateMutationGate();
@@ -58,6 +61,11 @@ namespace DEEPAi.ServiceDirectory.Service
                     fullDataRootPath);
                 StateMutationCoordinator stateCoordinator =
                     OpenStateCoordinator(stateStore, mutationGate);
+                certificateAuthorityAdministration =
+                    new CertificateAuthorityRuntimeAdministration(
+                        fullDataRootPath,
+                        mutationGate,
+                        configuration.InstanceId);
 
                 ServiceDirectoryListenerAddress listenerAddress;
                 if (!ServiceDirectoryListenerAddress.TryCreate(
@@ -86,7 +94,8 @@ namespace DEEPAi.ServiceDirectory.Service
                         configurationState,
                         configuration,
                         systemFileLogger,
-                        securityAuditLogger);
+                        securityAuditLogger,
+                        certificateAuthorityAdministration);
                 IAdminHttpRequestHandler adminHandler =
                     applicationFactory.CreateAdminHandler(
                         applicationContext);
@@ -113,9 +122,11 @@ namespace DEEPAi.ServiceDirectory.Service
 
                 runtimeApplicationLifetime =
                     new ApplicationComponentLifetime(
-                    adminHandler,
-                    peerHandler);
+                        adminHandler,
+                        peerHandler,
+                        certificateAuthorityAdministration);
                 applicationLifetime = runtimeApplicationLifetime;
+                certificateAuthorityAdministration = null;
 
                 var sharedExternalConcurrencyLimiter =
                     new ExternalRequestConcurrencyLimiter();
@@ -161,6 +172,7 @@ namespace DEEPAi.ServiceDirectory.Service
                 Exception listenerCleanupFailure = null;
                 Exception applicationCleanupFailure = null;
                 Exception configurationCleanupFailure = null;
+                Exception certificateAuthorityCleanupFailure = null;
                 if (listenerHost != null)
                 {
                     try
@@ -197,9 +209,22 @@ namespace DEEPAi.ServiceDirectory.Service
                     }
                 }
 
+                if (certificateAuthorityAdministration != null)
+                {
+                    try
+                    {
+                        certificateAuthorityAdministration.Dispose();
+                    }
+                    catch (Exception exception)
+                    {
+                        certificateAuthorityCleanupFailure = exception;
+                    }
+                }
+
                 if (listenerCleanupFailure != null
                     || applicationCleanupFailure != null
-                    || configurationCleanupFailure != null)
+                    || configurationCleanupFailure != null
+                    || certificateAuthorityCleanupFailure != null)
                 {
                     var failures = new System.Collections.Generic.List<Exception>
                     {
@@ -218,6 +243,11 @@ namespace DEEPAi.ServiceDirectory.Service
                     if (configurationCleanupFailure != null)
                     {
                         failures.Add(configurationCleanupFailure);
+                    }
+
+                    if (certificateAuthorityCleanupFailure != null)
+                    {
+                        failures.Add(certificateAuthorityCleanupFailure);
                     }
 
                     throw new AggregateException(

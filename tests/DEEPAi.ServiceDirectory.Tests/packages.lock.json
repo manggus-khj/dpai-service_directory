@@ -2,6 +2,12 @@
   "version": 1,
   "dependencies": {
     ".NETFramework,Version=v4.8": {
+      "BouncyCastle.Cryptography": {
+        "type": "Direct",
+        "requested": "[2.6.2, 2.6.2]",
+        "resolved": "2.6.2",
+        "contentHash": "7oWOcvnntmMKNzDLsdxAYqApt+AjpRpP2CShjMfIa3umZ42UQMvH0tl1qAliYPNYO6vTdcGMqnRrCPmsfzTI1w=="
+      },
       "MSTest.TestAdapter": {
         "type": "Direct",
         "requested": "[4.3.2, 4.3.2]",
@@ -166,6 +172,7 @@
       "deepai.servicedirectory.infrastructure": {
         "type": "Project",
         "dependencies": {
+          "BouncyCastle.Cryptography": "[2.6.2, 2.6.2]",
           "DEEPAi.ServiceDirectory.Application": "[1.0.0, )",
           "DEEPAi.ServiceDirectory.Domain": "[1.0.0, )",
           "DEEPAi.ServiceDirectory.ExternalProtocol": "[1.0.0, )",

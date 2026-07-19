@@ -30,6 +30,8 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
         private readonly SemaphoreSlim _watchdogRefreshGate = new SemaphoreSlim(1, 1);
         private readonly SemaphoreSlim _listRefreshGate = new SemaphoreSlim(1, 1);
         private readonly SemaphoreSlim _loggingRefreshGate = new SemaphoreSlim(1, 1);
+        private readonly SemaphoreSlim _certificateRefreshGate =
+            new SemaphoreSlim(1, 1);
         private readonly object _pollingStateGate = new object();
 
         private int _selectedPageIndex = 1;
@@ -78,6 +80,18 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
         private string _peerEndpointInput = string.Empty;
         private bool _rePairRequested;
         private string _logRetentionDaysText = string.Empty;
+        private AdminServerCaStatusResponse _caStatus;
+        private AdminServerCertificateItem _selectedCertificate;
+        private AdminCertificateRevocationReason _selectedRevocationReason =
+            AdminCertificateRevocationReason.KeyCompromise;
+        private int? _certificateTotalCount;
+        private int _certificatePageNumber = 1;
+        private string _certificateCursor;
+        private string _certificateNextCursor;
+        private readonly System.Collections.Generic.Stack<string>
+            _certificatePreviousCursors =
+                new System.Collections.Generic.Stack<string>();
+        private string _lastCaBackupText = "—";
         private string _statusMessage = "메인 서비스와 와치독 연결을 확인하는 중입니다.";
         private Brush _statusMessageBrush = Brushes.DimGray;
         private ImageSource _trayIconSource = StoppedTrayIcon;
@@ -112,6 +126,16 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
 
             PendingItems = new ObservableCollection<AdminPendingItem>();
             Services = new ObservableCollection<AdminServiceItem>();
+            Certificates = new ObservableCollection<
+                AdminServerCertificateItem>();
+            OperatorRevocationReasons = new[]
+            {
+                AdminCertificateRevocationReason.KeyCompromise,
+                AdminCertificateRevocationReason.CaCompromise,
+                AdminCertificateRevocationReason.AffiliationChanged,
+                AdminCertificateRevocationReason.PrivilegeWithdrawn,
+                AdminCertificateRevocationReason.AaCompromise
+            };
 
             OpenWindowCommand = new RelayCommand(openWindow);
             ExitCommand = new RelayCommand(exitApplication);
@@ -180,6 +204,21 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             NextServicePageCommand = CreateAsyncCommand(
                 NextServicePageAsync,
                 () => !string.IsNullOrEmpty(_serviceNextCursor));
+            RevokeCertificateCommand = CreateAsyncCommand(
+                RevokeCertificateAsync,
+                () => IsAdminConnected
+                    && SelectedCertificate != null
+                    && SelectedCertificate.Status
+                        != AdminCertificateStatus.Revoked
+                    && _caStatus != null
+                    && _caStatus.State == AdminCaState.Ready
+                    && _caStatus.Role == AdminCaRole.ActiveIssuer);
+            PreviousCertificatePageCommand = CreateAsyncCommand(
+                PreviousCertificatePageAsync,
+                () => _certificatePreviousCursors.Count > 0);
+            NextCertificatePageCommand = CreateAsyncCommand(
+                NextCertificatePageAsync,
+                () => !string.IsNullOrEmpty(_certificateNextCursor));
             _watchdogPollingTask = RunWatchdogPollingAsync(
                 _lifetimeCancellation.Token);
         }
@@ -187,6 +226,15 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
         public ObservableCollection<AdminPendingItem> PendingItems { get; }
 
         public ObservableCollection<AdminServiceItem> Services { get; }
+
+        public ObservableCollection<AdminServerCertificateItem>
+            Certificates { get; }
+
+        public System.Collections.Generic.IReadOnlyList<
+            AdminCertificateRevocationReason> OperatorRevocationReasons
+        {
+            get;
+        }
 
         public ICommand OpenWindowCommand { get; }
 
@@ -227,6 +275,12 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
         public AsyncCommand PreviousServicePageCommand { get; }
 
         public AsyncCommand NextServicePageCommand { get; }
+
+        public AsyncCommand RevokeCertificateCommand { get; }
+
+        public AsyncCommand PreviousCertificatePageCommand { get; }
+
+        public AsyncCommand NextCertificatePageCommand { get; }
 
         public int SelectedPageIndex
         {
@@ -285,6 +339,24 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
                     RaiseCommandStates();
                 }
             }
+        }
+
+        public AdminServerCertificateItem SelectedCertificate
+        {
+            get => _selectedCertificate;
+            set
+            {
+                if (SetProperty(ref _selectedCertificate, value))
+                {
+                    RaiseCommandStates();
+                }
+            }
+        }
+
+        public AdminCertificateRevocationReason SelectedRevocationReason
+        {
+            get => _selectedRevocationReason;
+            set => SetProperty(ref _selectedRevocationReason, value);
         }
 
         public bool IsAdminConnected
@@ -542,6 +614,58 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             }
         }
 
+        public string CaStateText => _caStatus == null
+            ? "확인할 수 없음"
+            : _caStatus.State.ToString();
+
+        public string CaRoleText => _caStatus == null
+            || !_caStatus.Role.HasValue
+                ? "—"
+                : _caStatus.Role.Value.ToString();
+
+        public string CaSiteIdText => _caStatus?.SiteId.HasValue == true
+            ? _caStatus.SiteId.Value.ToString("D")
+            : "—";
+
+        public string CaSerialText => _caStatus?.CaSerialNumber ?? "—";
+
+        public string CaRevisionText => _caStatus?.PkiRevision.HasValue == true
+            ? _caStatus.PkiRevision.Value.ToString(
+                CultureInfo.InvariantCulture)
+            : "—";
+
+        public string CaCrlNumberText => _caStatus?.CrlNumber.HasValue == true
+            ? _caStatus.CrlNumber.Value.ToString(
+                CultureInfo.InvariantCulture)
+            : "—";
+
+        public string CaRevisionAndCrlText => CaRevisionText
+            + " / "
+            + CaCrlNumberText;
+
+        public string CaLastBackupText => _caStatus?.LastBackupUtc.HasValue
+            == true
+                ? _caStatus.LastBackupUtc.Value.ToString(
+                    "yyyy-MM-dd HH:mm:ss 'UTC'",
+                    CultureInfo.InvariantCulture)
+                : "—";
+
+        public string LastCaBackupText
+        {
+            get => _lastCaBackupText;
+            private set => SetProperty(ref _lastCaBackupText, value);
+        }
+
+        public string CertificatePageText => "페이지 "
+            + _certificatePageNumber.ToString(CultureInfo.CurrentCulture)
+            + " · 전체 "
+            + (_certificateTotalCount.HasValue
+                ? _certificateTotalCount.Value.ToString(
+                    "N0",
+                    CultureInfo.CurrentCulture)
+                : "—")
+            + "개";
+
         public string StatusMessage
         {
             get => _statusMessage;
@@ -668,6 +792,9 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             NextPendingPageCommand?.RaiseCanExecuteChanged();
             PreviousServicePageCommand?.RaiseCanExecuteChanged();
             NextServicePageCommand?.RaiseCanExecuteChanged();
+            RevokeCertificateCommand?.RaiseCanExecuteChanged();
+            PreviousCertificatePageCommand?.RaiseCanExecuteChanged();
+            NextCertificatePageCommand?.RaiseCanExecuteChanged();
         }
 
         private void SetStatus(string message, bool isError)
