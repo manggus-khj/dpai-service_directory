@@ -1,61 +1,74 @@
 # 서비스 디렉토리 API 명세 안내
 
-> 문서 상태: 분리 완료, 세부 wire 계약 확정
-> 구현 상태: External 세 endpoint·`WDOG` loopback health·Admin 12개 endpoint와 Peer pairing/session/exchange를 메인 Windows Service의 공용 `HttpListener` host에 연결하고, strict External·Admin·Peer XML codec, Admin application handler, Peer DPAPI·인증·sync scheduler, Tray client와 Watchdog Windows Service 소스를 구현. 현재 작업 트리의 locked restore·빌드·테스트와 실제 Windows 실행·설치는 미검증
+> 문서 상태: 인증서 기반 목표 계약 확정
+> 구현 상태: 미구현. 현재 소스·XSD는 평문 HTTP·승인 대기 계약이며 목표 명세로 전환 필요
 > 최종 정리일: 2026-07-19
 
-기존의 단일 API 명세를 호출 주체와 신뢰 경계에 따라 두 문서로 분리했다. 이 파일은 호환되는 진입점과 문서 색인으로만 사용하며, 요청·응답의 단일 원본은 아래 두 상세 명세다.
+이 파일은 호출 주체와 신뢰 경계별 상세 명세의 색인이다. 인증서 전환 범위와 구현 순서는 [인증서 전환 변경계획](./서비스디렉토리_인증서전환_변경계획.md), 실제 요청·응답과 호출 절차는 아래 외부·내부 명세가 단일 원본이다.
 
-## 운영 기준
+## 목표 운영 기준
 
-- Milestone XProtect `2021 R1` 이상에서 동작하는 `x64` 전용 구성요소
-- 지원 OS는 x64 Windows Server `2019` 이상 Standard·Datacenter Desktop Experience, Windows 10 `1809` 이상 및 Windows 11 `24H2` 이상 Pro·Enterprise·IoT Enterprise이며 Server Core는 제외. Enterprise·IoT Enterprise LTSC는 버전 하한·Milestone 지원 교집합·조합 검증을 모두 충족한 release만 포함
-- Active Directory 도메인과 Workgroup 환경 모두 지원
-- External·Peer 원격 prefix는 설치 시 선택한 단일 unicast IP literal `ListenAddress`에 등록하고 Admin·와치독 loopback prefix는 별도로 등록. IPv6 link-local·multicast·IPv4-mapped와 zone identifier, wildcard를 금지하고 mapped 주소는 원래 IPv4 literal로 입력. Windows 방화벽은 Domain·Private 프로필만 허용하며 Public 프로필에서는 차단하고 원격 CIDR·원격 대역 allowlist는 사용하지 않음
-- IP literal prefix를 보안 경계로 취급하지 않고 요청의 실제 local endpoint를 신뢰 경계별 주소와 TCP `21000`에 다시 결합
-- 활성 서비스 최대 1,000개, 외부 애플리케이션 호출은 저빈도 전제
-- URL, media type, health와 Peer XML에 API 버전 필드를 두지 않고 현재 무버전 경로를 영구 유지. 기존 소비자와 호환되는 추가만 허용
-- 고정 XML namespace는 External `urn:deepai:service-directory:external`, Admin `urn:deepai:service-directory:admin`, Peer `urn:deepai:service-directory:peer`이며 버전 suffix와 namespace 없는 요청을 금지. 규범 XSD는 [`xsd/external.xsd`](./xsd/external.xsd), [`xsd/admin.xsd`](./xsd/admin.xsd), [`xsd/peer.xsd`](./xsd/peer.xsd)
-- HTTP `200`은 `Code=0` 성공에만 사용하고 `400`·`401`·`403`·`404`·`409`·`413`·`415`·`429`·`500` 매핑과 인증 전 bodyless·인증 후 Peer signed 오류 예외는 상세 명세를 따름
-- Peer 병합은 `LogicalVersion`과 canonical `OriginInstanceId`를 사용하고 UTC 시각은 감사·표시 전용. 60초 시계 편차는 Peer 인증 freshness에만 적용
-- 인증·인가·endpoint 신뢰 경계 실패는 Windows Application Event Log source `DEEPAi.ServiceDirectory.Security`에 별도 기록하고 비밀값 배제와 반복 실패 flood 억제를 적용
-- 상세 요청 크기·필드·항목 수·rate limit·timeout은 아래 내·외부 상세 명세가 단일 원본
+- Milestone Management Server 주소는 같은 서버에 설치된 Directory의 위치다. 외부 앱은 성공한 Milestone session에서 얻은 `DirectoryHostName`·`DirectoryIpv4Address`를 같은 Directory identity로 저장하고 `https://{DirectoryHostName}:21000` 또는 `https://{DirectoryIpv4Address}:21000`으로 접속한다. 이 두 값은 Directory 위치·TLS 검증 전용이며 등록할 서비스 주소가 아니다.
+- 등록 서버 앱은 자기 서비스의 `ServiceHostName`과 `ServiceIpv4Address`를 사용자가 선택하게 하고 제한 ACL 설정에 한 쌍으로 영속화한다. 등록·조회 record, CSR와 등록 서비스 leaf SAN은 이 pair만 사용하고 Milestone/Directory 주소, TCP source IP와 DNS 역조회 값을 사용하지 않는다.
+- Directory listener, Peer와 등록 서비스 주소는 IPv4만 지원한다. CA certificate 자체에는 endpoint SAN을 넣지 않고, Directory leaf와 등록 서비스 leaf는 각각 자기 DNS+IPv4 pair를 섞지 않고 사용한다.
+- 연결정보 파일, Directory 주소·CA pin·ProductCode의 설치 입력을 사용하지 않는다.
+- 첫 Directory 연결은 Directory leaf의 DNS·IPv4 SAN과 chain·CA 제약·키 강도를 검증한 제한적 TOFU이고, 이후에는 Milestone server identity별로 저장한 site CA와 SHA-256 SPKI pin을 강제한다.
+- 원격 External·Peer API는 TLS 1.2 이상을 지원하는 OS 보안 기본값의 HTTPS만 허용한다. protocol·cipher suite를 앱 코드에 고정하지 않으며 평문 HTTP remote listener와 redirect fallback은 제공하지 않는다.
+- Admin과 와치독 loopback은 로컬 IPC 경계로 유지하고 exact `127.0.0.1` endpoint, Negotiate·운영자 인가 또는 health 검증을 적용한다.
+- External 일일 API 키 알고리즘은 유지한다. health·조회·등록 admission과 ProductCode 결합에 사용하지만 강한 caller identity·request signature로 표현하지 않는다.
+- 외부 승인 대기는 제거한다. 관리자가 설정 UI의 등록 서비스 화면에서 ProductCode 입력 없이 전역 등록 모드를 열고, 1시간 안의 첫 유효 요청 한 건을 즉시 등록·인증서 발급한 뒤 닫는다.
+- 서비스 삭제·재등록은 기존 인증서 serial 폐기와 CRL 갱신까지 완료해야 성공이다.
+- URL·media type·XML에 API version 필드를 두지 않는다. 암호 domain label과 알고리즘 식별자는 API version이 아니다.
+- External·Admin·Peer XML은 각 고정 namespace와 strict XSD를 사용한다. 현재 XSD는 목표 계약으로 아직 갱신하지 않았다.
+- 인증·인가·endpoint·pin·CSR·발급·폐기 실패는 비밀값을 배제한 보안 감사 대상으로 한다.
 
 ## 상세 명세
 
 | 문서 | 대상 | 포함 범위 |
 |---|---|---|
-| [외부 애플리케이션 API 명세](./서비스디렉토리_외부애플리케이션_API명세.md) | 서비스 디렉토리를 이용하는 다른 제품 | 생존 확인, 제품코드별 서비스 조회, 등록·수정 승인 요청. 별도 결과 API 없이 서비스 재조회로 승인 반영 확인 |
-| [내부 API 명세](./서비스디렉토리_내부_API명세.md) | 트레이 앱, 와치독, 상대 서비스 디렉토리 | 관리, 승인·거절·삭제, 동기화 설정·교환·해제, 로컬 서비스 제어 |
+| [외부 애플리케이션 API 명세](./서비스디렉토리_외부애플리케이션_API명세.md) | 조회 클라이언트와 등록 서버 앱 | Management Server session 기반 Directory 위치 구성, 별도의 등록 서비스 hostname·IPv4 pair, TOFU·pin, 일일 키, CA·CRL, 서비스 조회, 등록 모드 중 CSR 즉시 발급, pair 변경 재발급, 대상 서버 인증서 검증 |
+| [내부 API 명세](./서비스디렉토리_내부_API명세.md) | 설정 UI, 와치독, 상대 Directory | 등록 모드 시작·종료·상태, 등록 서비스·인증서 폐기, CA 운영, Peer HTTPS·동기화, 로컬 서비스 제어 |
 
-## 엔드포인트 소유권
+## endpoint 소유권
 
-| 등급 | 호출 주체 | 엔드포인트 | 상세 문서 |
+| 경계 | 호출 주체 | endpoint | 상세 문서 |
 |---|---|---|---|
-| External | 4바이트 ProductCode·일일 API 키 검증을 통과한 다른 애플리케이션 | `GET /api/health` | 외부 명세 |
-| External | 4바이트 ProductCode·일일 API 키 검증을 통과한 다른 애플리케이션 | `GET /api/services?productCode={code}` | 외부 명세 |
-| External | 4바이트 ProductCode·일일 API 키 검증을 통과한 다른 애플리케이션 | `POST /api/registration` | 외부 명세 |
-| Admin | loopback Negotiate 인증과 로컬 `DEEPAi-ServiceDirectory-Operators` 그룹 인가를 통과한 운영자 UI | `/admin/*` | 내부 명세 |
-| Peer | ECDH P-256·양쪽 8자리 SAS로 페어링되고 DPAPI·HMAC-SHA256 계약을 통과한 상대 서비스 디렉토리 | `/api/sync/*` | 내부 명세 |
-| Local IPC | 로컬의 인가된 트레이 앱 | `\\.\pipe\SvcDirWatchdog` | 내부 명세 |
+| PKI bootstrap | Milestone Management Server와 같은 서버의 Directory DNS·IPv4 pair를 이미 아는 외부 앱 | `GET /pki/ca`, `GET /pki/crl` | 외부 명세 |
+| External 조회 | 일일 API 키와 저장 CA pin 검증을 통과한 외부 앱 | `GET /api/health`, `GET /api/services` | 외부 명세 |
+| External 발급 | 열린 전역 등록 모드에서 자기 `ServiceHostName`·`ServiceIpv4Address`와 첫 유효 CSR을 제출하는 서버 앱 | `POST /api/registration` | 외부 명세 |
+| External 갱신 | 현재 유효한 leaf private key proof를 가진 등록 서버 앱 | `POST /api/certificates/renew` | 외부 명세 |
+| Admin | loopback Negotiate와 로컬 운영자 그룹 인가를 통과한 설정 UI | `/admin/*` | 내부 명세 |
+| Peer | 같은 site CA·pin과 기존 ECDH/SAS/HMAC 계약을 통과한 상대 Directory | `/api/sync/*` | 내부 명세 |
+| Local IPC | 로컬 인가된 설정 UI | `\\.\pipe\SvcDirWatchdog` | 내부 명세 |
 
-와치독도 health 전용 구성요소 코드 `WDOG`로 일일 API 키를 생성해 `GET /api/health`를 재사용한다. 계약의 소유권은 외부 명세에 두고 내부 명세는 링크만 한다.
+와치독은 loopback `GET /api/health`의 응답 wire를 재사용하고 `WDOG` 일일 키를 사용한다. 원격 External trust bootstrap과 인증서 발급 권한은 갖지 않는다.
+
+## UI와 API 경계
+
+- 등록 모드 시작·종료는 트레이 context menu가 아니라 설정 UI의 `등록 서비스` 화면에서만 제공한다.
+- 설정 UI 좌측 메뉴에서 `승인 대기`를 제거한다.
+- 설정 UI는 `GET/POST /admin/registration-mode*`만 사용하며 process memory나 파일을 직접 읽지 않는다.
+- 외부 앱은 등록 모드를 열 수 없고 상세 상태도 조회하지 않는다. 닫힌 신규 등록은 `REGISTRATION_MODE_CLOSED`로만 알 수 있다.
+- 설치하는 사람은 ProductCode를 입력하지 않는다. 등록 요청 ProductCode는 앱 자체에 내장된 값이다.
 
 ## 분리 원칙
 
-- 다른 애플리케이션은 외부 명세만으로 연동할 수 있어야 한다.
-- 외부 DTO에는 톰스톤, 피어 `InstanceId`, 승인 대기 내부 모델 같은 구현 정보를 노출하지 않는다.
-- Admin과 Peer 계약은 외부 호환성 약속에 포함하지 않지만, 인증·호환성·오류 계약을 임의 변경하지 않는다.
-- 파일명, `directory.xml` 구조, `File.Replace` 같은 저장 구현은 API 계약이 아니다. [개발계획](./서비스디렉토리_개발계획.md)에서 관리한다.
-- “External”, “Admin”, “Peer”는 신뢰 경계를 분류하는 이름이다. External은 승인된 예외인 일일 검증값과 폐쇄망 통제를 사용하며 강한 호출자 인증으로 표현하지 않는다. Admin·Peer는 IP 주소, loopback 또는 방화벽만으로 인증을 대신하지 않는다.
+- 외부 앱은 외부 명세만으로 Directory 신뢰부터 대상 서버 인증서 검증까지 구현할 수 있어야 한다.
+- 외부 DTO에는 톰스톤, LogicalVersion, peer identity, CA private key, ledger 저장 경로를 노출하지 않는다.
+- Admin·Peer·파일 저장 계약을 외부 앱이 호출하거나 추측하지 않는다.
+- `directory.xml`, certificate ledger, CRL 원자 교체와 journal은 [개발계획](./서비스디렉토리_개발계획.md)의 책임이다.
+- Directory 주소를 신뢰한다는 사실은 certificate validation bypass 근거가 아니다. 최초 TOFU 뒤 저장 pin이 인증서 identity의 근거다.
+- Directory 주소는 Directory를 찾고 검증하는 데서 역할이 끝난다. 서비스 등록과 발급에서는 외부 앱이 선택·저장한 자기 `ServiceHostName`·`ServiceIpv4Address`만 사용하며 두 identity 사이에 값을 복사하거나 추론하지 않는다.
+- 일일 API 키 알고리즘 비공개를 암호학적 secret으로 표현하지 않는다. 발급 예외의 실제 보완 통제는 로컬 관리자가 연 1시간·1건 등록 모드와 HTTPS·CSR·폐기 절차다.
 
-## 현재 호환성 상태
+## 호환성과 구현 상태
 
-두 IP literal prefix, raw request-target, 경로별 인증 선택, External·Admin·Watchdog·Peer 어댑터 dispatch, 응답 기록과 endpoint별 deadline·drain을 담당하는 `HttpListener` transport host 및 이를 구성하는 메인 Windows Service 소스가 있다. Admin application handler와 Peer pairing·DPAPI durable state·active session·인증 exchange·scheduler도 연결되어 `/api/sync/*`가 실제 Peer handler로 전달된다. 다만 현재 작업 트리의 빌드·테스트와 실제 Windows listener·Negotiate/NTLM·서비스 중지 경합·DPAPI 실행은 검증하지 않았으며 Tray의 Admin client도 실행 검증하지 않았다. 두 상세 명세의 wire 계약은 확정했다. 경로와 wire에는 API 버전 필드를 두지 않으며 현재 `/api/*`, `/admin/*`, `/api/sync/*` 경로를 영구 유지한다. 공개 뒤에는 기존 소비자가 계속 동작하는 호환 추가만 허용한다.
+배포된 외부 소비자가 없으므로 다음 기존 계약을 호환 유지하지 않는다.
 
-- External 일일 API 키 헤더는 현재 44자 알고리즘에 영구 결합한다. 불가피한 교체는 기존 wire 변경이 아니라 별도 인증 헤더와 endpoint의 병렬 계약 및 명시적 migration으로만 수행한다.
-- HTTP 상태와 envelope 오류 매핑은 각 상세 명세에서 확정했다.
-- 상세 명세와 XSD에 열거한 오류 `Code` 집합은 닫힌 계약이다. 목록에 없는 값을 임의로 추가하거나 기존 의미를 재사용하지 않는다.
-- 요청은 경계별 고정 namespace와 XSD를 엄격히 적용하고 namespace 없는 XML을 거부한다. 호환 추가는 응답 마지막의 선택적 `Extensions` 안에서만 허용하며 요청의 알 수 없는 요소·속성은 거부한다.
+- remote `http://` base와 TLS 미사용 예외
+- CSR 없는 `POST /api/registration`
+- `PENDING_NEW`, `PENDING_MODIFY`, `PENDING_EXISTS`, `PendingId`
+- 외부 승인 대기와 Admin approve/reject endpoint
+- HTTP canonical Peer endpoint
 
-외부 계약을 확정한 뒤에는 경로·메서드·기존 필드 의미를 바꾸거나 새 필수 필드를 추가하지 않는다. 기능 확장은 상세 계약이 이미 허용한 선택적 확장점 또는 별도 endpoint 추가처럼 기존 소비자가 계속 동작하는 방식으로만 수행하며 `/v1` 같은 버전 경로, version query·header와 `ApiVersion`·`ProtocolVersion` 요소를 추가하지 않는다. 암호 primitive의 domain-separation label과 알고리즘 식별자는 API 버전 필드로 취급하지 않는다.
+현재 코드와 XSD는 아직 위 계약을 구현하지 않는다. 문서 변경만으로 빌드·실행·설치가 완료됐다고 표시하지 않으며, 후속 구현에서 XSD·DTO·상태·저장·listener·installer·UI·테스트를 같은 목표 계약으로 변경한다.
