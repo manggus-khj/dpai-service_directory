@@ -1,12 +1,18 @@
 # 서비스 디렉토리 인증서 전환 변경계획
 
+```text
+최초 작성일: 2026-07-19
+최종 변경일: 2026-07-20
+revision: 2
+```
+
 > 문서 상태: 목표 설계 확정, PKI core 1차 소스 부분 반영, XSD·저장·HTTPS·설치·UI 미반영
 > 기준일: 2026-07-19
 > 적용 기준: 사내 `Directory서비스_애플리케이션_하드닝_가이드` 개정본
 
-이 문서는 현재 구현된 평문 HTTP·승인 대기 기반 서비스 디렉토리를 사이트 CA·HTTPS·즉시 등록 모드 기반으로 전환하기 위한 변경 범위와 구현 순서를 정의한다. 요청·응답의 목표 wire 계약은 [외부 애플리케이션 API 명세](./서비스디렉토리_외부애플리케이션_API명세.md)와 [내부 API 명세](./서비스디렉토리_내부_API명세.md)가 단일 원본이다.
+이 문서는 현재 구현된 평문 HTTP·승인 대기 기반 서비스 디렉토리를 사이트 CA·HTTPS·즉시 등록 모드 기반으로 전환하기 위한 변경 범위와 구현 순서를 정의한다. 요청·응답의 목표 wire 계약은 [외부 애플리케이션 API 명세](./service-directory-04-api-01-external-application.md)와 [내부 API 명세](./service-directory-04-api-02-internal.md)가 단일 원본이다.
 
-문서 확정은 구현 완료를 뜻하지 않는다. CA·Directory/service leaf·CSR 검증·serial·CRL·certificate ledger 상태·IPv4 endpoint identity primitive와 CA/ledger/CRL 내구 저장·backup·운영 Admin/UI·repair restore 일부를 소스로 연결했지만 실제 remote runtime은 여전히 HTTP listener, 일일 API 키, `pending.xml`, 승인·거절 Admin API와 승인 대기 UI를 사용한다. 등록·갱신 발급 wire·HTTPS·Peer PKI 교환과 빌드·실행 검증 전에는 인증서 전환 완료가 아니다.
+문서 확정은 구현 완료를 뜻하지 않는다. CA·Directory/service leaf·CSR 검증·serial·CRL·certificate ledger 상태·IPv4 endpoint identity primitive와 CA/ledger/CRL 내구 저장·backup·운영 Admin/UI·repair restore 일부를 소스로 연결했지만 실제 remote runtime은 여전히 HTTP listener, 일일 API 키, `pending.xml`, 승인·거절 Admin API와 승인 대기 UI를 사용한다. `Debug|x64` 빌드는 성공했지만 등록·갱신 발급 wire·HTTPS·Peer PKI 교환과 테스트·실행 검증 전에는 인증서 전환 완료가 아니다.
 
 ## 1. 확정 결정
 
@@ -199,7 +205,7 @@ CLAIMED
 | 6. Peer·CA 운영 | Peer HTTPS, 동일 CA, rotation·CRL | 이중화·partition·승격·dual-pin·폐기 전파 검증 |
 | 7. 릴리스 | 지원 OS·Milestone 조합 종합 검증 | 인증서 설치·갱신·만료·폐기·CA 복구와 실제 외부 앱 연동 통과 |
 
-2026-07-19 진행 상태: endpoint identity, site CA·Directory/service leaf, CSR 검증, 16바이트 positive serial, signed CRL과 `CURRENT/RETIRING/REVOKED` ledger 불변식에 이어 canonical CA metadata·ledger 저장, DPAPI `LocalMachine` `secrets\ca.key`, signed CRL·CA certificate fixed target, 공용 recovery journal, password authenticated encrypted backup을 소스로 연결했다. `GET /admin/ca/status`, `POST /admin/ca/backup`, `GET /admin/certificates`, `POST /admin/certificates/{serial}/revoke`의 DTO·XSD·handler·HTTP route·설정 UI와 중지된 installer repair의 표준 입력 restore 진입점도 반영했다. 첫 전환 기동은 PKI artifact가 전혀 없을 때만 CA를 만들고 backup 전 `BACKUP_REQUIRED`로 제한하며, 기존 artifact 일부 누락은 자동 재생성하지 않는다. 등록 모드, 실제 등록·갱신 발급 transaction, HTTPS binding, Peer PKI 교환과 rotation은 아직 연결하지 않았고 이번 변경분은 빌드·테스트·실제 DPAPI/ACL·installer 실행을 검증하지 않았다.
+2026-07-20 진행 상태: endpoint identity, site CA·Directory/service leaf, CSR 검증, 16바이트 positive serial, signed CRL과 `CURRENT/RETIRING/REVOKED` ledger 불변식에 이어 canonical CA metadata·ledger 저장, DPAPI `LocalMachine` `secrets\ca.key`, signed CRL·CA certificate fixed target, 공용 recovery journal, password authenticated encrypted backup을 소스로 연결했다. `GET /admin/ca/status`, `POST /admin/ca/backup`, `GET /admin/certificates`, `POST /admin/certificates/{serial}/revoke`의 DTO·XSD·handler·HTTP route·설정 UI와 중지된 installer repair의 표준 입력 restore 진입점도 반영했다. 첫 전환 기동은 PKI artifact가 전혀 없을 때만 CA를 만들고 backup 전 `BACKUP_REQUIRED`로 제한하며, 기존 artifact 일부 누락은 자동 재생성하지 않는다. 2026-07-20 `tools/build.ps1 -Configuration Debug`의 restore와 `Debug|x64` 솔루션 빌드는 경고·오류 없이 성공했다. 등록 모드, 실제 등록·갱신 발급 transaction, HTTPS binding, Peer PKI 교환과 rotation은 아직 연결하지 않았고 테스트 실행·Release·실제 DPAPI/ACL·installer 실행은 검증하지 않았다.
 
 ## 9. 필수 보안·장애 검증
 
@@ -234,7 +240,7 @@ CLAIMED
 - Admin protocol/handler/Tray: pending 3 endpoint와 승인 대기 화면
 - `config.xml` v1·recovery journal: CA metadata·ledger·CRL·CA certificate·DPAPI key fixed target과 복구 검증은 반영됨. Directory 등록 transaction과 PKI target의 결합 migration은 남음
 - Peer endpoint parser·outbound client: `http://` canonical endpoint 고정
-- `Infrastructure/Pki`·Domain endpoint identity/ledger: primitive, canonical 직렬화·DPAPI 저장·backup·CRL 폐기와 runtime/Admin composition 소스까지 추가됨. 등록·갱신 발급 연결과 실제 컴파일·테스트가 남음
+- `Infrastructure/Pki`·Domain endpoint identity/ledger: primitive, canonical 직렬화·DPAPI 저장·backup·CRL 폐기와 runtime/Admin composition 소스까지 추가됨. 현재 변경분의 `Debug|x64` 컴파일은 성공했으며 등록·갱신 발급 연결과 테스트 실행이 남음
 - tests: 기존 HTTP·pending 계약 테스트는 목표 계약으로 교체·확장해야 하며 새 PKI 단위 테스트 소스도 아직 실행하지 않음
 
 후속 코드 변경은 위 순서대로 작은 검증 단위로 수행한다. PKI core 부분 구현만으로 기존 HTTP runtime을 새 계약 준수로 표시하지 않는다.

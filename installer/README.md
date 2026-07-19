@@ -6,7 +6,7 @@
 powershell -NoProfile -File .\tools\package.ps1 -Configuration Release
 ```
 
-이 명령은 locked restore를 포함한 `Release|x64` 빌드와 전체 MSTest를 먼저 통과시킨 뒤 Inno Setup 6으로 [`ServiceDirectory.iss`](./ServiceDirectory.iss)를 컴파일한다. `ISCC.exe`가 기본 설치 경로에 없으면 `-InnoSetupCompilerPath`로 정확한 경로를 전달한다. ISCC 출력은 `artifacts\package\installer-output\`의 격리된 staging에 만들고 예상한 이름의 비어 있지 않은 EXE 하나만 생성됐는지 확인한 뒤, 같은 볼륨의 `installer\`에 원자적 move 또는 replace로 게시한다. 따라서 compile 또는 staging 검증 실패는 기존 최종 EXE를 건드리지 않는다. 설치 패키지는 x64 Windows와 .NET Framework 4.8을 요구한다.
+이 명령은 locked restore를 포함한 `Release|x64` 빌드와 전체 MSTest를 먼저 통과시킨 뒤 Inno Setup 6으로 [`ServiceDirectory.iss`](./ServiceDirectory.iss)를 컴파일한다. `ISCC.exe`가 기본 설치 경로에 없으면 `-InnoSetupCompilerPath`로 정확한 경로를 전달한다. ISCC 출력은 `artifacts\service-directory\package\installer-output\`의 격리된 staging에 만들고 예상한 이름의 비어 있지 않은 EXE 하나만 생성됐는지 확인한 뒤, 같은 볼륨의 `installer\`에 원자적 move 또는 replace로 게시한다. 따라서 compile 또는 staging 검증 실패는 기존 최종 EXE를 건드리지 않는다. 설치 패키지는 x64 Windows와 .NET Framework 4.8을 요구한다.
 
 현재 `ServiceDirectory.iss`, 네 설치 지원 PowerShell 스크립트와 `tools\package.ps1` 소스는 존재하지만 package 명령, ISCC compile과 실제 설치·repair·rollback·제거는 아직 실행 검증하지 않았다. `installer\`에는 생성된 설치 EXE가 없다. 아래 ACL·URL ACL·방화벽·서비스 상태 rollback 설명은 구현 계약이며 현장 검증 완료를 뜻하지 않는다.
 
@@ -23,7 +23,7 @@ Inno Setup은 `ssPostInstall` 전에 설치 파일 교체와 uninstaller·설치
 - 설치 파일명은 루트 [`VERSION`](../VERSION)의 값을 사용해 `DEEPAi-ServiceDirectory-{version}-build.{build}-x64.exe`로 만든다.
 - 제품 버전과 빌드 번호를 Inno Setup 스크립트나 패키징 스크립트에 복사하거나 하드코딩하지 않는다.
 - 코드 서명 인증서가 없으므로 현재 설치 파일에 코드 서명을 적용하지 않는다. 오프라인 설치용 `.sha256`이나 다른 체크섬·manifest를 생성·배포·검증하지 않으며 제공된 설치 EXE를 수동으로 직접 실행한다.
-- 이 방식으로는 설치 파일의 배포자 출처, 반입 중 변조와 손상을 기술적으로 확인할 수 없다. 바뀐 EXE가 설치 권한으로 실행될 수 있는 잔여 위험은 [개발계획 §8.4](../docs/plan/서비스디렉토리_개발계획.md#84-코드-서명체크섬-없는-오프라인-패치-예외-기록)의 승인 범위이며, 이를 무결성 검증이 된 배포라고 표현하지 않는다.
+- 이 방식으로는 설치 파일의 배포자 출처, 반입 중 변조와 손상을 기술적으로 확인할 수 없다. 바뀐 EXE가 설치 권한으로 실행될 수 있는 잔여 위험은 [개발계획 §8.4](../docs/plan/service-directory-03-development.md#84-코드-서명체크섬-없는-오프라인-패치-예외-기록)의 승인 범위이며, 이를 무결성 검증이 된 배포라고 표현하지 않는다.
 - 설치 EXE payload에는 저장소 루트 `THIRD-PARTY-NOTICES.md`와 실제 Release restore 결과에서 확정한 모든 직접·전이 의존성의 라이선스 고지 및 SBOM을 포함한다. 이 고지는 `installer\` 출력 루트에 별도 파일로 만들지 않아 최종 설치 산출물은 EXE 하나만 유지한다.
 
 생성된 설치 EXE는 Git에 커밋하지 않는다. `.iss`, 설치 지원 PowerShell 소스와 이 문서는 추적 대상으로 유지한다.
@@ -46,6 +46,6 @@ Inno Setup은 `ssPostInstall` 전에 설치 파일 교체와 uninstaller·설치
 - 세트에 포함된 각 파일의 SHA-256 hash manifest. 접근 통제된 내부 장애 분석·빌드 추적에만 사용하며 설치 EXE에 포함하거나 오프라인 설치 승인·실행 조건으로 사용하지 않음
 - 설치 EXE payload에 포함한 제3자 라이선스 고지와 SBOM
 
-로컬에서 내부 심볼 세트를 준비해야 할 때는 저장소 루트 `artifacts\symbols\`만 임시 staging 위치로 사용한다. 이 경로는 Git에서 제외되며 `installer\`로 복사하지 않는다.
+로컬에서 내부 심볼 세트를 준비해야 할 때는 저장소 루트 `artifacts\service-directory\symbols\`만 임시 staging 위치로 사용한다. 이 경로는 Git에서 제외되며 `installer\`로 복사하지 않는다.
 
 심볼 세트는 해당 빌드의 지원 종료 후 3년까지 보존한다. 지원 종료일이 정해지지 않았으면 삭제하지 않는다. 접근 권한은 장애 분석과 보안 대응에 필요한 담당자로 제한한다.

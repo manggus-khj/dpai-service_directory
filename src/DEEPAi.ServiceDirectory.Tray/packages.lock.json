@@ -12,6 +12,11 @@
           "System.ValueTuple": "4.5.0"
         }
       },
+      "BouncyCastle.Cryptography": {
+        "type": "Transitive",
+        "resolved": "2.6.2",
+        "contentHash": "7oWOcvnntmMKNzDLsdxAYqApt+AjpRpP2CShjMfIa3umZ42UQMvH0tl1qAliYPNYO6vTdcGMqnRrCPmsfzTI1w=="
+      },
       "H.GeneratedIcons.System.Drawing": {
         "type": "Transitive",
         "resolved": "2.4.1",
@@ -76,6 +81,7 @@
       "deepai.servicedirectory.infrastructure": {
         "type": "Project",
         "dependencies": {
+          "BouncyCastle.Cryptography": "[2.6.2, 2.6.2]",
           "DEEPAi.ServiceDirectory.Application": "[1.0.0, )",
           "DEEPAi.ServiceDirectory.Domain": "[1.0.0, )",
           "DEEPAi.ServiceDirectory.ExternalProtocol": "[1.0.0, )",

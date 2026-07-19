@@ -98,11 +98,13 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             generator.AddExtension(
                 X509Extensions.SubjectKeyIdentifier,
                 false,
-                new SubjectKeyIdentifierStructure(keyPair.Public));
+                X509ExtensionUtilities.CreateSubjectKeyIdentifier(
+                    keyPair.Public));
             generator.AddExtension(
                 X509Extensions.AuthorityKeyIdentifier,
                 false,
-                new AuthorityKeyIdentifierStructure(keyPair.Public));
+                X509ExtensionUtilities.CreateAuthorityKeyIdentifier(
+                    keyPair.Public));
 
             var signatureFactory = new Asn1SignatureFactory(
                 CaSignatureAlgorithm,
@@ -365,7 +367,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             generator.AddExtension(
                 X509Extensions.AuthorityKeyIdentifier,
                 false,
-                new AuthorityKeyIdentifierStructure(_certificate));
+                X509ExtensionUtilities.CreateAuthorityKeyIdentifier(
+                    _certificate));
 
             var signatureFactory = new Asn1SignatureFactory(
                 CaSignatureAlgorithm,
@@ -466,7 +469,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             generator.AddExtension(
                 X509Extensions.ExtendedKeyUsage,
                 false,
-                new ExtendedKeyUsage(new[] { KeyPurposeID.IdKPServerAuth }));
+                new ExtendedKeyUsage(
+                    new[] { KeyPurposeID.id_kp_serverAuth }));
             generator.AddExtension(
                 X509Extensions.SubjectAlternativeName,
                 false,
@@ -478,11 +482,13 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             generator.AddExtension(
                 X509Extensions.SubjectKeyIdentifier,
                 false,
-                new SubjectKeyIdentifierStructure(publicKey));
+                X509ExtensionUtilities.CreateSubjectKeyIdentifier(
+                    publicKey));
             generator.AddExtension(
                 X509Extensions.AuthorityKeyIdentifier,
                 false,
-                new AuthorityKeyIdentifierStructure(_certificate));
+                X509ExtensionUtilities.CreateAuthorityKeyIdentifier(
+                    _certificate));
             generator.AddExtension(
                 X509Extensions.CrlDistributionPoints,
                 false,

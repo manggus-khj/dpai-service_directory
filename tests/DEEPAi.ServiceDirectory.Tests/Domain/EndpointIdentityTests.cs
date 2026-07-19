@@ -49,7 +49,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
             Assert.IsFalse(directoryIdentity.Equals(serviceIdentity));
         }
 
-        [DataTestMethod]
+        [TestMethod]
         [DataRow(null)]
         [DataRow("")]
         [DataRow("service.example.local.")]
@@ -74,7 +74,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
             Assert.AreNotEqual(EndpointIdentityValidationError.None, error);
         }
 
-        [DataTestMethod]
+        [TestMethod]
         [DataRow(null)]
         [DataRow("")]
         [DataRow("0.0.0.0")]

@@ -20,7 +20,6 @@
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
-    <OutputPath>bin\x64\Debug\</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -28,7 +27,6 @@
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x64' ">
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
-    <OutputPath>bin\x64\Release\</OutputPath>
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -61,10 +59,10 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <Resource Include="..\..\docs\plan\tray_running.png">
+    <Resource Include="..\..\docs\plan\service-directory-03-development\tray_running.png">
       <Link>Assets\tray_running.png</Link>
     </Resource>
-    <Resource Include="..\..\docs\plan\tray_stopped.png">
+    <Resource Include="..\..\docs\plan\service-directory-03-development\tray_stopped.png">
       <Link>Assets\tray_stopped.png</Link>
     </Resource>
   </ItemGroup>

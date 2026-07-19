@@ -15,7 +15,6 @@
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
-    <OutputPath>bin\x64\Debug\</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -23,7 +22,6 @@
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x64' ">
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
-    <OutputPath>bin\x64\Release\</OutputPath>
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -33,6 +31,7 @@
     <Reference Include="System.Core" />
     <Reference Include="System.Security" />
     <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="BouncyCastle.Cryptography" Version="[2.6.2, 2.6.2]" />
@@ -170,6 +169,7 @@
     <Compile Include="Pki\CertificateAuthorityRuntimeAdministration.cs" />
     <Compile Include="Pki\CertificateAuthorityState.cs" />
     <Compile Include="Pki\CertificateAuthorityStateCodec.cs" />
+    <Compile Include="Pki\CertificateAuthorityStore.Operations.cs" />
     <Compile Include="Pki\CertificateAuthorityStore.cs" />
     <Compile Include="Pki\CertificateSigningRequestValidator.cs" />
     <Compile Include="Pki\IssuedCertificateArtifact.cs" />

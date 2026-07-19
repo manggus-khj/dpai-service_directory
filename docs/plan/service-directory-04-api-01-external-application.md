@@ -1,14 +1,19 @@
 # 서비스 디렉토리 외부 애플리케이션 API 명세
 
+```text
+최초 작성일: 2026-07-17
+최종 변경일: 2026-07-19
+revision: 1
+```
+
 > 문서 상태: 인증서 기반 목표 wire 계약 확정
 > 구현 상태: PKI core 1차 소스만 부분 구현. 현재 wire·XSD·listener는 평문 HTTP·CSR 없는 승인 대기 계약이며 이 명세와 일치하지 않음
 > 대상 독자: Milestone Management Server에 연결한 뒤 Directory에서 서비스를 조회하거나 자기 서비스를 등록하는 애플리케이션 개발자
 > 배포 범위: 사내 연동 개발자와 승인된 운영 담당자
-> 최종 정리일: 2026-07-19
 
 이 문서는 외부 애플리케이션이 Directory의 위치와 인증서를 신뢰하고, 서비스를 조회하고, 자기 서버 인증서를 발급·갱신하고, 조회한 대상 서비스의 인증서를 검증하는 전체 연동 계약이다. endpoint 형식만 구현하고 이 문서의 최초 신뢰·pin·CSR·CRL 절차를 생략하면 호환 구현이 아니다.
 
-현재 저장소의 `DEEPAi.ServiceDirectory.ExternalProtocol`은 서버 내부 구현체이며 재배포 가능한 client SDK가 아니다. 외부 앱은 이 문서와 향후 갱신할 [`xsd/external.xsd`](./xsd/external.xsd)를 단일 원본으로 사용한다. 현재 XSD와 코드는 이 목표 계약으로 아직 변경하지 않았다.
+현재 저장소의 `DEEPAi.ServiceDirectory.ExternalProtocol`은 서버 내부 구현체이며 재배포 가능한 client SDK가 아니다. 외부 앱은 이 문서와 향후 갱신할 [`xsd/external.xsd`](./service-directory-04-api/external.xsd)를 단일 원본으로 사용한다. 현재 XSD와 코드는 이 목표 계약으로 아직 변경하지 않았다.
 
 ## 1. 역할과 계약 범위
 
@@ -615,4 +620,4 @@ CN fallback, name mismatch 무시, OS trust store의 다른 root fallback과 `ac
 - `PendingId` 기반 승인 대기 의미
 - 등록 결과를 service polling으로만 추정하는 절차
 
-PKI core 1차 소스와 단위 테스트 소스는 추가됐지만 `external.xsd`·DTO·handler·listener는 아직 위 목표 계약으로 변경되지 않았다. 후속 구현은 [인증서 전환 변경계획](./서비스디렉토리_인증서전환_변경계획.md)에 따라 XSD·DTO·listener·installer·저장·복구·테스트를 함께 변경해야 한다. 실제 wire 연결과 검증 전까지 현재 바이너리가 이 명세를 제공한다고 표시하지 않는다.
+PKI core 1차 소스와 단위 테스트 소스는 추가됐지만 `external.xsd`·DTO·handler·listener는 아직 위 목표 계약으로 변경되지 않았다. 후속 구현은 [인증서 전환 변경계획](./service-directory-02-certificate-transition.md)에 따라 XSD·DTO·listener·installer·저장·복구·테스트를 함께 변경해야 한다. 실제 wire 연결과 검증 전까지 현재 바이너리가 이 명세를 제공한다고 표시하지 않는다.

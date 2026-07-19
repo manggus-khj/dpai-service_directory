@@ -229,7 +229,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             Assert.IsNotNull(keyUsage);
             Assert.IsTrue(keyUsage[0]);
             Assert.IsTrue(certificate.GetExtendedKeyUsage().Any(
-                oid => oid.Equals(KeyPurposeID.IdKPServerAuth)));
+                oid => oid.Equals(KeyPurposeID.id_kp_serverAuth)));
             CrlDistPoint crlDistributionPoints = CrlDistPoint.GetInstance(
                 certificate.GetExtensionParsedValue(
                     X509Extensions.CrlDistributionPoints));

@@ -73,7 +73,7 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
 
     public sealed class AdminServerCaStatusResponse
     {
-        internal AdminServerCaStatusResponse(AdminCaState state)
+        public AdminServerCaStatusResponse(AdminCaState state)
         {
             if (state != AdminCaState.NotProvisioned)
             {
@@ -83,7 +83,7 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
             State = state;
         }
 
-        internal AdminServerCaStatusResponse(
+        public AdminServerCaStatusResponse(
             AdminCaState state,
             AdminCaRole role,
             Guid siteId,
@@ -160,7 +160,7 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
 
     public sealed class AdminServerCaBackupResponse
     {
-        internal AdminServerCaBackupResponse(
+        public AdminServerCaBackupResponse(
             string fileName,
             DateTime createdUtc,
             string sha256)
@@ -187,7 +187,7 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
 
     public sealed class AdminServerCertificateItem
     {
-        internal AdminServerCertificateItem(
+        public AdminServerCertificateItem(
             string serialNumber,
             string productCode,
             AdminCertificateIssuanceKind issuanceKind,
@@ -205,9 +205,11 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
             bool validSerial = CertificateSerialNumber.TryCreate(
                 serialNumber,
                 out CertificateSerialNumber ignoredSerial);
-            bool validProductCode = ProductCode.TryCreate(
+            bool validProductCode =
+                DEEPAi.ServiceDirectory.Domain.ProductCode.TryCreate(
                 productCode,
-                out ProductCode parsedProductCode)
+                out DEEPAi.ServiceDirectory.Domain.ProductCode
+                    parsedProductCode)
                 && StringComparer.Ordinal.Equals(
                     productCode,
                     parsedProductCode.Value);
@@ -308,7 +310,7 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
 
     public sealed class AdminServerCertificatesResponse
     {
-        internal AdminServerCertificatesResponse(
+        public AdminServerCertificatesResponse(
             IReadOnlyList<AdminServerCertificateItem> items,
             int totalCount,
             string nextCursor)
@@ -332,7 +334,7 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
 
     public sealed class AdminServerCertificateRevocationResponse
     {
-        internal AdminServerCertificateRevocationResponse(
+        public AdminServerCertificateRevocationResponse(
             string serialNumber,
             DateTime revokedUtc,
             AdminCertificateRevocationReason reason,

@@ -2,6 +2,7 @@
 bin/
 obj/
 packages/
+# Legacy local output from older scripts.
 TestResults/
 *.user
 *.suo
@@ -12,8 +13,5 @@ TestResults/
 # Generated installer artifacts; installer sources and documentation stay tracked.
 /installer/DEEPAi-ServiceDirectory-*-build.*-x64.exe
 
-# Local staging for private symbol bundles. Symbols must not be committed.
-/artifacts/symbols/
-
-# Disposable packaging staging, including temporary ISCC output.
-/artifacts/package/
+# All generated build, test, symbol and package staging files.
+/artifacts/service-directory/

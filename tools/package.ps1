@@ -162,7 +162,7 @@ function Assert-SafeStagingPath {
     )
 
     return Assert-ExactPackageDirectory `
-        -ExpectedPath (Join-Path $RepositoryRoot 'artifacts\package') `
+        -ExpectedPath (Join-Path $RepositoryRoot 'artifacts\service-directory\package') `
         -Path $Path `
         -AllowMissing:$AllowMissing `
         -IncludeTree:$IncludeTree
@@ -557,7 +557,8 @@ $versionPath = Join-Path $repositoryRoot 'VERSION'
 $installerRoot = Join-Path $repositoryRoot 'installer'
 $installerSource = Join-Path $installerRoot 'ServiceDirectory.iss'
 $rootNoticePath = Join-Path $repositoryRoot 'THIRD-PARTY-NOTICES.md'
-$stagingRoot = Join-Path $repositoryRoot 'artifacts\package'
+$stagingRoot = Join-Path $repositoryRoot `
+    'artifacts\service-directory\package'
 $applicationStaging = Join-Path $stagingRoot 'application'
 $noticesStaging = Join-Path $stagingRoot 'notices'
 $installerOutputStaging = Join-Path $stagingRoot 'installer-output'
@@ -566,31 +567,31 @@ $runtimeBuilds = @(
         ProjectPath = Join-Path $repositoryRoot `
             'src\DEEPAi.ServiceDirectory.Service\DEEPAi.ServiceDirectory.Service.csproj'
         OutputDirectory = Join-Path $repositoryRoot `
-            'src\DEEPAi.ServiceDirectory.Service\bin\x64\Release'
+            'artifacts\service-directory\bin\DEEPAi.ServiceDirectory.Service\x64\Release'
         IntermediateDirectory = Join-Path $repositoryRoot `
-            'src\DEEPAi.ServiceDirectory.Service\obj\x64\Release'
+            'artifacts\service-directory\obj\DEEPAi.ServiceDirectory.Service\x64\Release'
         FileListPath = Join-Path $repositoryRoot `
-            'src\DEEPAi.ServiceDirectory.Service\obj\x64\Release\DEEPAi.ServiceDirectory.Service.csproj.FileListAbsolute.txt'
+            'artifacts\service-directory\obj\DEEPAi.ServiceDirectory.Service\x64\Release\DEEPAi.ServiceDirectory.Service.csproj.FileListAbsolute.txt'
     },
     [pscustomobject]@{
         ProjectPath = Join-Path $repositoryRoot `
             'src\DEEPAi.ServiceDirectory.Watchdog\DEEPAi.ServiceDirectory.Watchdog.csproj'
         OutputDirectory = Join-Path $repositoryRoot `
-            'src\DEEPAi.ServiceDirectory.Watchdog\bin\x64\Release'
+            'artifacts\service-directory\bin\DEEPAi.ServiceDirectory.Watchdog\x64\Release'
         IntermediateDirectory = Join-Path $repositoryRoot `
-            'src\DEEPAi.ServiceDirectory.Watchdog\obj\x64\Release'
+            'artifacts\service-directory\obj\DEEPAi.ServiceDirectory.Watchdog\x64\Release'
         FileListPath = Join-Path $repositoryRoot `
-            'src\DEEPAi.ServiceDirectory.Watchdog\obj\x64\Release\DEEPAi.ServiceDirectory.Watchdog.csproj.FileListAbsolute.txt'
+            'artifacts\service-directory\obj\DEEPAi.ServiceDirectory.Watchdog\x64\Release\DEEPAi.ServiceDirectory.Watchdog.csproj.FileListAbsolute.txt'
     },
     [pscustomobject]@{
         ProjectPath = Join-Path $repositoryRoot `
             'src\DEEPAi.ServiceDirectory.Tray\DEEPAi.ServiceDirectory.Tray.csproj'
         OutputDirectory = Join-Path $repositoryRoot `
-            'src\DEEPAi.ServiceDirectory.Tray\bin\x64\Release'
+            'artifacts\service-directory\bin\DEEPAi.ServiceDirectory.Tray\x64\Release'
         IntermediateDirectory = Join-Path $repositoryRoot `
-            'src\DEEPAi.ServiceDirectory.Tray\obj\x64\Release'
+            'artifacts\service-directory\obj\DEEPAi.ServiceDirectory.Tray\x64\Release'
         FileListPath = Join-Path $repositoryRoot `
-            'src\DEEPAi.ServiceDirectory.Tray\obj\x64\Release\DEEPAi.ServiceDirectory.Tray.csproj.FileListAbsolute.txt'
+            'artifacts\service-directory\obj\DEEPAi.ServiceDirectory.Tray\x64\Release\DEEPAi.ServiceDirectory.Tray.csproj.FileListAbsolute.txt'
     }
 )
 
@@ -652,7 +653,7 @@ if (-not [string]::IsNullOrWhiteSpace($VSTestPath)) {
 & (Join-Path $PSScriptRoot 'test.ps1') @testParameters
 
 Remove-ExactPackageDirectoryTree `
-    -ExpectedPath (Join-Path $repositoryRoot 'artifacts\package') `
+    -ExpectedPath (Join-Path $repositoryRoot 'artifacts\service-directory\package') `
     -Path $stagingRoot
 [void](New-Item -ItemType Directory -Path $applicationStaging -Force)
 [void](New-Item -ItemType Directory -Path $noticesStaging -Force)
@@ -836,6 +837,6 @@ try {
 }
 finally {
     Remove-ExactPackageDirectoryTree `
-        -ExpectedPath (Join-Path $repositoryRoot 'artifacts\package') `
+        -ExpectedPath (Join-Path $repositoryRoot 'artifacts\service-directory\package') `
         -Path $stagingRoot
 }

@@ -161,7 +161,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
                     0));
         }
 
-        [DataTestMethod]
+        [TestMethod]
         [DataRow(null)]
         [DataRow("")]
         [DataRow("00A4A5A6A7A8A9AAABACADAEAFB0B1B2")]

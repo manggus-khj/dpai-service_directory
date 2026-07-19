@@ -1,6 +1,11 @@
 <Project>
   <PropertyGroup>
     <RepositoryVersionFile>$(MSBuildThisFileDirectory)VERSION</RepositoryVersionFile>
+    <RepositoryArtifactsRoot>$(MSBuildThisFileDirectory)artifacts\service-directory\</RepositoryArtifactsRoot>
+    <BaseOutputPath>$(RepositoryArtifactsRoot)bin\$(MSBuildProjectName)\</BaseOutputPath>
+    <OutputPath>$(BaseOutputPath)$(Platform)\$(Configuration)\</OutputPath>
+    <BaseIntermediateOutputPath>$(RepositoryArtifactsRoot)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <IntermediateOutputPath>$(BaseIntermediateOutputPath)$(Platform)\$(Configuration)\</IntermediateOutputPath>
     <_RepositoryVersionPattern>\AVERSION=((0|[1-9][0-9]{0,4})\.(0|[1-9][0-9]{0,4})\.(0|[1-9][0-9]{0,4}))\r?\nBUILD=([1-9][0-9]{0,4})(?:\r?\n)?\z</_RepositoryVersionPattern>
     <_RepositoryVersionText Condition="Exists('$(RepositoryVersionFile)')">$([MSBuild]::Unescape($([System.IO.File]::ReadAllText('$(RepositoryVersionFile)'))))</_RepositoryVersionText>
     <_RepositoryVersionValid Condition="'$(_RepositoryVersionText)' != ''">$([System.Text.RegularExpressions.Regex]::IsMatch('$(_RepositoryVersionText)', '$(_RepositoryVersionPattern)'))</_RepositoryVersionValid>
