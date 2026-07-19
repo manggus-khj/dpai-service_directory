@@ -52,7 +52,7 @@ PowerShell로 Markdown과 기타 텍스트 문서를 읽을 때는 기본 인코
 - 플랫폼: `x64` 전용. `AnyCPU` 또는 `x86` 산출물을 운영 대상으로 추가하지 않음
 - 배포 환경: Active Directory 도메인과 Workgroup을 모두 지원
 - 메인: Windows Service(`ServiceBase`) + `HttpListener`
-- UI: WPF 트레이 앱 + `H.NotifyIcon.Wpf` `2.4.1`. 라이트 테마를 사용하고 일반 텍스트는 11pt에 해당하는 WPF `14.667` DIP를 기준으로 한다. 제목·상태 수치처럼 명확한 계층이 필요한 텍스트만 더 크게 사용한다.
+- UI: WPF 트레이 앱 + `H.NotifyIcon.Wpf` `2.4.1`. 라이트 테마를 사용하고 일반 텍스트는 10pt에 해당하는 WPF `13.333` DIP를 기준으로 한다. 기본 창은 `800x700`이며 최대 크기는 `800x720`이다. 제목·상태 수치처럼 명확한 계층이 필요한 텍스트만 더 크게 사용한다.
 - 트레이 상태 아이콘의 단일 원본은 [`docs/plan/tray_running.png`](./docs/plan/tray_running.png)와 [`docs/plan/tray_stopped.png`](./docs/plan/tray_stopped.png)다. 실행 중에는 running, 중지·전환·오류 상태에는 stopped를 사용하고 같은 이미지를 다른 경로에 복제하지 않는다.
 - 감시·서비스 제어: 별도 경량 Windows Service
 - 영속화: XML + `XmlSerializer`
@@ -274,7 +274,7 @@ Windows/MSBuild 빌드 진입점은 `powershell -NoProfile -File .\tools\build.p
 - Peer ECDH P-256 페어링, 양쪽 8자리 SAS 확인, DPAPI 보호, HMAC-SHA256 요청·응답 변조·재전송 차단과 pairing KDF·SAS·canonical MAC 고정 벡터
 - CORS·정적 파일·설정 파일 비노출과 응답 헤더의 제품·프레임워크 정보 최소화
 - `asInvoker`, DLL 하이재킹, DEP/NX·ASLR·CFG, 운영 우회 코드와 디버그 심볼 정책
-- 라이트 테마, 일반 텍스트 11pt(`14.667` DIP), 고대비·DPI와 `tray_running.png`·`tray_stopped.png` 상태 매핑을 포함한 트레이 UI 시각·접근성 검증
+- 라이트 테마, 일반 텍스트 10pt(`13.333` DIP), 기본 `800x700`·최대 `800x720` 창, 고대비·DPI와 `tray_running.png`·`tray_stopped.png` 상태 매핑을 포함한 트레이 UI 시각·접근성 검증
 - External 고정 AES secret·master key와 Admin 애플리케이션 시크릿 부재, Peer 자격 증명의 `secrets/peer.dat` DPAPI 보호와 시크릿 커밋 부재
 - SAST, 시크릿·의존성 CVE 스캔, 내부 추적용 재현 빌드 해시와 설치 EXE 단독 package·무검증 수동 설치 흐름
 - 서비스 재시작 뒤 상태 영속성

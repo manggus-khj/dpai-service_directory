@@ -20,7 +20,7 @@
 - 동기화 병합은 레코드의 unsigned 64-bit `LogicalVersion`과 canonical `OriginInstanceId`를 순서대로 비교하며 내구적 `LogicalClock`을 사용. UTC 변경 시각은 감사·표시 전용이고 60초 시계 편차 한계는 Peer 인증 freshness에만 적용
 - API는 URL·media type·health·Peer wire에 버전 필드를 두지 않고 현재 무버전 경로를 영구 유지하며 호환 추가만 허용
 - External·Admin·Peer XML은 고정 namespace와 [`xsd`](./xsd/)의 XSD를 사용하고 요청의 알 수 없는 요소·속성은 거부하며, 성공은 HTTP `200`, 오류는 상세 명세의 상태·안전한 envelope 계약을 사용
-- 트레이는 `H.NotifyIcon.Wpf` `2.4.1`, 라이트 테마와 일반 텍스트 11pt(`14.667` DIP)를 사용한다. [`tray_running.png`](./tray_running.png)와 [`tray_stopped.png`](./tray_stopped.png)를 복제하지 않는 단일 원본 리소스로 사용
+- 트레이는 `H.NotifyIcon.Wpf` `2.4.1`, 라이트 테마와 일반 텍스트 10pt(`13.333` DIP), 기본 `800x700`·최대 `800x720` 창을 사용한다. [`tray_running.png`](./tray_running.png)와 [`tray_stopped.png`](./tray_stopped.png)를 복제하지 않는 단일 원본 리소스로 사용
 - 와치독 Named Pipe `STATUS`는 내부 명세 §6의 서비스·health·실패 수·10분 재시작 수·자동 재시작 latch를 반환하고, 마지막 health 시각은 health 실행 상태에 따라 포함하는 고정 계약 사용
 - 시스템 파일 로그 보존은 기본 `30`일, 허용 범위 `1..1095`일. 인증·인가·신뢰 경계 실패는 9개 파일 이벤트와 분리해 Windows Application Event Log source `DEEPAi.ServiceDirectory.Security`에 기록하고 비밀값 배제·flood 억제 적용
 - 외부 등록 결과용 별도 API와 거절 이력을 제공하지 않고 외부 앱은 `/api/services` 재조회로 승인 반영 여부만 확인
