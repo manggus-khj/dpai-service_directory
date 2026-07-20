@@ -3,7 +3,7 @@
 ```text
 최초 작성일: 2026-07-19
 최종 변경일: 2026-07-20
-revision: 6
+revision: 8
 ```
 
 > 문서 상태: 목표 설계 확정, PKI core·저장·Admin/UI 일부 반영, External/Peer XSD·HTTPS·등록 모드 미반영
@@ -136,15 +136,19 @@ CLAIMED
 
 | 대상 | 변경 |
 |---|---|
-| `pending.xml` | 목표 설계에서 제거한다. 기존 구현 데이터는 코드 전환 시 명시적 migration 또는 미출시 초기화 정책으로 처리하고 조용히 버리지 않는다. |
-| `directory.xml` | 각 서비스 레코드에 `ServiceHostName`·`ServiceIpv4Address`를 필수 쌍으로 저장하고 현재 인증서 serial·SPKI fingerprint·동일한 두 SAN·유효기간을 연계하거나 별도 ledger identity를 참조한다. 외부 조회에는 내부 ledger 정보를 노출하지 않는다. |
-| `config.xml` | CA mode, SiteId, `DirectoryHostName`·`DirectoryIpv4Address`, CRL publish 설정과 CA rotation 상태를 새 schema migration으로 추가한다. ProductCode와 등록 모드 상태는 저장하지 않는다. |
-| CA private key | PKCS#8을 DPAPI `LocalMachine`으로 보호해 `secrets\ca.key`에 저장하고, 메인 서비스 SID·`SYSTEM`·로컬 `Administrators`만 허용하는 상속 차단 exact ACL을 적용한다. 평문 PKCS#8은 발급·CRL·backup 처리 중에만 메모리에 두고 사용 직후 byte buffer를 지운다. `ca.key.bak`과 평문 export는 금지한다. |
-| certificate ledger | CSPRNG 16바이트 positive unique serial, ProductCode, request ID, CSR/request payload/SPKI/leaf hash, SAN, issue/expiry·예약 폐기·실제 revoke 시각·사유, idempotent 응답 근거와 CRL high-water를 영속화한다. ProductCode별 `CURRENT`는 하나만 허용하고 갱신 overlap의 이전 leaf는 `RETIRING`, CRL에 반영된 leaf는 `REVOKED`로 보존한다. |
+| `pending.xml` | 제품이 아직 배포되지 않았으므로 최초 정식 저장 형식에 포함하지 않고 제거한다. build 12 이하 개발·테스트 데이터의 pending을 변환·승인·보존하는 migration은 만들지 않으며, 개발 환경에서는 데이터 루트 전체 초기화를 명시적으로 수행한다. |
+| `directory.xml` | 최초 정식 `SchemaVersion="1"`에서 각 서비스 레코드에 `ServiceHostName`·`ServiceIpv4Address`를 필수 쌍으로 저장한다. 인증서 serial·SPKI fingerprint·유효기간은 중복 저장하지 않고 role별 ledger 또는 Peer cache가 소유하며 외부 조회에는 내부 PKI 정보를 노출하지 않는다. |
+| `config.xml` | 최초 정식 `SchemaVersion="1"`에 `DirectoryHostName`·`DirectoryIpv4Address`, IPv4 listener, instance, 로그와 Peer 운영 설정을 저장한다. ProductCode·등록 모드·SiteId·CA role·rotation 상태를 저장하지 않는다. |
+| `pki\state.xml` | SiteId, issuer instance·role, CA identity, PKI revision·CRL number와 backup marker를 저장한다. CA rotation 상태는 이번 schema에서 제외한다. |
+| CA private key | active issuer에서만 PKCS#8을 DPAPI `LocalMachine`으로 보호해 `secrets\ca.key`에 저장하고, 메인 서비스 SID·`SYSTEM`·로컬 `Administrators`만 허용하는 상속 차단 exact ACL을 적용한다. standby 구성은 인증된 backup key를 새 Directory leaf 발급 동안만 메모리에서 사용하고 primary를 남기지 않는다. 평문 buffer는 즉시 지우며 `ca.key.bak`과 평문 export는 금지한다. |
+| certificate ledger | active issuer는 CSPRNG 16바이트 positive unique serial, ProductCode, request ID, CSR/request payload/SPKI hash, exact replay용 leaf DER, SAN, issue/expiry·예약 폐기·실제 revoke 시각·사유와 CRL high-water를 영속화한다. ProductCode별 `CURRENT`는 하나만 허용하고 갱신 overlap의 이전 leaf는 `RETIRING`, CRL에 반영된 leaf는 `REVOKED`로 보존한다. standby는 full ledger를 합성하지 않고 별도 공개 Peer PKI cache만 저장한다. |
+| Peer PKI cache | standby는 인증된 active issuer의 PKI/CRL high-water, ProductCode별 current serial·leaf hash·만료와 signed CRL만 `pki\peer-cache.xml`에 저장한다. full ledger 조회·backup·발급·폐기 근거로 사용하지 않는다. |
 | CRL | 서명된 canonical DER과 CRL number high-water를 원자 교체하고 CA ledger transaction과 복구 일관성을 유지한다. |
-| CA backup | 운영자가 지정한 암호로 암호화한 승인 백업만 허용하고 평문 export를 금지한다. backup 완료를 등록·발급·폐기가 가능한 PKI 운영 준비 완료 조건으로 취급한다. installer는 제한된 `BACKUP_REQUIRED` 상태로 끝날 수 있으며 운영자는 설정 UI에서 backup을 완료해야 한다. backup은 제한 ACL의 고정 `backups\ca` 폴더에 생성하고 Admin 응답에는 파일명·생성 시각·SHA-256만 반환한다. |
+| CA backup | active issuer만 운영자가 지정한 암호로 암호화한 승인 백업을 만들 수 있고 평문 export를 금지한다. backup 완료를 등록·발급·폐기가 가능한 PKI 운영 준비 완료 조건으로 취급한다. installer는 제한된 `BACKUP_REQUIRED` 상태로 끝날 수 있으며 운영자는 설정 UI에서 backup을 완료해야 한다. backup은 제한 ACL의 고정 `backups\ca` 폴더에 생성하고 Admin 응답에는 파일명·생성 시각·SHA-256만 반환한다. |
 
-등록·발급 commit은 최소한 `directory`, certificate ledger, leaf artifact와 필요한 CRL 변경을 하나의 journal transaction으로 처리한다. CA 서명 뒤 저장 실패가 발생해 같은 serial을 재사용하거나 발급 사실을 잃지 않도록 serial 예약·서명·commit 순서를 별도 설계하고 fault-injection으로 검증한다.
+등록·발급 commit은 최소한 `directory`, exact leaf DER을 포함한 certificate ledger와 필요한 CRL 변경을 하나의 journal transaction으로 처리한다. CA 서명 뒤 저장 실패가 발생해 같은 serial을 재사용하거나 발급 사실을 잃지 않도록 serial 예약·서명·commit 순서를 별도 설계하고 fault-injection으로 검증한다.
+
+현재 build 12 이하의 단일 `ServerAddress`·`pending.xml` `SchemaVersion="1"` 파일은 배포 계약이 아닌 개발 산출물이다. 목표 형식으로 자동 추론하거나 같은 schema의 호환 입력으로 읽지 않는다. 인증서 전환 구현을 적용하는 개발·테스트 장비는 서비스 중지와 명시적 확인 뒤 `%ProgramData%\DEEPAi\ServiceDirectory\`를 초기화하고 최초 설치 절차로 다시 만든다. 첫 정식 배포 뒤의 저장 형식 변경부터만 명시적 `N -> N+1` migration을 추가한다. 정확한 파일·요소·journal target은 [최초 정식 저장 schema v1](./03-development-01-storage-schema.md)을 따른다.
 
 ## 6. UI와 Admin 변경
 
@@ -198,7 +202,7 @@ CLAIMED
 |---|---|---|
 | 0. 계약 | 본 계획과 외부·내부 API 명세 확정 | ProductCode 입력 없는 전역 등록 모드, TOFU, 일일 키 예외와 발급·폐기 상태표 리뷰 완료 |
 | 1. PKI core | CA·leaf·CSR·ledger·CRL primitive | 고정 vector, invalid CSR/SAN, serial uniqueness, CRL monotonic 단위 테스트 |
-| 2. 저장·복구 | schema migration과 multi-file journal 확장 | 발급·재등록·삭제 각 crash point에서 idempotent 복구 및 serial 재사용 없음 |
+| 2. 저장·복구 | 최초 정식 v1 schema와 multi-file journal 확장 | 발급·재등록·삭제 각 crash point에서 idempotent 복구 및 serial 재사용 없음 |
 | 3. HTTPS·설치 | HTTPS listener, HTTP.sys certificate binding, CA backup·restore | fresh install·repair·upgrade·rollback·uninstall과 TLS 1.2+ 실제 검증 |
 | 4. External | TOFU·등록 모드·즉시 발급·갱신·PKI endpoint | 외부 명세 상호운용 테스트와 lost-response exact retry 검증 |
 | 5. Admin·UI | pending 제거, 등록 서비스 화면의 등록 모드 | 1시간·수동 종료·재시작 닫힘·동시 요청 first-wins UI 통합 검증 |
@@ -238,7 +242,7 @@ CLAIMED
 - Domain·External·Peer DTO: 단일 `ServerAddress`를 `ServiceHostName`·`ServiceIpv4Address` 필수 pair로 바꾸고 Directory 접속용 `DirectoryHostName`·`DirectoryIpv4Address`와 분리해야 함
 - Domain/Application state: `pending.xml`과 approve/reject 상태 머신
 - Admin protocol/handler/Tray: pending 3 endpoint와 승인 대기 화면
-- `config.xml` v1·recovery journal: CA metadata·ledger·CRL·CA certificate·DPAPI key fixed target과 복구 검증은 반영됨. Directory 등록 transaction과 PKI target의 결합 migration은 남음
+- `config.xml`·recovery journal: CA metadata·ledger·CRL·CA certificate·DPAPI key fixed target과 복구 검증은 반영됨. 최초 정식 v1 serializer와 Directory 등록 transaction·PKI target 결합은 남음
 - Peer endpoint parser·outbound client: `http://` canonical endpoint 고정
 - `Infrastructure/Pki`·Domain endpoint identity/ledger: primitive, canonical 직렬화·DPAPI 저장·backup·CRL 폐기와 runtime/Admin composition 소스까지 추가됨. 현재 변경분의 `Release|x64` 컴파일과 자동 테스트는 성공했으며 등록·갱신 발급 연결과 실제 환경 검증이 남음
 - tests: 기존 HTTP·pending 계약 테스트는 목표 계약으로 교체·확장해야 하며 새 PKI 단위 테스트 소스도 아직 실행하지 않음

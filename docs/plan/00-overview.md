@@ -3,7 +3,7 @@
 ```text
 최초 작성일: 2026-07-17
 최종 변경일: 2026-07-20
-revision: 9
+revision: 12
 ```
 
 > 문서 묶음 상태: 인증서 기반 목표 설계·외부/내부 API 계약 확정
@@ -45,9 +45,11 @@ revision: 9
 | 1 | [Directory Service 사용 애플리케이션 하드닝 가이드](./01-hardening.md) | Directory 구조 제품 전용 추가 보안 기준 |
 | 2 | [인증서 전환 변경계획](./02-certificate-transition.md) | 새 Directory 전용 가이드에 따른 차이, 목표 상태와 구현 단계 |
 | 3 | [서비스 디렉토리 개발계획](./03-development.md) | 제품 구성, 데이터·복구·동기화 불변식과 전체 개발 순서 |
-| 4 | [API 명세 안내](./04-api.md) | 신뢰 경계와 endpoint 소유권 |
-| 5 | [외부 애플리케이션 API 명세](./04-api-01-external-application.md) | 주소 구성, TOFU·pin, 일일 키, CSR 발급·갱신, CRL과 대상 서비스 인증서 검증 |
-| 6 | [내부 API 명세](./04-api-02-internal.md) | 설정 UI 등록 모드, 와치독, CA 운영과 Peer 동기화 계약 |
+| 4 | [최초 정식 저장 schema v1](./03-development-01-storage-schema.md) | canonical 저장 XML·binary·교차 파일 불변식과 recovery transaction |
+| 5 | [API 명세 안내](./04-api.md) | 신뢰 경계와 endpoint 소유권 |
+| 6 | [외부 애플리케이션 API 명세](./04-api-01-external-application.md) | 주소 구성, TOFU·pin, 일일 키, CSR 발급·갱신, CRL과 대상 서비스 인증서 검증 |
+| 7 | [내부 API 명세](./04-api-02-internal.md) | 설정 UI 등록 모드, 와치독, CA 운영과 Peer 동기화 계약 |
+| 8 | [다음 개발 실행계획](./05-next-development.md) | 확정 계약을 실제 구현 단위로 나눈 선후관계·변경 위치·완료 조건 |
 
 ## 문서 우선순위
 
@@ -74,7 +76,7 @@ revision: 9
 |---:|---|---|
 | 0 | 인증서 전환 계약과 외부·내부 API 확정 | 완료 |
 | 1 | CA·leaf·CSR·serial·ledger·CRL PKI core | 진행 중 — `Debug|x64`·`Release|x64` 빌드와 568개 테스트 성공, 실제 DPAPI/ACL 검증 미완료 |
-| 2 | schema migration과 다중 파일 저장·복구 | 부분 선행 구현 — CA·ledger·CRL·backup·repair 복원은 연결, 등록 transaction은 미구현 |
+| 2 | 최초 정식 schema와 다중 파일 저장·복구 | 부분 선행 구현 — CA·ledger·CRL·backup·repair 복원은 연결, 목표 v1 serializer·role별 ledger/Peer cache·등록 transaction은 미구현 |
 | 3 | HTTPS listener와 설치·repair·upgrade | 대기 — repair CA 복원 진입점만 선행 구현 |
 | 4 | External TOFU·등록 모드·즉시 발급·갱신 | 대기 |
 | 5 | Admin·설정 UI의 pending 제거와 등록 모드 | 부분 선행 구현 — CA 상태·backup·원장·serial 폐기만 연결 |
@@ -82,6 +84,8 @@ revision: 9
 | 7 | 지원 OS·Milestone 조합 릴리스 검증 | 진행 중 — Windows Server 2016 build 11 최초 설치의 PowerShell 5.1 generic list 반환 실패를 재현·수정하고 build 12 생성, 실제 build 12 재설치 대기 |
 
 상세 종료 조건은 [인증서 전환 변경계획 §8](./02-certificate-transition.md#8-구현-단계와-종료-조건)을 따른다.
+
+다음 구현은 [다음 개발 실행계획](./05-next-development.md)에 따라 build 12 Windows Server 2016 설치 기준선 확인, 목표 계약·도메인 기반, 저장·등록 transaction, Admin 등록 모드·설정 UI, HTTPS·설치, External 발급, Peer 순서로 진행한다. 제품은 아직 배포되지 않았으므로 기존 단일 `ServerAddress`·`pending.xml` 형식은 운영 migration 대상이 아닌 개발 기준선으로 확정했다. [최초 정식 저장 schema v1](./03-development-01-storage-schema.md)에 따라 인증서 기반 목표 형식을 구현하고, 기존 개발·테스트 데이터 루트는 명시적으로 초기화하며 자동 추론·운영자 매핑·호환 migration 코드는 만들지 않는다. CA key rotation·dual-pin은 이번 실행계획에서 제외한다.
 
 ## API 경계
 
@@ -101,7 +105,7 @@ revision: 9
 | service identity | 단일 `ServerAddress` | 외부 앱이 선택·영속화한 `ServiceHostName`+`ServiceIpv4Address`, 등록 leaf에 exact 두 SAN |
 | external registration | 일일 키, 승인 대기, `PendingId` | 전역 1시간·1건 등록 모드, CSR 즉시 등록·발급 |
 | UI | 승인 대기와 등록 서비스 별도 화면 | 승인 대기 제거, 등록 서비스 화면에 등록 모드 |
-| storage | `directory.xml`, `pending.xml`, `config.xml`, peer secret | pending 제거, CA·ledger·CRL·idempotency와 schema migration 추가 |
+| storage | `directory.xml`, `pending.xml`, `config.xml`, peer secret | pending 제거, active issuer full ledger와 standby 공개 Peer PKI cache를 분리하고 CA·CRL·idempotency를 포함한 최초 정식 v1 확정 |
 | installer | URL ACL·방화벽, certificate binding 없음 | site CA·leaf·encrypted backup·HTTPS binding과 rollback |
 | Peer | HTTP + HMAC | HTTPS + 같은 HMAC, 동일 site CA 운영 |
 | XSD/tests | 기존 pending wire에 고정 | 목표 CSR·certificate·registration-mode 계약으로 갱신 필요 |

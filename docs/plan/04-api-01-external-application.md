@@ -2,8 +2,8 @@
 
 ```text
 최초 작성일: 2026-07-17
-최종 변경일: 2026-07-19
-revision: 1
+최종 변경일: 2026-07-20
+revision: 2
 ```
 
 > 문서 상태: 인증서 기반 목표 wire 계약 확정
@@ -252,7 +252,7 @@ XML endpoint는 다음 envelope을 사용한다.
 | 409 | `1002`, `1005`, `1007` | 등록 모드·idempotency·갱신 상태 충돌 |
 | 413 | body 없음 | raw body 제한 초과 |
 | 415 | body 없음 | 지원하지 않는 content type·encoding |
-| 429 | `1004` | rate·concurrency 제한 |
+| 429 | `1004` | rate·concurrency·내구 state 크기 제한. 계산 가능한 시간 제한에서만 `Retry-After` 포함 |
 | 500 | `3000` | 안전하게 일반화한 내부 오류 |
 
 `/pki/crl`은 성공 시 XML envelope 없이 DER bytes를 반환한다. 신뢰가 성립하기 전 조기 TLS 실패에는 HTTP 응답이 없을 수 있다.
@@ -415,11 +415,12 @@ CSR 요구:
 4. request ID가 이미 있으면 CSR SHA-256과 전체 정규화 payload를 비교한다. 정확한 성공 재시도면 기존 공개 인증서 결과를 반환하고 등록 모드를 요구하지 않는다. 다르면 `1002 CONFLICT`다.
 5. 신규 요청이면 등록 모드가 `OPEN`인지 확인한다. 닫혔으면 `1005`다.
 6. CSR 자체 signature·key strength와 requested SAN이 정확히 `ServiceHostName` DNS 한 개·`ServiceIpv4Address` IPv4 한 개인지 검증한다. source IP와의 일치 여부는 검사하지 않는다. 실패는 창을 소비하지 않는다.
-7. 공용 mutation gate에서 `OPEN -> CLAIMED`를 원자적으로 수행한다. 다른 요청이 claim했으면 `1002`다.
-8. 기존 같은 ProductCode가 있으면 active serial을 폐기 대상으로 포함한다.
-9. unique serial을 예약하고 leaf를 서명한다.
-10. directory record, certificate ledger, idempotency record, 이전 serial 폐기와 CRL을 복구 가능한 transaction으로 commit한다.
-11. 성공 뒤 등록 모드를 닫고 결과를 반환한다. commit 결과가 불확실해도 창은 닫는다.
+7. 정규화 payload와 CSR을 반영한 canonical directory·ledger·CRL after image가 [저장 schema](./03-development-01-storage-schema.md)의 상한 안인지 계산한다. 초과하면 `429`·`1004 LIMIT_EXCEEDED`로 거부하고 등록 모드를 claim하지 않으며 `Retry-After`를 보내지 않는다.
+8. 공용 mutation gate에서 `OPEN -> CLAIMED`를 원자적으로 수행한다. 다른 요청이 claim했으면 `1002`다.
+9. 기존 같은 ProductCode가 있으면 active serial을 폐기 대상으로 포함한다.
+10. unique serial을 예약하고 leaf를 서명한다.
+11. directory record, certificate ledger, idempotency record, 이전 serial 폐기와 CRL을 복구 가능한 transaction으로 commit한다.
+12. 성공 뒤 등록 모드를 닫고 결과를 반환한다. commit 결과가 불확실해도 창은 닫는다.
 
 성공 응답:
 
@@ -530,6 +531,7 @@ DPAI-SD-CERTIFICATE-RENEW
 - ProductCode 변경은 `1007 CERTIFICATE_NOT_RENEWABLE`이다. private key 분실, 현재 leaf 만료·폐기는 관리자가 등록 모드를 열어 재등록한다.
 - 성공 응답의 Certificate 형식은 등록과 같다. `Status=RENEWED`를 사용한다.
 - 같은 renewal request ID·CSR의 재시도는 같은 결과를 반환한다.
+- 신규 renewal의 canonical ledger after image가 저장 schema의 16 MiB 상한을 넘으면 serial 예약·서명·state 변경 전에 `429`·`1004 LIMIT_EXCEEDED`로 거부하고 `Retry-After`를 보내지 않는다.
 - 새 인증서 수령·검증 전 old leaf를 즉시 폐기하지 않는다. SAN이 같으면 overlap은 최대 7일, SAN이 바뀌면 최대 24시간이며 그 뒤 old serial을 `Superseded` reason으로 CRL에 추가한다. old certificate 원래 만료가 더 빠르면 그 시각을 넘기지 않는다. `Unspecified`·임시 `CertificateHold`·`RemoveFromCRL`은 이 계약에서 사용하지 않는다.
 - 현재 인증서가 이미 만료·폐기됐거나 private key를 잃었으면 등록 모드를 통한 재등록만 허용한다.
 

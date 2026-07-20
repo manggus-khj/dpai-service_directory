@@ -26,9 +26,11 @@ Milestone XProtect Management Server와 함께 설치되어 자사 서버 서비
 | [`01-hardening.md`](docs/plan/01-hardening.md) | Directory 구조 제품 전용 하드닝 기준 |
 | [`02-certificate-transition.md`](docs/plan/02-certificate-transition.md) | 인증서 전환 차이와 구현 단계 |
 | [`03-development.md`](docs/plan/03-development.md) | 제품 구성, 저장·복구·동기화 불변식과 개발 계획 |
+| [`03-development-01-storage-schema.md`](docs/plan/03-development-01-storage-schema.md) | 최초 정식 저장 schema v1, 파일 형식과 복구 transaction |
 | [`04-api.md`](docs/plan/04-api.md) | API 신뢰 경계와 상세 명세 색인 |
 | [`04-api-01-external-application.md`](docs/plan/04-api-01-external-application.md) | 외부 애플리케이션 인증·등록·조회 계약 |
 | [`04-api-02-internal.md`](docs/plan/04-api-02-internal.md) | Admin·와치독·Peer 내부 계약 |
+| [`05-next-development.md`](docs/plan/05-next-development.md) | 인증서 전환의 다음 구현 순서, 변경 위치와 단계별 완료 조건 |
 
 계획용 이미지 원본과 결과물은 `docs/plan/03-development/`, 규범 XSD는 `docs/plan/04-api/`에 둔다. 구현은 가장 큰 순번의 할 일 파일을 기준으로 진행하며, 현재 목록은 [`docs/plan/todo-01.md`](docs/plan/todo-01.md)다.
 
