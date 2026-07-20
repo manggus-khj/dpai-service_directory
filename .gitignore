@@ -14,4 +14,4 @@ TestResults/
 /installer/DEEPAi-ServiceDirectory-*-build.*-x64.exe
 
 # All generated build, test, symbol and package staging files.
-/artifacts/service-directory/
+/artifacts/

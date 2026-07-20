@@ -10,7 +10,7 @@ revision: 6
 > 기준일: 2026-07-19
 > 적용 기준: 사내 `Directory서비스_애플리케이션_하드닝_가이드` 개정본
 
-이 문서는 현재 구현된 평문 HTTP·승인 대기 기반 서비스 디렉토리를 사이트 CA·HTTPS·즉시 등록 모드 기반으로 전환하기 위한 변경 범위와 구현 순서를 정의한다. 요청·응답의 목표 wire 계약은 [외부 애플리케이션 API 명세](./service-directory-04-api-01-external-application.md)와 [내부 API 명세](./service-directory-04-api-02-internal.md)가 단일 원본이다.
+이 문서는 현재 구현된 평문 HTTP·승인 대기 기반 서비스 디렉토리를 사이트 CA·HTTPS·즉시 등록 모드 기반으로 전환하기 위한 변경 범위와 구현 순서를 정의한다. 요청·응답의 목표 wire 계약은 [외부 애플리케이션 API 명세](./04-api-01-external-application.md)와 [내부 API 명세](./04-api-02-internal.md)가 단일 원본이다.
 
 문서 확정은 구현 완료를 뜻하지 않는다. CA·Directory/service leaf·CSR 검증·serial·CRL·certificate ledger 상태·IPv4 endpoint identity primitive와 CA/ledger/CRL 내구 저장·backup·운영 Admin/UI·repair restore 일부를 소스로 연결했지만 실제 remote runtime은 여전히 HTTP listener, 일일 API 키, `pending.xml`, 승인·거절 Admin API와 승인 대기 UI를 사용한다. Release 빌드·568개 자동 테스트·설치 EXE 생성은 성공했지만 등록·갱신 발급 wire·HTTPS·Peer PKI 교환과 실제 설치·실행 검증 전에는 인증서 전환 완료가 아니다.
 

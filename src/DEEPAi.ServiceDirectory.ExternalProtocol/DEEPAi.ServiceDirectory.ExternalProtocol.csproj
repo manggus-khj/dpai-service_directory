@@ -55,7 +55,7 @@
     <Compile Include="RateLimiting\ExternalRequestConcurrencyLimiter.cs" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="..\..\docs\plan\service-directory-04-api\external.xsd">
+    <EmbeddedResource Include="..\..\docs\plan\04-api\external.xsd">
       <Link>Schema\external.xsd</Link>
       <LogicalName>DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi.external.xsd</LogicalName>
     </EmbeddedResource>

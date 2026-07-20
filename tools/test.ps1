@@ -65,7 +65,7 @@ $solutionPath = Join-Path $repositoryRoot 'DEEPAi.ServiceDirectory.sln'
 $testProjectPath = Join-Path $repositoryRoot `
     'tests\DEEPAi.ServiceDirectory.Tests\DEEPAi.ServiceDirectory.Tests.csproj'
 $testOutputDirectory = Join-Path $repositoryRoot `
-    "artifacts\service-directory\bin\DEEPAi.ServiceDirectory.Tests\x64\$Configuration"
+    "artifacts\bin\DEEPAi.ServiceDirectory.Tests\x64\$Configuration"
 $testAssemblyPath = Join-Path $testOutputDirectory `
     'DEEPAi.ServiceDirectory.Tests.dll'
 
@@ -219,7 +219,7 @@ $runId = [DateTimeOffset]::Now.ToString('yyyyMMdd-HHmmss-fff') `
     + '-' `
     + [Guid]::NewGuid().ToString('N')
 $resultsDirectory = Join-Path $repositoryRoot `
-    "artifacts\service-directory\test-results\$Configuration\$runId"
+    "artifacts\test-results\$Configuration\$runId"
 [void](New-Item -ItemType Directory -Path $resultsDirectory -Force)
 $trxFileName = 'DEEPAi.ServiceDirectory.Tests.trx'
 $trxPath = Join-Path $resultsDirectory $trxFileName

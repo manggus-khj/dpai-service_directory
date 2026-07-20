@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <RepositoryVersionFile>$(MSBuildThisFileDirectory)VERSION</RepositoryVersionFile>
-    <RepositoryArtifactsRoot>$(MSBuildThisFileDirectory)artifacts\service-directory\</RepositoryArtifactsRoot>
+    <RepositoryArtifactsRoot>$(MSBuildThisFileDirectory)artifacts\</RepositoryArtifactsRoot>
     <BaseOutputPath>$(RepositoryArtifactsRoot)bin\$(MSBuildProjectName)\</BaseOutputPath>
     <OutputPath>$(BaseOutputPath)$(Platform)\$(Configuration)\</OutputPath>
     <BaseIntermediateOutputPath>$(RepositoryArtifactsRoot)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>

@@ -42,12 +42,12 @@ revision: 9
 
 | 순서 | 문서 | 책임 |
 |---:|---|---|
-| 1 | [Directory Service 사용 애플리케이션 하드닝 가이드](./service-directory-01-hardening.md) | Directory 구조 제품 전용 추가 보안 기준 |
-| 2 | [인증서 전환 변경계획](./service-directory-02-certificate-transition.md) | 새 Directory 전용 가이드에 따른 차이, 목표 상태와 구현 단계 |
-| 3 | [서비스 디렉토리 개발계획](./service-directory-03-development.md) | 제품 구성, 데이터·복구·동기화 불변식과 전체 개발 순서 |
-| 4 | [API 명세 안내](./service-directory-04-api.md) | 신뢰 경계와 endpoint 소유권 |
-| 5 | [외부 애플리케이션 API 명세](./service-directory-04-api-01-external-application.md) | 주소 구성, TOFU·pin, 일일 키, CSR 발급·갱신, CRL과 대상 서비스 인증서 검증 |
-| 6 | [내부 API 명세](./service-directory-04-api-02-internal.md) | 설정 UI 등록 모드, 와치독, CA 운영과 Peer 동기화 계약 |
+| 1 | [Directory Service 사용 애플리케이션 하드닝 가이드](./01-hardening.md) | Directory 구조 제품 전용 추가 보안 기준 |
+| 2 | [인증서 전환 변경계획](./02-certificate-transition.md) | 새 Directory 전용 가이드에 따른 차이, 목표 상태와 구현 단계 |
+| 3 | [서비스 디렉토리 개발계획](./03-development.md) | 제품 구성, 데이터·복구·동기화 불변식과 전체 개발 순서 |
+| 4 | [API 명세 안내](./04-api.md) | 신뢰 경계와 endpoint 소유권 |
+| 5 | [외부 애플리케이션 API 명세](./04-api-01-external-application.md) | 주소 구성, TOFU·pin, 일일 키, CSR 발급·갱신, CRL과 대상 서비스 인증서 검증 |
+| 6 | [내부 API 명세](./04-api-02-internal.md) | 설정 UI 등록 모드, 와치독, CA 운영과 Peer 동기화 계약 |
 
 ## 문서 우선순위
 
@@ -81,7 +81,7 @@ revision: 9
 | 6 | Peer HTTPS·동일 CA·rotation·폐기 전파 | 대기 |
 | 7 | 지원 OS·Milestone 조합 릴리스 검증 | 진행 중 — Windows Server 2016 build 11 최초 설치의 PowerShell 5.1 generic list 반환 실패를 재현·수정하고 build 12 생성, 실제 build 12 재설치 대기 |
 
-상세 종료 조건은 [인증서 전환 변경계획 §8](./service-directory-02-certificate-transition.md#8-구현-단계와-종료-조건)을 따른다.
+상세 종료 조건은 [인증서 전환 변경계획 §8](./02-certificate-transition.md#8-구현-단계와-종료-조건)을 따른다.
 
 ## API 경계
 
@@ -107,4 +107,4 @@ revision: 9
 | XSD/tests | 기존 pending wire에 고정 | 목표 CSR·certificate·registration-mode 계약으로 갱신 필요 |
 | PKI core | CA·CSR·leaf·CRL 없음 | primitive, DPAPI CA key·metadata·ledger·CRL 저장, 암호화 backup, 상태·원장·serial 폐기 Admin/UI와 repair 복원 소스 추가. `Debug|x64` 빌드 성공; 등록·발급·HTTPS·Peer PKI·rotation 연결과 테스트·실행 검증 필요 |
 
-구체적인 후속 변경 대상과 장애 검증은 [인증서 전환 변경계획](./service-directory-02-certificate-transition.md)을 따른다.
+구체적인 후속 변경 대상과 장애 검증은 [인증서 전환 변경계획](./02-certificate-transition.md)을 따른다.

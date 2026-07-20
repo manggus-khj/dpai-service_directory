@@ -59,10 +59,10 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <Resource Include="..\..\docs\plan\service-directory-03-development\tray_running.png">
+    <Resource Include="..\..\docs\plan\03-development\tray_running.png">
       <Link>Assets\tray_running.png</Link>
     </Resource>
-    <Resource Include="..\..\docs\plan\service-directory-03-development\tray_stopped.png">
+    <Resource Include="..\..\docs\plan\03-development\tray_stopped.png">
       <Link>Assets\tray_stopped.png</Link>
     </Resource>
   </ItemGroup>

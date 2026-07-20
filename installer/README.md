@@ -6,7 +6,7 @@
 powershell -NoProfile -File .\tools\package.ps1 -Configuration Release
 ```
 
-이 명령은 locked restore를 포함한 `Release|x64` 빌드, 전체 MSTest와 Windows PowerShell 5.1 ACL snapshot·복원 round-trip 검사를 먼저 통과시킨 뒤 Inno Setup 6.3 이상으로 [`ServiceDirectory.iss`](./ServiceDirectory.iss)를 컴파일한다. 6.3부터 제공되는 helper console-output callback으로 숨겨 실행한 설치 helper의 출력을 설치 로그에 남기고, 실패 시 첫 출력 줄을 오류 상세에도 포함한다. `ISCC.exe`가 기본 설치 경로에 없으면 `-InnoSetupCompilerPath`로 정확한 경로를 전달한다. ISCC 출력은 `artifacts\service-directory\package\installer-output\`의 격리된 staging에 만들고 예상한 이름의 비어 있지 않은 EXE 하나만 생성됐는지 확인한 뒤, 같은 볼륨의 `installer\`에 원자적 move 또는 replace로 게시한다. 따라서 compile 또는 staging 검증 실패는 기존 최종 EXE를 건드리지 않는다. 설치 패키지는 x64 Windows와 .NET Framework 4.8을 요구한다.
+이 명령은 locked restore를 포함한 `Release|x64` 빌드, 전체 MSTest와 Windows PowerShell 5.1 ACL snapshot·복원 round-trip 검사를 먼저 통과시킨 뒤 Inno Setup 6.3 이상으로 [`ServiceDirectory.iss`](./ServiceDirectory.iss)를 컴파일한다. 6.3부터 제공되는 helper console-output callback으로 숨겨 실행한 설치 helper의 출력을 설치 로그에 남기고, 실패 시 첫 출력 줄을 오류 상세에도 포함한다. `ISCC.exe`가 기본 설치 경로에 없으면 `-InnoSetupCompilerPath`로 정확한 경로를 전달한다. ISCC 출력은 `artifacts\package\installer-output\`의 격리된 staging에 만들고 예상한 이름의 비어 있지 않은 EXE 하나만 생성됐는지 확인한 뒤, 같은 볼륨의 `installer\`에 원자적 move 또는 replace로 게시한다. 따라서 compile 또는 staging 검증 실패는 기존 최종 EXE를 건드리지 않는다. 설치 패키지는 x64 Windows와 .NET Framework 4.8을 요구한다.
 
 installer bootstrap 하한은 Windows build 14393이다. 세부 검증은 Windows Server Standard·Datacenter Desktop Experience의 build 14393 이상(Windows Server 2016 이상)과 Windows client의 build 17763 이상(Windows 10 1809 이상)을 구분하며, Windows 11은 build 26100 이상과 Pro·Enterprise·IoT Enterprise edition만 허용한다. Server Core는 거부하고 .NET Framework 4.8이 없으면 설치를 중단한다. Windows Server 2016은 .NET Framework 4.8과 최신 보안 업데이트를 별도로 적용해야 하며 Microsoft extended support 종료일인 2027-01-12 전에 제품 지원 지속 여부를 다시 검토한다.
 
@@ -34,7 +34,7 @@ Inno Setup은 `ssPostInstall` 전에 설치 파일 교체와 uninstaller·설치
 - 설치 파일명은 루트 [`VERSION`](../VERSION)의 값을 사용해 `DEEPAi-ServiceDirectory-{version}-build.{build}-x64.exe`로 만든다.
 - 제품 버전과 빌드 번호를 Inno Setup 스크립트나 패키징 스크립트에 복사하거나 하드코딩하지 않는다.
 - 코드 서명 인증서가 없으므로 현재 설치 파일에 코드 서명을 적용하지 않는다. 오프라인 설치용 `.sha256`이나 다른 체크섬·manifest를 생성·배포·검증하지 않으며 제공된 설치 EXE를 수동으로 직접 실행한다.
-- 이 방식으로는 설치 파일의 배포자 출처, 반입 중 변조와 손상을 기술적으로 확인할 수 없다. 바뀐 EXE가 설치 권한으로 실행될 수 있는 잔여 위험은 [개발계획 §8.4](../docs/plan/service-directory-03-development.md#84-코드-서명체크섬-없는-오프라인-패치-예외-기록)의 승인 범위이며, 이를 무결성 검증이 된 배포라고 표현하지 않는다.
+- 이 방식으로는 설치 파일의 배포자 출처, 반입 중 변조와 손상을 기술적으로 확인할 수 없다. 바뀐 EXE가 설치 권한으로 실행될 수 있는 잔여 위험은 [개발계획 §8.4](../docs/plan/03-development.md#84-코드-서명체크섬-없는-오프라인-패치-예외-기록)의 승인 범위이며, 이를 무결성 검증이 된 배포라고 표현하지 않는다.
 - 설치 EXE payload에는 저장소 루트 `THIRD-PARTY-NOTICES.md`와 실제 Release restore 결과에서 확정한 모든 직접·전이 의존성의 라이선스 고지 및 SBOM을 포함한다. 이 고지는 `installer\` 출력 루트에 별도 파일로 만들지 않아 최종 설치 산출물은 EXE 하나만 유지한다.
 
 생성된 설치 EXE는 Git에 커밋하지 않는다. `.iss`, 설치 지원 PowerShell 소스와 이 문서는 추적 대상으로 유지한다.
@@ -57,6 +57,6 @@ Inno Setup은 `ssPostInstall` 전에 설치 파일 교체와 uninstaller·설치
 - 세트에 포함된 각 파일의 SHA-256 hash manifest. 접근 통제된 내부 장애 분석·빌드 추적에만 사용하며 설치 EXE에 포함하거나 오프라인 설치 승인·실행 조건으로 사용하지 않음
 - 설치 EXE payload에 포함한 제3자 라이선스 고지와 SBOM
 
-로컬에서 내부 심볼 세트를 준비해야 할 때는 저장소 루트 `artifacts\service-directory\symbols\`만 임시 staging 위치로 사용한다. 이 경로는 Git에서 제외되며 `installer\`로 복사하지 않는다.
+로컬에서 내부 심볼 세트를 준비해야 할 때는 저장소 루트 `artifacts\symbols\`만 임시 staging 위치로 사용한다. 이 경로는 Git에서 제외되며 `installer\`로 복사하지 않는다.
 
 심볼 세트는 해당 빌드의 지원 종료 후 3년까지 보존한다. 지원 종료일이 정해지지 않았으면 삭제하지 않는다. 접근 권한은 장애 분석과 보안 대응에 필요한 담당자로 제한한다.

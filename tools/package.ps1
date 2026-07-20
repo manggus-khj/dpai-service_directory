@@ -162,7 +162,7 @@ function Assert-SafeStagingPath {
     )
 
     return Assert-ExactPackageDirectory `
-        -ExpectedPath (Join-Path $RepositoryRoot 'artifacts\service-directory\package') `
+        -ExpectedPath (Join-Path $RepositoryRoot 'artifacts\package') `
         -Path $Path `
         -AllowMissing:$AllowMissing `
         -IncludeTree:$IncludeTree
@@ -577,7 +577,7 @@ $installerRoot = Join-Path $repositoryRoot 'installer'
 $installerSource = Join-Path $installerRoot 'ServiceDirectory.iss'
 $rootNoticePath = Join-Path $repositoryRoot 'THIRD-PARTY-NOTICES.md'
 $stagingRoot = Join-Path $repositoryRoot `
-    'artifacts\service-directory\package'
+    'artifacts\package'
 $applicationStaging = Join-Path $stagingRoot 'application'
 $noticesStaging = Join-Path $stagingRoot 'notices'
 $installerOutputStaging = Join-Path $stagingRoot 'installer-output'
@@ -588,25 +588,25 @@ $runtimeBuilds = @(
         ProjectPath = Join-Path $repositoryRoot `
             'src\DEEPAi.ServiceDirectory.Service\DEEPAi.ServiceDirectory.Service.csproj'
         OutputDirectory = Join-Path $repositoryRoot `
-            'artifacts\service-directory\bin\DEEPAi.ServiceDirectory.Service\x64\Release'
+            'artifacts\bin\DEEPAi.ServiceDirectory.Service\x64\Release'
         IntermediateDirectory = Join-Path $repositoryRoot `
-            'artifacts\service-directory\obj\DEEPAi.ServiceDirectory.Service\x64\Release'
+            'artifacts\obj\DEEPAi.ServiceDirectory.Service\x64\Release'
     },
     [pscustomobject]@{
         ProjectPath = Join-Path $repositoryRoot `
             'src\DEEPAi.ServiceDirectory.Watchdog\DEEPAi.ServiceDirectory.Watchdog.csproj'
         OutputDirectory = Join-Path $repositoryRoot `
-            'artifacts\service-directory\bin\DEEPAi.ServiceDirectory.Watchdog\x64\Release'
+            'artifacts\bin\DEEPAi.ServiceDirectory.Watchdog\x64\Release'
         IntermediateDirectory = Join-Path $repositoryRoot `
-            'artifacts\service-directory\obj\DEEPAi.ServiceDirectory.Watchdog\x64\Release'
+            'artifacts\obj\DEEPAi.ServiceDirectory.Watchdog\x64\Release'
     },
     [pscustomobject]@{
         ProjectPath = Join-Path $repositoryRoot `
             'src\DEEPAi.ServiceDirectory.Tray\DEEPAi.ServiceDirectory.Tray.csproj'
         OutputDirectory = Join-Path $repositoryRoot `
-            'artifacts\service-directory\bin\DEEPAi.ServiceDirectory.Tray\x64\Release'
+            'artifacts\bin\DEEPAi.ServiceDirectory.Tray\x64\Release'
         IntermediateDirectory = Join-Path $repositoryRoot `
-            'artifacts\service-directory\obj\DEEPAi.ServiceDirectory.Tray\x64\Release'
+            'artifacts\obj\DEEPAi.ServiceDirectory.Tray\x64\Release'
     }
 )
 
@@ -671,7 +671,7 @@ if (-not [string]::IsNullOrWhiteSpace($VSTestPath)) {
 & $installerAclRegressionTest
 
 Remove-ExactPackageDirectoryTree `
-    -ExpectedPath (Join-Path $repositoryRoot 'artifacts\service-directory\package') `
+    -ExpectedPath (Join-Path $repositoryRoot 'artifacts\package') `
     -Path $stagingRoot
 [void](New-Item -ItemType Directory -Path $applicationStaging -Force)
 [void](New-Item -ItemType Directory -Path $noticesStaging -Force)
@@ -859,6 +859,6 @@ try {
 }
 finally {
     Remove-ExactPackageDirectoryTree `
-        -ExpectedPath (Join-Path $repositoryRoot 'artifacts\service-directory\package') `
+        -ExpectedPath (Join-Path $repositoryRoot 'artifacts\package') `
         -Path $stagingRoot
 }

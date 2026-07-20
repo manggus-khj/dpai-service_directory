@@ -9,7 +9,7 @@ revision: 1
 > 문서 상태: 인증서 기반 목표 계약 확정
 > 구현 상태: PKI core 1차 소스만 부분 구현. 현재 wire·XSD·listener는 평문 HTTP·승인 대기 계약이며 목표 명세로 전환 필요
 
-이 파일은 호출 주체와 신뢰 경계별 상세 명세의 색인이다. 인증서 전환 범위와 구현 순서는 [인증서 전환 변경계획](./service-directory-02-certificate-transition.md), 실제 요청·응답과 호출 절차는 아래 외부·내부 명세가 단일 원본이다.
+이 파일은 호출 주체와 신뢰 경계별 상세 명세의 색인이다. 인증서 전환 범위와 구현 순서는 [인증서 전환 변경계획](./02-certificate-transition.md), 실제 요청·응답과 호출 절차는 아래 외부·내부 명세가 단일 원본이다.
 
 ## 목표 운영 기준
 
@@ -32,8 +32,8 @@ revision: 1
 
 | 문서 | 대상 | 포함 범위 |
 |---|---|---|
-| [외부 애플리케이션 API 명세](./service-directory-04-api-01-external-application.md) | 조회 클라이언트와 등록 서버 앱 | Management Server session 기반 Directory 위치 구성, 별도의 등록 서비스 hostname·IPv4 pair, TOFU·pin, 일일 키, CA·CRL, 서비스 조회, 등록 모드 중 CSR 즉시 발급, pair 변경 재발급, 대상 서버 인증서 검증 |
-| [내부 API 명세](./service-directory-04-api-02-internal.md) | 설정 UI, 와치독, 상대 Directory | 등록 모드 시작·종료·상태, 등록 서비스·인증서 폐기, CA 운영, Peer HTTPS·동기화, 로컬 서비스 제어 |
+| [외부 애플리케이션 API 명세](./04-api-01-external-application.md) | 조회 클라이언트와 등록 서버 앱 | Management Server session 기반 Directory 위치 구성, 별도의 등록 서비스 hostname·IPv4 pair, TOFU·pin, 일일 키, CA·CRL, 서비스 조회, 등록 모드 중 CSR 즉시 발급, pair 변경 재발급, 대상 서버 인증서 검증 |
+| [내부 API 명세](./04-api-02-internal.md) | 설정 UI, 와치독, 상대 Directory | 등록 모드 시작·종료·상태, 등록 서비스·인증서 폐기, CA 운영, Peer HTTPS·동기화, 로컬 서비스 제어 |
 
 ## endpoint 소유권
 
@@ -62,7 +62,7 @@ revision: 1
 - 외부 앱은 외부 명세만으로 Directory 신뢰부터 대상 서버 인증서 검증까지 구현할 수 있어야 한다.
 - 외부 DTO에는 톰스톤, LogicalVersion, peer identity, CA private key, ledger 저장 경로를 노출하지 않는다.
 - Admin·Peer·파일 저장 계약을 외부 앱이 호출하거나 추측하지 않는다.
-- `directory.xml`, certificate ledger, CRL 원자 교체와 journal은 [개발계획](./service-directory-03-development.md)의 책임이다.
+- `directory.xml`, certificate ledger, CRL 원자 교체와 journal은 [개발계획](./03-development.md)의 책임이다.
 - Directory 주소를 신뢰한다는 사실은 certificate validation bypass 근거가 아니다. 최초 TOFU 뒤 저장 pin이 인증서 identity의 근거다.
 - Directory 주소는 Directory를 찾고 검증하는 데서 역할이 끝난다. 서비스 등록과 발급에서는 외부 앱이 선택·저장한 자기 `ServiceHostName`·`ServiceIpv4Address`만 사용하며 두 identity 사이에 값을 복사하거나 추론하지 않는다.
 - 일일 API 키 알고리즘 비공개를 암호학적 secret으로 표현하지 않는다. 발급 예외의 실제 보완 통제는 로컬 관리자가 연 1시간·1건 등록 모드와 HTTPS·CSR·폐기 절차다.
