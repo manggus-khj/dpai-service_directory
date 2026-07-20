@@ -3,21 +3,21 @@
 ```text
 최초 작성일: 2026-07-17
 최종 변경일: 2026-07-20
-revision: 2
+revision: 9
 ```
 
 > 문서 묶음 상태: 인증서 기반 목표 설계·외부/내부 API 계약 확정
-> 구현 상태: PKI core 1차 소스(CA·Directory/service leaf·CSR 검증·serial·CRL·certificate ledger 상태·IPv4 endpoint identity)와 단위 테스트 소스를 추가했다. 2026-07-20 `Debug|x64` 솔루션 빌드는 경고·오류 없이 성공했으며 테스트 실행·Release·HTTPS·설치·실행 검증은 미완료
+> 구현 상태: PKI core 1차 소스(CA·Directory/service leaf·CSR 검증·serial·CRL·certificate ledger 상태·IPv4 endpoint identity)와 단위 테스트 소스를 추가했다. Windows Server 2016에서 build 11 최초 설치가 ACL snapshot collection 반환 중 `ArgumentException`으로 실패한 현장 로그를 Windows PowerShell 5.1 회귀 검사로 재현했고, generic `List[object]`의 `@(...)` 반환을 `.ToArray()`로 수정했다. 2026-07-20 `Debug|x64` 빌드, locked restore·`Release|x64` 빌드·568개 테스트·ACL round-trip 검사와 build 12 설치 EXE 생성은 성공했으며 build 12 실제 재설치는 아직 실행하지 않았다
 
 이 디렉터리는 서비스 디렉토리의 제품 설계, 인증서 전환 계획, 외부·내부 API와 Directory 구조 제품 전용 보안 기준을 관리한다. 사내 `Directory서비스_애플리케이션_하드닝_가이드` 개정에 따라 원격 평문 HTTP와 외부 승인 대기 계약을 사이트 CA·HTTPS·TOFU pin·1시간 1건 등록 모드·CSR 즉시 발급 계약으로 전환한다.
 
-문서에서 “확정”은 목표 설계 결정이며 구현 완료가 아니다. PKI core 1차 소스와 테스트 소스는 추가됐지만 실제 서비스는 여전히 remote HTTP, 일일 API 키, `pending.xml`, approve/reject API와 승인 대기 UI를 사용한다. `Debug|x64` 컴파일 성공을 HTTPS·발급 API·설치·실행 또는 테스트 완료로 표시하지 않는다.
+문서에서 “확정”은 목표 설계 결정이며 구현 완료가 아니다. PKI core 1차 소스와 테스트 소스는 추가됐지만 실제 서비스는 여전히 remote HTTP, 일일 API 키, `pending.xml`, approve/reject API와 승인 대기 UI를 사용한다. Release 빌드·자동 테스트·설치 EXE 생성 성공을 HTTPS·발급 API·실제 설치 또는 서비스 실행 완료로 표시하지 않는다.
 
 ## 목표 운영 기준
 
-- 현재 저장소 버전 값은 `v1.0.0 build 8`이다. 이후 버전과 build 번호 변경은 루트 `AGENTS.md` §12를 따르며, 일반 코드·계획 수정이나 빌드 체크·커밋·푸시만으로 변경하지 않는다.
+- 현재 저장소 버전 값은 `v1.0.0 build 12`이다. 이후 버전과 build 번호 변경은 루트 `AGENTS.md` §12를 따르며, 일반 코드·계획 수정이나 빌드 체크·커밋·푸시만으로 변경하지 않는다.
 - Milestone XProtect `2021 R1` 이상, .NET Framework 4.8, x64 전용
-- 지원 OS는 x64 Windows Server 2019+ Standard·Datacenter Desktop Experience, Windows 10 1809+와 Windows 11 24H2+ Pro·Enterprise·IoT Enterprise. Server Core 제외
+- 지원 OS는 x64 Windows Server 2016+ Standard·Datacenter Desktop Experience, Windows 10 1809+와 Windows 11 24H2+ Pro·Enterprise·IoT Enterprise다. Windows Server 2016은 build 14393 이상과 별도 설치한 .NET Framework 4.8을 요구하며 Server Core는 제외한다
 - Milestone Management Server 주소는 같은 서버에 설치된 Directory의 위치다. 외부 앱은 성공한 Milestone session에서 `DirectoryHostName`·`DirectoryIpv4Address`를 얻고 `https://{DirectoryHostName}:21000` 또는 `https://{DirectoryIpv4Address}:21000`으로 Directory에 접속한다. 이 값은 등록할 서비스 주소가 아님
 - 연결정보 파일, Directory 주소·ProductCode·CA·pin·PFX의 설치 입력 없음
 - 최초 Directory 연결은 SAN·chain·CA 제약을 검증한 제한적 TOFU, 이후 site CA와 SHA-256 SPKI pin 강제
@@ -73,13 +73,13 @@ revision: 2
 | Phase | 범위 | 현재 상태 |
 |---:|---|---|
 | 0 | 인증서 전환 계약과 외부·내부 API 확정 | 완료 |
-| 1 | CA·leaf·CSR·serial·ledger·CRL PKI core | 진행 중 — `Debug|x64` 빌드 성공, 테스트 실행·실제 DPAPI/ACL 검증 미완료 |
+| 1 | CA·leaf·CSR·serial·ledger·CRL PKI core | 진행 중 — `Debug|x64`·`Release|x64` 빌드와 568개 테스트 성공, 실제 DPAPI/ACL 검증 미완료 |
 | 2 | schema migration과 다중 파일 저장·복구 | 부분 선행 구현 — CA·ledger·CRL·backup·repair 복원은 연결, 등록 transaction은 미구현 |
 | 3 | HTTPS listener와 설치·repair·upgrade | 대기 — repair CA 복원 진입점만 선행 구현 |
 | 4 | External TOFU·등록 모드·즉시 발급·갱신 | 대기 |
 | 5 | Admin·설정 UI의 pending 제거와 등록 모드 | 부분 선행 구현 — CA 상태·backup·원장·serial 폐기만 연결 |
 | 6 | Peer HTTPS·동일 CA·rotation·폐기 전파 | 대기 |
-| 7 | 지원 OS·Milestone 조합 릴리스 검증 | 대기 |
+| 7 | 지원 OS·Milestone 조합 릴리스 검증 | 진행 중 — Windows Server 2016 build 11 최초 설치의 PowerShell 5.1 generic list 반환 실패를 재현·수정하고 build 12 생성, 실제 build 12 재설치 대기 |
 
 상세 종료 조건은 [인증서 전환 변경계획 §8](./service-directory-02-certificate-transition.md#8-구현-단계와-종료-조건)을 따른다.
 

@@ -517,7 +517,7 @@ function Restore-ProductRegistrationSnapshot {
 function Get-ServiceSnapshot {
     param([Parameter(Mandatory = $true)][string]$Name)
 
-    $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
+    $service = Get-StableServiceController -Name $Name
     if ($null -eq $service) {
         return [pscustomobject]@{
             Name = $Name
@@ -525,10 +525,6 @@ function Get-ServiceSnapshot {
             WasRunning = $false
         }
     }
-    if ($service.Status -ne 'Running' -and $service.Status -ne 'Stopped') {
-        throw "Windows Service '$Name' must be in a stable Running or Stopped state before setup."
-    }
-
     $escapedName = $Name.Replace("'", "''")
     $configuration = Get-CimInstance -ClassName Win32_Service `
         -Filter "Name='$escapedName'" -ErrorAction Stop
@@ -549,7 +545,7 @@ function Get-ServiceSnapshot {
     return [pscustomobject]@{
         Name = $Name
         Exists = $true
-        WasRunning = $service.Status -eq 'Running'
+        WasRunning = $service.Status -ne 'Stopped'
         DisplayName = [string]$configuration.DisplayName
         PathName = [string]$configuration.PathName
         StartMode = [string]$configuration.StartMode
@@ -634,10 +630,6 @@ function Write-SetupState {
         -ExpectedExecutablePath $mainExecutable
     Assert-OwnedServiceSnapshot -Snapshot $watchdogSnapshot `
         -ExpectedExecutablePath $watchdogExecutable
-    if ($watchdogSnapshot.Exists -and $watchdogSnapshot.WasRunning `
-        -and (-not $mainSnapshot.Exists -or -not $mainSnapshot.WasRunning)) {
-        throw 'Setup cannot preserve a running watchdog with a stopped main service.'
-    }
     $trayRunSnapshot = Get-TrayRunValueSnapshot -InstallRoot $InstallRoot
     Assert-TrayRunValueCanBeManaged -Snapshot $trayRunSnapshot
     $state = [pscustomobject]@{
@@ -895,18 +887,50 @@ function Get-UrlAclSnapshot {
     $netshPath = "$env:SystemRoot\System32\netsh.exe"
     $output = @(& $netshPath http show urlacl "url=$Prefix" 2>&1)
     $exitCode = $LASTEXITCODE
-    if ($exitCode -eq 1) {
-        return [pscustomobject]@{ Prefix = $Prefix; Exists = $false; Owned = $false }
-    }
-    if ($exitCode -ne 0) {
-        throw "URL ACL query failed with exit code $exitCode."
-    }
     $text = $output | Out-String
-    $match = [regex]::Match(
+    $matches = [regex]::Matches(
         $text,
         '(?im)^\s*SDDL\s*:\s*(?<Sddl>\S+)\s*$')
-    $owned = $match.Success -and [StringComparer]::OrdinalIgnoreCase.Equals(
-        $match.Groups['Sddl'].Value,
+
+    if ($exitCode -ne 0 -or $matches.Count -eq 0) {
+        $allOutput = @(& $netshPath http show urlacl 2>&1)
+        $allExitCode = $LASTEXITCODE
+        if ($allExitCode -ne 0) {
+            throw "URL ACL query failed with exit codes $exitCode and $allExitCode."
+        }
+
+        $prefixListed = $false
+        foreach ($line in $allOutput) {
+            $trimmed = ([string]$line).Trim()
+            $prefixIndex = $trimmed.IndexOf(
+                $Prefix,
+                [System.StringComparison]::OrdinalIgnoreCase)
+            if ($prefixIndex -ge 0 `
+                -and [StringComparer]::OrdinalIgnoreCase.Equals(
+                    $trimmed.Substring($prefixIndex),
+                    $Prefix)) {
+                $prefixListed = $true
+                break
+            }
+        }
+
+        if ($prefixListed) {
+            throw "URL ACL '$Prefix' was listed but its exact SDDL could not be read."
+        }
+
+        return [pscustomobject]@{
+            Prefix = $Prefix
+            Exists = $false
+            Owned = $false
+        }
+    }
+
+    if ($matches.Count -ne 1) {
+        throw "URL ACL '$Prefix' returned more than one SDDL value."
+    }
+
+    $owned = [StringComparer]::OrdinalIgnoreCase.Equals(
+        $matches[0].Groups['Sddl'].Value,
         (Get-ExpectedUrlAclSddl))
     return [pscustomobject]@{ Prefix = $Prefix; Exists = $true; Owned = $owned }
 }

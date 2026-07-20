@@ -107,10 +107,44 @@ function Test-ServiceExists {
     return $null -ne (Get-Service -Name $Name -ErrorAction SilentlyContinue)
 }
 
+function Test-ServiceRegistrationExists {
+    param([Parameter(Mandatory = $true)][string]$Name)
+
+    return (Test-ServiceExists -Name $Name) `
+        -or (Test-Path -LiteralPath `
+            "HKLM:\SYSTEM\CurrentControlSet\Services\$Name")
+}
+
+function Get-StableServiceController {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [int]$TimeoutSeconds = 30
+    )
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ($true) {
+        $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
+        if ($null -eq $service) {
+            return $null
+        }
+
+        if (@('Running', 'Stopped', 'Paused') `
+            -contains [string]$service.Status) {
+            return $service
+        }
+
+        if ([DateTime]::UtcNow -ge $deadline) {
+            throw "Windows Service '$Name' did not reach a stable state within $TimeoutSeconds seconds."
+        }
+
+        Start-Sleep -Milliseconds 200
+    }
+}
+
 function Stop-ServiceAndWait {
     param([Parameter(Mandatory = $true)][string]$Name)
 
-    $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
+    $service = Get-StableServiceController -Name $Name
     if ($null -eq $service -or $service.Status -eq 'Stopped') {
         return
     }
@@ -591,7 +625,16 @@ function Get-FileSnapshot {
 function Remove-ServiceDefinition {
     param([Parameter(Mandatory = $true)][string]$Name)
 
+    $registryPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$Name"
     if (-not (Test-ServiceExists -Name $Name)) {
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        while ((Test-Path -LiteralPath $registryPath) `
+            -and [DateTime]::UtcNow -lt $deadline) {
+            Start-Sleep -Milliseconds 200
+        }
+        if (Test-Path -LiteralPath $registryPath) {
+            throw "Windows Service '$Name' has a stale registration that SCM did not release."
+        }
         return
     }
 
@@ -599,12 +642,13 @@ function Remove-ServiceDefinition {
     [void](Invoke-NativeCommand -FilePath "$env:SystemRoot\System32\sc.exe" `
         -Arguments @('delete', $Name))
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
-    while ((Test-ServiceExists -Name $Name) -and [DateTime]::UtcNow -lt $deadline) {
+    while ((Test-ServiceRegistrationExists -Name $Name) `
+        -and [DateTime]::UtcNow -lt $deadline) {
         Start-Sleep -Milliseconds 200
     }
 
-    if (Test-ServiceExists -Name $Name) {
-        throw "Windows Service '$Name' was marked for deletion but did not disappear."
+    if (Test-ServiceRegistrationExists -Name $Name) {
+        throw "Windows Service '$Name' was marked for deletion but its SCM or registry registration did not disappear."
     }
 }
 
@@ -1048,6 +1092,11 @@ function Invoke-Uninstall {
     Remove-OwnedFirewallRule
     Remove-ServiceDefinition -Name $watchdogServiceName
     Remove-ServiceDefinition -Name $mainServiceName
+    foreach ($serviceName in @($watchdogServiceName, $mainServiceName)) {
+        if (Test-ServiceRegistrationExists -Name $serviceName) {
+            throw "Windows Service '$serviceName' registration remains after uninstall."
+        }
+    }
     Remove-OperatorsGroup
 
     Remove-OwnedEventSource

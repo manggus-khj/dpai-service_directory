@@ -186,7 +186,7 @@ function Get-FileSystemAclSnapshot {
                 })
         }
     }
-    return @($snapshots)
+    return $snapshots.ToArray()
 }
 
 function Restore-FileSystemAclSnapshot {

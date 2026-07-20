@@ -54,7 +54,8 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 issuedUtc,
                 issuedUtc.AddMinutes(-5),
                 issuedUtc.AddYears(1),
-                new string('B', 43) + "=",
+                Convert.ToBase64String(StrictUtf8.GetBytes(
+                    "0123456789ABCDEF0123456789ABCDEF")),
                 null,
                 null,
                 null);

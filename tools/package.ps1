@@ -275,40 +275,15 @@ function Test-FileBytesEqual {
 function Copy-RuntimeOutput {
     param(
         [Parameter(Mandatory = $true)][string]$SourceDirectory,
-        [Parameter(Mandatory = $true)][string]$DestinationDirectory,
-        [Parameter(Mandatory = $true)][string]$FileListPath
+        [Parameter(Mandatory = $true)][string]$DestinationDirectory
     )
 
     if (-not (Test-Path -LiteralPath $SourceDirectory -PathType Container)) {
         throw "Release output directory '$SourceDirectory' does not exist."
     }
-    if (-not (Test-Path -LiteralPath $FileListPath -PathType Leaf)) {
-        throw "Current build output list '$FileListPath' does not exist."
-    }
 
     $sourceRoot = [System.IO.Path]::GetFullPath($SourceDirectory).TrimEnd('\')
     Assert-NoPackageReparsePoint -Path $sourceRoot -IncludeTree
-    Assert-NoPackageReparsePoint -Path $FileListPath
-    $sourcePrefix = $sourceRoot + '\'
-    $currentOutputs = New-Object 'System.Collections.Generic.HashSet[string]' `
-        ([StringComparer]::OrdinalIgnoreCase)
-    foreach ($line in (Get-Content -LiteralPath $FileListPath -Encoding UTF8)) {
-        if ([string]::IsNullOrWhiteSpace($line)) {
-            continue
-        }
-
-        $outputPath = [System.IO.Path]::GetFullPath($line.Trim())
-        if (-not $outputPath.StartsWith(
-                $sourcePrefix,
-                [StringComparison]::OrdinalIgnoreCase)) {
-            continue
-        }
-        if (-not (Test-Path -LiteralPath $outputPath -PathType Leaf)) {
-            throw "Current build output '$outputPath' is missing."
-        }
-        Assert-NoPackageReparsePoint -Path $outputPath
-        [void]$currentOutputs.Add($outputPath)
-    }
 
     $files = @(Get-ChildItem -LiteralPath $sourceRoot -Recurse -File `
         -ErrorAction Stop | Where-Object {
@@ -321,9 +296,6 @@ function Copy-RuntimeOutput {
     }
 
     foreach ($file in $files) {
-        if (-not $currentOutputs.Contains($file.FullName)) {
-            throw "Unexpected or stale runtime output '$($file.FullName)' is not in the current MSBuild output list."
-        }
         $relativePath = $file.FullName.Substring($sourceRoot.Length).TrimStart('\')
         $destinationPath = Join-Path $DestinationDirectory $relativePath
         $destinationParent = Split-Path -Parent $destinationPath
@@ -520,7 +492,7 @@ function New-RuntimeDependencyNotices {
                 version = $ProductVersion
             }
         }
-        components = @($components)
+        components = $components.ToArray()
     }
     $sbomText = $sbom | ConvertTo-Json -Depth 12
     [System.IO.File]::WriteAllText(
@@ -549,7 +521,54 @@ function Find-InnoSetupCompiler {
         }
     }
 
-    throw 'ISCC.exe was not found. Install Inno Setup 6 or pass -InnoSetupCompilerPath.'
+    throw 'ISCC.exe was not found. Install Inno Setup 6.3 or later, or pass -InnoSetupCompilerPath.'
+}
+
+function Get-InnoSetupCompilerMajorVersion {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($Path)
+    if ($versionInfo.FileMajorPart -gt 0) {
+        return $versionInfo.FileMajorPart
+    }
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $Path
+    $startInfo.Arguments = '/?'
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) {
+            throw "Inno Setup compiler '$Path' could not be started."
+        }
+        $standardOutput = $process.StandardOutput.ReadToEnd()
+        $standardError = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+        $helpOutput = $standardOutput `
+            + [Environment]::NewLine `
+            + $standardError
+    }
+    finally {
+        $process.Dispose()
+    }
+
+    foreach ($line in ($helpOutput -split '\r?\n')) {
+        $match = [regex]::Match(
+            $line,
+            '\AInno Setup ([1-9][0-9]*) Command-Line Compiler\z',
+            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
+        if ($match.Success) {
+            return [int]::Parse(
+                $match.Groups[1].Value,
+                [System.Globalization.CultureInfo]::InvariantCulture)
+        }
+    }
+
+    throw "Inno Setup compiler '$Path' did not report a valid version."
 }
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
@@ -562,6 +581,8 @@ $stagingRoot = Join-Path $repositoryRoot `
 $applicationStaging = Join-Path $stagingRoot 'application'
 $noticesStaging = Join-Path $stagingRoot 'notices'
 $installerOutputStaging = Join-Path $stagingRoot 'installer-output'
+$installerAclRegressionTest = Join-Path $repositoryRoot `
+    'tests\installer\ServiceDirectory.FileSystemSecurity.Tests.ps1'
 $runtimeBuilds = @(
     [pscustomobject]@{
         ProjectPath = Join-Path $repositoryRoot `
@@ -570,8 +591,6 @@ $runtimeBuilds = @(
             'artifacts\service-directory\bin\DEEPAi.ServiceDirectory.Service\x64\Release'
         IntermediateDirectory = Join-Path $repositoryRoot `
             'artifacts\service-directory\obj\DEEPAi.ServiceDirectory.Service\x64\Release'
-        FileListPath = Join-Path $repositoryRoot `
-            'artifacts\service-directory\obj\DEEPAi.ServiceDirectory.Service\x64\Release\DEEPAi.ServiceDirectory.Service.csproj.FileListAbsolute.txt'
     },
     [pscustomobject]@{
         ProjectPath = Join-Path $repositoryRoot `
@@ -580,8 +599,6 @@ $runtimeBuilds = @(
             'artifacts\service-directory\bin\DEEPAi.ServiceDirectory.Watchdog\x64\Release'
         IntermediateDirectory = Join-Path $repositoryRoot `
             'artifacts\service-directory\obj\DEEPAi.ServiceDirectory.Watchdog\x64\Release'
-        FileListPath = Join-Path $repositoryRoot `
-            'artifacts\service-directory\obj\DEEPAi.ServiceDirectory.Watchdog\x64\Release\DEEPAi.ServiceDirectory.Watchdog.csproj.FileListAbsolute.txt'
     },
     [pscustomobject]@{
         ProjectPath = Join-Path $repositoryRoot `
@@ -590,8 +607,6 @@ $runtimeBuilds = @(
             'artifacts\service-directory\bin\DEEPAi.ServiceDirectory.Tray\x64\Release'
         IntermediateDirectory = Join-Path $repositoryRoot `
             'artifacts\service-directory\obj\DEEPAi.ServiceDirectory.Tray\x64\Release'
-        FileListPath = Join-Path $repositoryRoot `
-            'artifacts\service-directory\obj\DEEPAi.ServiceDirectory.Tray\x64\Release\DEEPAi.ServiceDirectory.Tray.csproj.FileListAbsolute.txt'
     }
 )
 
@@ -602,7 +617,8 @@ foreach ($requiredFile in @(
         (Join-Path $installerRoot 'scripts\ServiceDirectory.Setup.ps1'),
         (Join-Path $installerRoot 'scripts\ServiceDirectory.Network.ps1'),
         (Join-Path $installerRoot 'scripts\ServiceDirectory.InstallState.ps1'),
-        (Join-Path $installerRoot 'scripts\ServiceDirectory.FileSystemSecurity.ps1'))) {
+        (Join-Path $installerRoot 'scripts\ServiceDirectory.FileSystemSecurity.ps1'),
+        $installerAclRegressionTest)) {
     if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
         throw "Required package input '$requiredFile' was not found."
     }
@@ -618,8 +634,9 @@ $expectedInstallerPath = Join-Path $installerRoot $expectedFileName
 $isccPath = Find-InnoSetupCompiler -RequestedPath $InnoSetupCompilerPath
 $isccVersionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo(
     $isccPath)
-if ($isccVersionInfo.FileMajorPart -lt 6) {
-    throw 'Inno Setup 6 or later is required.'
+$isccMajorVersion = Get-InnoSetupCompilerMajorVersion -Path $isccPath
+if ($isccMajorVersion -lt 6) {
+    throw 'Inno Setup 6.3 or later is required; the installer source enforces the exact minimum version.'
 }
 
 [void](Assert-ExactPackageDirectory `
@@ -651,6 +668,7 @@ if (-not [string]::IsNullOrWhiteSpace($VSTestPath)) {
     $testParameters['VSTestPath'] = $VSTestPath
 }
 & (Join-Path $PSScriptRoot 'test.ps1') @testParameters
+& $installerAclRegressionTest
 
 Remove-ExactPackageDirectoryTree `
     -ExpectedPath (Join-Path $repositoryRoot 'artifacts\service-directory\package') `
@@ -695,8 +713,7 @@ try {
     foreach ($runtimeBuild in $runtimeBuilds) {
         Copy-RuntimeOutput `
             -SourceDirectory $runtimeBuild.OutputDirectory `
-            -DestinationDirectory $applicationStaging `
-            -FileListPath $runtimeBuild.FileListPath
+            -DestinationDirectory $applicationStaging
     }
 
     foreach ($expectedExecutable in @(
@@ -757,8 +774,13 @@ try {
         $env:DPAI_SD_PACKAGE_PAYLOAD = $stagingRoot
         $env:DPAI_SD_PACKAGE_OUTPUT = $installerOutputStaging
 
-        $isccVersion = $isccVersionInfo.FileVersion
-        Write-Host "Using Inno Setup '$isccPath' (file version $isccVersion)."
+        $isccVersion = if ($isccVersionInfo.FileMajorPart -gt 0) {
+            $isccVersionInfo.FileVersion
+        }
+        else {
+            "major $isccMajorVersion (compiler banner)"
+        }
+        Write-Host "Using Inno Setup '$isccPath' ($isccVersion)."
         & $isccPath '/Qp' $installerSource
         if ($LASTEXITCODE -ne 0) {
             throw "Inno Setup compilation failed with exit code $LASTEXITCODE."

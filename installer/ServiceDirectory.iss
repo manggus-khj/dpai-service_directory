@@ -3,6 +3,10 @@
 #define PayloadDirectory GetEnv("DPAI_SD_PACKAGE_PAYLOAD")
 #define OutputDirectory GetEnv("DPAI_SD_PACKAGE_OUTPUT")
 
+#if Ver < EncodeVer(6, 3, 0)
+  #error Inno Setup 6.3.0 or later is required.
+#endif
+
 #if ProductVersion == ""
   #error DPAI_SD_PACKAGE_VERSION must be supplied by tools/package.ps1.
 #endif
@@ -42,7 +46,7 @@ OutputDir={#OutputDirectory}
 OutputBaseFilename={#OutputFileName}
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
-MinVersion=10.0.17763
+MinVersion=10.0.14393
 PrivilegesRequired=admin
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -72,7 +76,8 @@ Source: "scripts\ServiceDirectory.FileSystemSecurity.ps1"; DestDir: "{app}\insta
 
 [Code]
 const
-  MinimumWindowsBuild = 17763;
+  MinimumServerBuild = 14393;
+  MinimumClientBuild = 17763;
   MinimumWindows11Build = 26100;
   MinimumDotNet48Release = 528040;
   HelperScriptName = 'ServiceDirectory.Setup.ps1';
@@ -92,6 +97,7 @@ var
   ServicesPrepared: Boolean;
   PostInstallStarted: Boolean;
   ConfigurationCompleted: Boolean;
+  LastPowerShellHelperError: String;
 
 function IsAllowedClientEdition(const EditionId: String): Boolean;
 begin
@@ -155,11 +161,6 @@ begin
   end;
 
   BuildNumber := StrToIntDef(BuildText, -1);
-  if BuildNumber < MinimumWindowsBuild then
-  begin
-    ErrorText := 'Windows Server 2019 or Windows 10 1809 is the minimum supported release.';
-    Exit;
-  end;
 
   if CompareText(InstallationType, 'Server Core') = 0 then
   begin
@@ -169,6 +170,12 @@ begin
 
   if CompareText(InstallationType, 'Server') = 0 then
   begin
+    if BuildNumber < MinimumServerBuild then
+    begin
+      ErrorText := 'Windows Server 2016 or later is required for server installations.';
+      Exit;
+    end;
+
     if not IsAllowedServerEdition(EditionId) then
     begin
       ErrorText := 'Only Windows Server Standard and Datacenter editions are supported.';
@@ -177,6 +184,12 @@ begin
   end
   else if CompareText(InstallationType, 'Client') = 0 then
   begin
+    if BuildNumber < MinimumClientBuild then
+    begin
+      ErrorText := 'Windows 10 1809 or later is required for client installations.';
+      Exit;
+    end;
+
     if not IsAllowedClientEdition(EditionId) then
     begin
       ErrorText := 'Only Windows Pro, Enterprise and IoT Enterprise editions are supported.';
@@ -266,6 +279,30 @@ begin
   Result := '"' + Value + '"';
 end;
 
+procedure CapturePowerShellHelperOutput(
+  const S: String;
+  const Error, FirstLine: Boolean);
+var
+  CleanLine: String;
+begin
+  CleanLine := Trim(S);
+  if CleanLine = '' then
+    Exit;
+
+  Log('PowerShell helper output: ' + CleanLine);
+  { ExecAndLogOutput's Error flag reports capture failure, not stderr. The
+    first helper line contains PowerShell's terminating-error summary. }
+  if LastPowerShellHelperError = '' then
+    LastPowerShellHelperError := Copy(CleanLine, 1, 512);
+end;
+
+function WithPowerShellHelperError(const MessageText: String): String;
+begin
+  Result := MessageText;
+  if LastPowerShellHelperError <> '' then
+    Result := Result + #13#10 + 'Details: ' + LastPowerShellHelperError;
+end;
+
 function RunPowerShellHelper(
   const HelperPath: String;
   const Arguments: String;
@@ -275,13 +312,21 @@ var
 begin
   Parameters := '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
     QuoteArgument(HelperPath) + ' ' + Arguments;
-  Result := Exec(
-    PowerShellPath(),
-    Parameters,
-    '',
-    SW_HIDE,
-    ewWaitUntilTerminated,
-    ResultCode);
+  LastPowerShellHelperError := '';
+  try
+    Result := ExecAndLogOutput(
+      PowerShellPath(),
+      Parameters,
+      '',
+      SW_HIDE,
+      ewWaitUntilTerminated,
+      ResultCode,
+      @CapturePowerShellHelperOutput);
+  except
+    LastPowerShellHelperError := Copy(GetExceptionMessage, 1, 512);
+    Log('PowerShell helper execution failed: ' + LastPowerShellHelperError);
+    Result := False;
+  end;
 end;
 
 function RunPowerShellHelperVisible(
@@ -293,6 +338,7 @@ var
 begin
   Parameters := '-NoLogo -NoProfile -ExecutionPolicy Bypass -File ' +
     QuoteArgument(HelperPath) + ' ' + Arguments;
+  LastPowerShellHelperError := '';
   Result := Exec(
     PowerShellPath(),
     Parameters,
@@ -473,7 +519,8 @@ begin
         ' -DataRoot ' + QuoteArgument(ExpandConstant('{commonappdata}\DEEPAi\ServiceDirectory')) +
         ' -SetupStatePath ' + QuoteArgument(SetupStatePath()),
       ResultCode) or (ResultCode <> 0) then
-    Result := 'Setup ownership preflight or safe service stop failed. No installation files were changed.'
+    Result := WithPowerShellHelperError(
+      'Setup ownership preflight or safe service stop failed. No installation files were changed.')
   else
     ServicesPrepared := True;
 end;
@@ -502,8 +549,9 @@ begin
       TemporaryHelperPath(), Arguments, ResultCode) and (ResultCode = 0);
   if not ConfigurationCompleted then
     RaiseException(
-      'Service configuration failed. Managed system changes were rolled back where possible, ' +
-        'and the services remain stopped. Resolve the reported cause and run repair.');
+      WithPowerShellHelperError(
+        'Service configuration failed. Managed system changes were rolled back where possible, ' +
+          'and the services remain stopped. Resolve the reported cause and run repair.'));
   DeleteFile(SetupStatePath());
 end;
 
@@ -573,5 +621,6 @@ begin
       InstalledHelperPath(),
       Arguments,
       ResultCode) or (ResultCode <> 0) then
-    RaiseException('Windows Service, URL ACL or firewall cleanup failed.');
+    RaiseException(WithPowerShellHelperError(
+      'Windows Service, URL ACL or firewall cleanup failed.'));
 end;
