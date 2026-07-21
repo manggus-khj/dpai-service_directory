@@ -13,7 +13,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         Undefined = 0,
         Health = 1,
         Services = 2,
-        Registration = 3
+        Registration = 3,
+        CertificateAuthority = 4,
+        CertificateRevocationList = 5,
+        Renewal = 6
     }
 
     internal enum ExternalRequestAdmissionFailure
@@ -113,6 +116,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         internal const double RegistrationProductCodeTokensPerMinute = 3.0;
         internal const double RegistrationRemoteAddressCapacity = 20.0;
         internal const double RegistrationRemoteAddressTokensPerMinute = 20.0;
+
+        internal const double CertificateAuthorityRemoteAddressCapacity = 2.0;
+        internal const double CertificateAuthorityRemoteAddressTokensPerMinute =
+            10.0;
+        internal const double CertificateRevocationListRemoteAddressCapacity =
+            5.0;
+        internal const double CertificateRevocationListRemoteAddressTokensPerMinute =
+            30.0;
 
         private readonly ExternalRequestConcurrencyLimiter
             _concurrencyLimiter;
@@ -249,6 +260,52 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             }
         }
 
+        internal ExternalRequestAdmissionResult TryAcquirePublicPki(
+            ExternalHttpEndpoint endpoint,
+            IPAddress remoteAddress)
+        {
+            if (endpoint != ExternalHttpEndpoint.CertificateAuthority
+                && endpoint !=
+                    ExternalHttpEndpoint.CertificateRevocationList)
+            {
+                throw new ArgumentOutOfRangeException(nameof(endpoint));
+            }
+
+            string canonicalRemoteAddress =
+                GetCanonicalAddress(remoteAddress);
+            IDisposable concurrencyLease;
+            if (!_concurrencyLimiter.TryAcquire(out concurrencyLease))
+            {
+                return ExternalRequestAdmissionResult.Denied(
+                    ExternalRequestAdmissionFailure.ConcurrencyLimit);
+            }
+
+            try
+            {
+                ExternalRequestAdmissionResult rateResult;
+                lock (_rateGate)
+                {
+                    rateResult = TryAcquirePublicPkiRateToken(
+                        endpoint,
+                        canonicalRemoteAddress);
+                }
+
+                if (rateResult != null)
+                {
+                    concurrencyLease.Dispose();
+                    return rateResult;
+                }
+
+                return ExternalRequestAdmissionResult.Granted(
+                    concurrencyLease);
+            }
+            catch
+            {
+                concurrencyLease.Dispose();
+                throw;
+            }
+        }
+
         private ExternalRequestAdmissionResult TryAcquireRateTokens(
             ExternalHttpEndpoint endpoint,
             string productCode,
@@ -322,6 +379,49 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             return null;
         }
 
+        private ExternalRequestAdmissionResult TryAcquirePublicPkiRateToken(
+            ExternalHttpEndpoint endpoint,
+            string remoteAddress)
+        {
+            long now = GetMonotonicTimestamp();
+            BucketRequirement requirement = endpoint ==
+                    ExternalHttpEndpoint.CertificateAuthority
+                ? new BucketRequirement(
+                    "C|" + remoteAddress,
+                    CertificateAuthorityRemoteAddressCapacity,
+                    CertificateAuthorityRemoteAddressTokensPerMinute)
+                : new BucketRequirement(
+                    "L|" + remoteAddress,
+                    CertificateRevocationListRemoteAddressCapacity,
+                    CertificateRevocationListRemoteAddressTokensPerMinute);
+            if (!EnsureCapacityForNewKey(
+                    _remoteAddressStates,
+                    requirement.Key,
+                    now,
+                    MaximumTrackedRemoteAddressKeys))
+            {
+                return ExternalRequestAdmissionResult.Denied(
+                    ExternalRequestAdmissionFailure.TrackingCapacity);
+            }
+
+            TokenBucketState state = GetOrCreateState(
+                _remoteAddressStates,
+                requirement,
+                now);
+            Refill(state, now);
+            state.LastSeenTimestamp = now;
+            double retrySeconds = SecondsUntilToken(state);
+            if (retrySeconds > 0.0)
+            {
+                return ExternalRequestAdmissionResult.Denied(
+                    ExternalRequestAdmissionFailure.RateLimit,
+                    ToRetryAfterSeconds(retrySeconds));
+            }
+
+            state.Tokens -= 1.0;
+            return null;
+        }
+
         private static void GetRequirements(
             ExternalHttpEndpoint endpoint,
             string productCode,
@@ -360,6 +460,23 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                         RegistrationRemoteAddressCapacity,
                         RegistrationRemoteAddressTokensPerMinute);
                     return;
+
+                case ExternalHttpEndpoint.Renewal:
+                    productRequirement = new BucketRequirement(
+                        "N|" + productCode,
+                        RegistrationProductCodeCapacity,
+                        RegistrationProductCodeTokensPerMinute);
+                    remoteRequirement = new BucketRequirement(
+                        "N|" + remoteAddress,
+                        RegistrationRemoteAddressCapacity,
+                        RegistrationRemoteAddressTokensPerMinute);
+                    return;
+
+                case ExternalHttpEndpoint.CertificateAuthority:
+                case ExternalHttpEndpoint.CertificateRevocationList:
+                    throw new ArgumentException(
+                        "Public PKI endpoints use remote-address-only admission.",
+                        nameof(endpoint));
 
                 default:
                     throw new ArgumentOutOfRangeException(nameof(endpoint));

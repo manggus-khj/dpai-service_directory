@@ -29,7 +29,8 @@ namespace DEEPAi.ServiceDirectory.Application.Queries
 
             Name = record.Definition.Name;
             ProductCode = record.Definition.ProductCode.Value;
-            ServerAddress = record.Definition.ServerAddress;
+            ServiceHostName = record.Definition.ServiceHostName;
+            ServiceIpv4Address = record.Definition.ServiceIpv4Address;
             Port = record.Definition.Port;
             LastModifiedUtc = record.LastModifiedUtc;
         }
@@ -38,7 +39,9 @@ namespace DEEPAi.ServiceDirectory.Application.Queries
 
         public string ProductCode { get; }
 
-        public string ServerAddress { get; }
+        public string ServiceHostName { get; }
+
+        public string ServiceIpv4Address { get; }
 
         public int Port { get; }
 

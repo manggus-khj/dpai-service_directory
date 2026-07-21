@@ -74,9 +74,8 @@
           <xs:element name="NextCursor" type="tns:CursorType" minOccurs="0" />
         </xs:sequence>
         <xs:sequence>
-          <xs:element name="PendingItems" type="tns:PendingItemsType" />
-          <xs:element name="TotalCount" type="xs:unsignedInt" />
-          <xs:element name="NextCursor" type="tns:CursorType" minOccurs="0" />
+          <xs:element name="RegistrationMode" type="tns:RegistrationModeType" />
+          <xs:element name="LastRegistration" type="tns:LastRegistrationType" minOccurs="0" />
         </xs:sequence>
         <xs:element name="SyncStatus" type="tns:SyncStatusType" />
         <xs:element name="SyncDisableResult" type="tns:SyncDisableResultType" />
@@ -104,7 +103,8 @@
     <xs:sequence>
       <xs:element name="Name" type="tns:NameType" />
       <xs:element name="ProductCode" type="tns:ProductCodeType" />
-      <xs:element name="ServerAddress" type="tns:ServerAddressType" />
+      <xs:element name="ServiceHostName" type="tns:ServiceHostNameType" />
+      <xs:element name="ServiceIpv4Address" type="tns:Ipv4Type" />
       <xs:element name="Port" type="tns:PortType" />
       <xs:element name="LastModifiedUtc" type="tns:UtcDateTimeType" />
       <xs:element name="Deleted" type="tns:BooleanTextType" />
@@ -112,29 +112,25 @@
     </xs:sequence>
   </xs:complexType>
 
-  <xs:complexType name="PendingItemsType">
+  <xs:complexType name="RegistrationModeType">
     <xs:sequence>
-      <xs:element name="PendingItem" type="tns:PendingItemType" minOccurs="0" maxOccurs="250" />
+      <xs:element name="State" type="tns:RegistrationModeStateType" />
+      <xs:element name="OpenedUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+      <xs:element name="ExpiresUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+      <xs:element name="RemainingSeconds" type="tns:RegistrationRemainingType" minOccurs="0" />
     </xs:sequence>
   </xs:complexType>
 
-  <xs:complexType name="PendingItemType">
+  <xs:complexType name="LastRegistrationType">
     <xs:sequence>
-      <xs:element name="Id" type="tns:GuidType" />
-      <xs:element name="Type" type="tns:PendingType" />
-      <xs:element name="RequestedUtc" type="tns:UtcDateTimeType" />
-      <xs:element name="SourceIP" type="tns:IpTextType" />
-      <xs:element name="Requested" type="tns:ServiceInputType" />
-      <xs:element name="Current" type="tns:ServiceInputType" minOccurs="0" />
-    </xs:sequence>
-  </xs:complexType>
-
-  <xs:complexType name="ServiceInputType">
-    <xs:sequence>
-      <xs:element name="Name" type="tns:NameType" />
-      <xs:element name="ProductCode" type="tns:ProductCodeType" />
-      <xs:element name="ServerAddress" type="tns:ServerAddressType" />
-      <xs:element name="Port" type="tns:PortType" />
+      <xs:element name="CompletedUtc" type="tns:UtcDateTimeType" />
+      <xs:element name="ProductCode" type="tns:ProductCodeType" minOccurs="0" />
+      <xs:element name="ServiceHostName" type="tns:ServiceHostNameType" minOccurs="0" />
+      <xs:element name="ServiceIpv4Address" type="tns:Ipv4Type" minOccurs="0" />
+      <xs:element name="CertificateSerialNumber" type="tns:CertificateSerialType" minOccurs="0" />
+      <xs:element name="CertificateNotAfterUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+      <xs:element name="Outcome" type="tns:RegistrationOutcomeType" />
+      <xs:element name="FailureReason" type="tns:FailureReasonType" minOccurs="0" />
     </xs:sequence>
   </xs:complexType>
 
@@ -207,7 +203,7 @@
       <xs:element name="SerialNumber" type="tns:CertificateSerialType" />
       <xs:element name="ProductCode" type="tns:ProductCodeType" />
       <xs:element name="IssuanceKind" type="tns:CertificateIssuanceKindType" />
-      <xs:element name="ServiceHostName" type="tns:ServerAddressType" />
+      <xs:element name="ServiceHostName" type="tns:ServiceHostNameType" />
       <xs:element name="ServiceIpv4Address" type="tns:Ipv4Type" />
       <xs:element name="Status" type="tns:CertificateStatusType" />
       <xs:element name="IssuedUtc" type="tns:UtcDateTimeType" />
@@ -239,7 +235,8 @@
 
   <xs:simpleType name="ResultType"><xs:restriction base="xs:string"><xs:enumeration value="OK"/><xs:enumeration value="ERROR"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="BooleanTextType"><xs:restriction base="xs:string"><xs:enumeration value="true"/><xs:enumeration value="false"/></xs:restriction></xs:simpleType>
-  <xs:simpleType name="PendingType"><xs:restriction base="xs:string"><xs:enumeration value="New"/><xs:enumeration value="Modify"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="RegistrationModeStateType"><xs:restriction base="xs:string"><xs:enumeration value="CLOSED"/><xs:enumeration value="OPEN"/><xs:enumeration value="CLAIMED"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="RegistrationOutcomeType"><xs:restriction base="xs:string"><xs:enumeration value="REGISTERED"/><xs:enumeration value="REREGISTERED"/><xs:enumeration value="FAILED"/></xs:restriction></xs:simpleType>
 
   <xs:simpleType name="PairingStateType">
     <xs:restriction base="xs:string">
@@ -272,6 +269,7 @@
     </xs:restriction>
   </xs:simpleType>
   <xs:simpleType name="MessageType"><xs:restriction base="xs:string"><xs:maxLength value="512"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="FailureReasonType"><xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="512"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="CursorType"><xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="2048"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="NameType">
     <xs:annotation>
@@ -280,13 +278,14 @@
     <xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="256"/></xs:restriction>
   </xs:simpleType>
   <xs:simpleType name="ProductCodeType"><xs:restriction base="xs:string"><xs:pattern value="[A-Z0-9]{4}"/></xs:restriction></xs:simpleType>
-  <xs:simpleType name="ServerAddressType"><xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="253"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="ServiceHostNameType"><xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="253"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="Ipv4Type"><xs:restriction base="xs:string"><xs:pattern value="[0-9]{1,3}(\.[0-9]{1,3}){3}"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="IpTextType"><xs:restriction base="xs:string"><xs:minLength value="2"/><xs:maxLength value="45"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="EndpointType"><xs:restriction base="xs:string"><xs:minLength value="18"/><xs:maxLength value="80"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="PortType"><xs:restriction base="xs:unsignedShort"><xs:minInclusive value="1"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="LogRetentionDaysType"><xs:restriction base="xs:unsignedShort"><xs:minInclusive value="1"/><xs:maxInclusive value="1095"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="PairingRemainingType"><xs:restriction base="xs:unsignedShort"><xs:maxInclusive value="300"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="RegistrationRemainingType"><xs:restriction base="xs:unsignedShort"><xs:maxInclusive value="3600"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="PositiveEpochType"><xs:restriction base="xs:unsignedLong"><xs:minInclusive value="1"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="SasType"><xs:restriction base="xs:string"><xs:pattern value="[0-9]{8}"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="StatusNameType"><xs:restriction base="xs:string"><xs:pattern value="[A-Z][A-Z0-9_]{1,63}"/></xs:restriction></xs:simpleType>

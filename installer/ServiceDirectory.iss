@@ -69,10 +69,16 @@ Source: "scripts\ServiceDirectory.Setup.ps1"; Flags: dontcopy
 Source: "scripts\ServiceDirectory.Network.ps1"; Flags: dontcopy
 Source: "scripts\ServiceDirectory.InstallState.ps1"; Flags: dontcopy
 Source: "scripts\ServiceDirectory.FileSystemSecurity.ps1"; Flags: dontcopy
+Source: "scripts\ServiceDirectory.HttpsBinding.ps1"; Flags: dontcopy
+Source: "scripts\ServiceDirectory.PkiRepair.ps1"; Flags: dontcopy
 Source: "scripts\ServiceDirectory.Setup.ps1"; DestDir: "{app}\installer-support"; Flags: ignoreversion
 Source: "scripts\ServiceDirectory.Network.ps1"; DestDir: "{app}\installer-support"; Flags: ignoreversion
 Source: "scripts\ServiceDirectory.InstallState.ps1"; DestDir: "{app}\installer-support"; Flags: ignoreversion
 Source: "scripts\ServiceDirectory.FileSystemSecurity.ps1"; DestDir: "{app}\installer-support"; Flags: ignoreversion
+Source: "scripts\ServiceDirectory.HttpsBinding.ps1"; DestDir: "{app}\installer-support"; Flags: ignoreversion
+Source: "scripts\ServiceDirectory.PkiRepair.ps1"; DestDir: "{app}\installer-support"; Flags: ignoreversion
+Source: "scripts\ServiceDirectory.InstalledValidation.ps1"; DestDir: "{app}\installer-support"; Flags: ignoreversion
+Source: "scripts\ServiceDirectory.LiveEndpointValidation.ps1"; DestDir: "{app}\installer-support"; Flags: ignoreversion
 
 [Code]
 const
@@ -84,14 +90,18 @@ const
   NetworkScriptName = 'ServiceDirectory.Network.ps1';
   InstallStateScriptName = 'ServiceDirectory.InstallState.ps1';
   FileSystemSecurityScriptName = 'ServiceDirectory.FileSystemSecurity.ps1';
+  HttpsBindingScriptName = 'ServiceDirectory.HttpsBinding.ps1';
+  PkiRepairScriptName = 'ServiceDirectory.PkiRepair.ps1';
   SetupStateFileName = 'deepai-service-directory-setup-state.json';
 
 var
   AddressPage: TInputOptionWizardPage;
+  CaOperationPage: TInputOptionWizardPage;
   CaRestorePage: TInputFileWizardPage;
   EligibleAddresses: TArrayOfString;
   SelectedListenAddress: String;
   SelectedCaRestorePath: String;
+  SelectedCaOperation: String;
   ExistingInstallation: Boolean;
   PurgeDataOnUninstall: Boolean;
   ServicesPrepared: Boolean;
@@ -391,16 +401,18 @@ begin
   ExtractTemporaryFile(NetworkScriptName);
   ExtractTemporaryFile(InstallStateScriptName);
   ExtractTemporaryFile(FileSystemSecurityScriptName);
+  ExtractTemporaryFile(HttpsBindingScriptName);
+  ExtractTemporaryFile(PkiRepairScriptName);
   ExtractTemporaryFile(HelperScriptName);
   WizardForm.DirEdit.Text := ExpandConstant('{autopf64}\DEEPAi\ServiceDirectory');
   if not LoadEligibleAddresses(EligibleAddresses) then
     RaiseException(
-      'No active Domain or Private network interface has a supported IPv4 or IPv6 address.');
+      'No active Domain or Private network interface has a supported IPv4 address.');
 
   AddressPage := CreateInputOptionPage(
     wpSelectDir,
     'Service listener address',
-    'Select the exact IP literal used by External and Peer HTTP endpoints.',
+    'Select the exact IPv4 literal used by External and Peer HTTPS endpoints.',
     'Only addresses assigned to active Domain or Private interfaces are listed. ' +
       'Wildcard, loopback, link-local, multicast and Public-profile addresses are rejected.',
     True,
@@ -416,11 +428,26 @@ begin
   end;
   AddressPage.SelectedValueIndex := SelectedIndex;
 
-  CaRestorePage := CreateInputFilePage(
+  CaOperationPage := CreateInputOptionPage(
     AddressPage.ID,
-    'Site CA restore',
-    'Optionally restore an encrypted Site CA backup during repair.',
-    'Leave this empty unless this is a repair and the existing Site CA state must be restored.');
+    'Site CA role',
+    'Choose the explicit Site CA operation for this installation.',
+    'Standby configuration and promotion require an authenticated same-site .dpca backup. ' +
+      'Promotion is accepted only when its high-water values are at least the values observed by the standby.',
+    True,
+    False);
+  CaOperationPage.Add('Keep the installed role, or create a new active issuer');
+  CaOperationPage.Add('Restore the installed active issuer from backup');
+  CaOperationPage.Add('Configure this installation as standby from backup');
+  CaOperationPage.Add('Promote the installed standby from backup');
+  CaOperationPage.SelectedValueIndex := 0;
+  SelectedCaOperation := 'None';
+
+  CaRestorePage := CreateInputFilePage(
+    CaOperationPage.ID,
+    'Site CA backup',
+    'Select the encrypted Site CA backup for the chosen operation.',
+    'The password is requested through protected standard input and is never placed on the command line.');
   CaRestorePage.Add(
     'Encrypted CA backup:',
     'DEEPAi CA backup files (*.dpca)|*.dpca',
@@ -431,14 +458,19 @@ begin
     SelectedListenAddress := ExpandConstant('{param:ListenAddress|}');
     if SelectedListenAddress = '' then
       RaiseException('Silent setup requires an explicit /ListenAddress=IP argument.');
+    if not ExistingInstallation then
+      RaiseException('Silent fresh installation is not supported because the initial encrypted CA backup password must be entered through standard input.');
     if ExpandConstant('{param:CaRestorePath|}') <> '' then
       RaiseException('Silent Site CA restore is not supported because the backup password must be entered through standard input.');
+    if CompareText(ExpandConstant('{param:CaOperation|None}'), 'None') <> 0 then
+      RaiseException('Silent Site CA role changes are not supported because the backup password must be entered through standard input.');
   end;
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
-  Result := (PageID = CaRestorePage.ID) and not ExistingInstallation;
+  Result := (PageID = CaRestorePage.ID) and
+    (CaOperationPage.SelectedValueIndex = 0);
 end;
 
 function ValidateSelectedAddress(const Value: String): Boolean;
@@ -482,6 +514,26 @@ begin
           mbError,
           MB_OK);
     end;
+  end;
+  if Result and (CurPageID = CaOperationPage.ID) then
+  begin
+    case CaOperationPage.SelectedValueIndex of
+      0:
+        begin
+          SelectedCaOperation := 'None';
+          SelectedCaRestorePath := '';
+        end;
+      1: SelectedCaOperation := 'Restore';
+      2: SelectedCaOperation := 'ConfigureStandby';
+      3: SelectedCaOperation := 'PromoteStandby';
+    end;
+    Result := ExistingInstallation or
+      (CaOperationPage.SelectedValueIndex in [0, 2]);
+    if not Result then
+      MsgBox(
+        'A fresh installation can create an active issuer or configure a standby only.',
+        mbError,
+        MB_OK);
   end;
 end;
 
@@ -537,11 +589,13 @@ begin
   Arguments := '-Mode Install -Address ' + QuoteArgument(SelectedListenAddress) +
     ' -InstallRoot ' + QuoteArgument(ExpandConstant('{app}')) +
     ' -DataRoot ' + QuoteArgument(ExpandConstant('{commonappdata}\DEEPAi\ServiceDirectory')) +
-    ' -SetupStatePath ' + QuoteArgument(SetupStatePath());
+    ' -SetupStatePath ' + QuoteArgument(SetupStatePath()) +
+    ' -CaOperation ' + QuoteArgument(SelectedCaOperation);
   if SelectedCaRestorePath <> '' then
     Arguments := Arguments + ' -CaRestorePath ' +
       QuoteArgument(SelectedCaRestorePath);
-  if SelectedCaRestorePath <> '' then
+  if (not ExistingInstallation) or
+      (CompareStr(SelectedCaOperation, 'None') <> 0) then
     ConfigurationCompleted := RunPowerShellHelperVisible(
       TemporaryHelperPath(), Arguments, ResultCode) and (ResultCode = 0)
   else

@@ -72,6 +72,40 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void RenewalUsesItsOwnDocumentedRateBuckets()
+        {
+            var controller = CreateController(() => 0L);
+            ProductCode productCode = Code("AB12");
+            IPAddress remoteAddress = IPAddress.Parse("192.0.2.11");
+
+            for (int index = 0; index < 2; index++)
+            {
+                GrantAndRelease(
+                    controller,
+                    ExternalHttpEndpoint.Registration,
+                    productCode,
+                    remoteAddress);
+            }
+
+            GrantAndRelease(
+                controller,
+                ExternalHttpEndpoint.Renewal,
+                productCode,
+                remoteAddress);
+            GrantAndRelease(
+                controller,
+                ExternalHttpEndpoint.Renewal,
+                productCode,
+                remoteAddress);
+            AssertTimedRateLimit(
+                controller.TryAcquire(
+                    ExternalHttpEndpoint.Renewal,
+                    productCode,
+                    remoteAddress),
+                20);
+        }
+
+        [TestMethod]
         public void HealthCombinationHasCapacityFiveAndRefillsThirtyPerMinute()
         {
             long timestamp = 0;
@@ -143,6 +177,42 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     Code("CD34"),
                     remoteAddress),
                 1);
+        }
+
+        [TestMethod]
+        public void PublicPkiUsesIndependentRemoteAddressBuckets()
+        {
+            long timestamp = 0;
+            var controller = CreateController(() => timestamp);
+            IPAddress remoteAddress = IPAddress.Parse("192.0.2.35");
+
+            for (int index = 0; index < 2; index++)
+            {
+                GrantPublicPkiAndRelease(
+                    controller,
+                    ExternalHttpEndpoint.CertificateAuthority,
+                    remoteAddress);
+            }
+
+            AssertTimedRateLimit(
+                controller.TryAcquirePublicPki(
+                    ExternalHttpEndpoint.CertificateAuthority,
+                    remoteAddress),
+                6);
+
+            for (int index = 0; index < 5; index++)
+            {
+                GrantPublicPkiAndRelease(
+                    controller,
+                    ExternalHttpEndpoint.CertificateRevocationList,
+                    remoteAddress);
+            }
+
+            AssertTimedRateLimit(
+                controller.TryAcquirePublicPki(
+                    ExternalHttpEndpoint.CertificateRevocationList,
+                    remoteAddress),
+                2);
         }
 
         [TestMethod]
@@ -420,6 +490,19 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             Assert.AreEqual(
                 expectedRetryAfterSeconds,
                 result.RetryAfterSeconds);
+        }
+
+        private static void GrantPublicPkiAndRelease(
+            ExternalRequestAdmissionController controller,
+            ExternalHttpEndpoint endpoint,
+            IPAddress remoteAddress)
+        {
+            ExternalRequestAdmissionResult result =
+                controller.TryAcquirePublicPki(
+                    endpoint,
+                    remoteAddress);
+            Assert.IsTrue(result.IsGranted);
+            result.Lease.Dispose();
         }
 
         private static ProductCode Code(string rawValue)

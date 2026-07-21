@@ -73,6 +73,37 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     "management.example.local",
                     "10.20.30.10",
                     directoryIdentity);
+                SiteCertificateAuthority.ValidateDirectoryLeaf(
+                    leaf.GetEncoded(),
+                    caCertificate.GetEncoded(),
+                    directoryIdentity,
+                    UtcNow);
+
+                DirectoryEndpointIdentity wrongIdentity;
+                EndpointIdentityValidationError identityError;
+                Assert.IsTrue(DirectoryEndpointIdentity.TryCreate(
+                    "other.example.local",
+                    "10.20.30.10",
+                    out wrongIdentity,
+                    out identityError));
+                Assert.ThrowsExactly<System.IO.InvalidDataException>(() =>
+                    SiteCertificateAuthority.ValidateDirectoryLeaf(
+                        leaf.GetEncoded(),
+                        caCertificate.GetEncoded(),
+                        wrongIdentity,
+                        UtcNow));
+                Assert.ThrowsExactly<System.IO.InvalidDataException>(() =>
+                    SiteCertificateAuthority.ValidateDirectoryLeaf(
+                        leaf.GetEncoded(),
+                        caCertificate.GetEncoded(),
+                        directoryIdentity,
+                        directoryLeaf.NotAfterUtc));
+                SiteCertificateAuthority.ValidateDirectoryLeaf(
+                    leaf.GetEncoded(),
+                    caCertificate.GetEncoded(),
+                    directoryIdentity,
+                    directoryLeaf.NotAfterUtc,
+                    false);
             }
 
             byte[] caPrivateKey = authority.ExportPrivateKeyPkcs8();

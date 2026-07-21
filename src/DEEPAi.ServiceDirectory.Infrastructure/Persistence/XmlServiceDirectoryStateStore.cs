@@ -15,6 +15,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         private const int ErrorDiskFull = 112;
 
         private readonly object _gate = new object();
+        private readonly StateStoragePathPolicy _pathPolicy;
         private readonly AtomicFileWriter _fileWriter;
         private readonly RecoveryJournalManager _journalManager;
         private readonly StateXmlCodec _codec;
@@ -33,6 +34,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         {
             var pathPolicy = new StateStoragePathPolicy(
                 stateDirectoryPath);
+            _pathPolicy = pathPolicy;
             _fileWriter = new AtomicFileWriter(pathPolicy);
             _journalManager = new RecoveryJournalManager(
                 pathPolicy,
@@ -125,11 +127,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
 
                     byte[] directoryContents =
                         _codec.SerializeDirectory(nextSnapshot);
-                    byte[] pendingContents =
-                        _codec.SerializePending(nextSnapshot);
                     DirectorySnapshot roundTrip = _codec.DeserializeSnapshot(
-                        directoryContents,
-                        pendingContents);
+                        directoryContents);
                     if (!DirectorySnapshotValueComparer.Equals(
                             nextSnapshot,
                             roundTrip))
@@ -140,16 +139,13 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
 
                     IReadOnlyList<StateFileChange> changes = BuildChanges(
                         current,
-                        directoryContents,
-                        pendingContents);
+                        directoryContents);
                     if (changes.Count == 0)
                     {
                         _baseline = new PersistedState(
                             nextSnapshot,
                             current.DirectoryExists,
-                            current.DirectoryContents,
-                            current.PendingExists,
-                            current.PendingContents);
+                            current.DirectoryContents);
                         return StateCommitResult.Success();
                     }
 
@@ -213,45 +209,31 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
 
         private PersistedState ReadCurrentState()
         {
+            _pathPolicy.EnsureForbiddenLegacyStateIsAbsent();
             bool directoryExists = _fileWriter.Exists(
                 StateFileTarget.Directory);
-            bool pendingExists = _fileWriter.Exists(
-                StateFileTarget.Pending);
-            if (!directoryExists && !pendingExists)
+            if (!directoryExists)
             {
-                if (_fileWriter.BackupExists(StateFileTarget.Directory)
-                    || _fileWriter.BackupExists(StateFileTarget.Pending))
+                if (_fileWriter.BackupExists(StateFileTarget.Directory))
                 {
                     throw new RecoveryJournalException(
-                        "Backup state exists without its primary state documents.",
+                        "Backup state exists without its primary directory document.",
                         null);
                 }
 
                 throw new InvalidDataException(
-                    "The installed directory.xml and pending.xml state documents are missing.");
-            }
-
-            if (directoryExists != pendingExists)
-            {
-                throw new InvalidDataException(
-                    "directory.xml and pending.xml must both exist or both be absent.");
+                    "The installed directory.xml state document is missing.");
             }
 
             byte[] directoryContents = _fileWriter.Read(
                 StateFileTarget.Directory,
                 MaximumStateDocumentBytes);
-            byte[] pendingContents = _fileWriter.Read(
-                StateFileTarget.Pending,
-                MaximumStateDocumentBytes);
             DirectorySnapshot snapshot = _codec.DeserializeSnapshot(
-                directoryContents,
-                pendingContents);
+                directoryContents);
             return new PersistedState(
                 snapshot,
                 true,
-                directoryContents,
-                true,
-                pendingContents);
+                directoryContents);
         }
 
         private void ValidateRecoveredState()
@@ -264,8 +246,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         {
             foreach (StateFileTarget target in targets)
             {
-                if (target != StateFileTarget.Directory
-                    && target != StateFileTarget.Pending)
+                if (target != StateFileTarget.Directory)
                 {
                     throw new InvalidDataException(
                         "This state store cannot validate a config or peer-secret transaction.");
@@ -275,10 +256,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
 
         private static IReadOnlyList<StateFileChange> BuildChanges(
             PersistedState current,
-            byte[] nextDirectoryContents,
-            byte[] nextPendingContents)
+            byte[] nextDirectoryContents)
         {
-            var changes = new List<StateFileChange>(2);
+            var changes = new List<StateFileChange>(1);
             if (!current.DirectoryExists
                 || !ByteArraysEqual(
                     current.DirectoryContents,
@@ -290,19 +270,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                     current.DirectoryContents,
                     true,
                     nextDirectoryContents));
-            }
-
-            if (!current.PendingExists
-                || !ByteArraysEqual(
-                    current.PendingContents,
-                    nextPendingContents))
-            {
-                changes.Add(new StateFileChange(
-                    StateFileTarget.Pending,
-                    current.PendingExists,
-                    current.PendingContents,
-                    true,
-                    nextPendingContents));
             }
 
             return changes.AsReadOnly();
@@ -352,9 +319,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             internal PersistedState(
                 DirectorySnapshot snapshot,
                 bool directoryExists,
-                byte[] directoryContents,
-                bool pendingExists,
-                byte[] pendingContents)
+                byte[] directoryContents)
             {
                 Snapshot = snapshot
                     ?? throw new ArgumentNullException(nameof(snapshot));
@@ -362,14 +327,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                     directoryExists,
                     directoryContents,
                     nameof(directoryContents));
-                ValidateImage(
-                    pendingExists,
-                    pendingContents,
-                    nameof(pendingContents));
                 DirectoryExists = directoryExists;
                 DirectoryContents = Clone(directoryContents);
-                PendingExists = pendingExists;
-                PendingContents = Clone(pendingContents);
             }
 
             internal DirectorySnapshot Snapshot { get; }
@@ -378,21 +337,13 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
 
             internal byte[] DirectoryContents { get; }
 
-            internal bool PendingExists { get; }
-
-            internal byte[] PendingContents { get; }
-
             internal bool RawEquals(PersistedState other)
             {
                 return other != null
                     && DirectoryExists == other.DirectoryExists
-                    && PendingExists == other.PendingExists
                     && ByteArraysEqual(
                         DirectoryContents,
-                        other.DirectoryContents)
-                    && ByteArraysEqual(
-                        PendingContents,
-                        other.PendingContents);
+                        other.DirectoryContents);
             }
 
             private static void ValidateImage(

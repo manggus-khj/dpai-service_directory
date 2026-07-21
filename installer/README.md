@@ -6,22 +6,23 @@
 powershell -NoProfile -File .\tools\package.ps1 -Configuration Release
 ```
 
-이 명령은 locked restore를 포함한 `Release|x64` 빌드, 전체 MSTest와 Windows PowerShell 5.1 ACL snapshot·복원 round-trip 검사를 먼저 통과시킨 뒤 Inno Setup 6.3 이상으로 [`ServiceDirectory.iss`](./ServiceDirectory.iss)를 컴파일한다. 6.3부터 제공되는 helper console-output callback으로 숨겨 실행한 설치 helper의 출력을 설치 로그에 남기고, 실패 시 첫 출력 줄을 오류 상세에도 포함한다. `ISCC.exe`가 기본 설치 경로에 없으면 `-InnoSetupCompilerPath`로 정확한 경로를 전달한다. ISCC 출력은 `artifacts\package\installer-output\`의 격리된 staging에 만들고 예상한 이름의 비어 있지 않은 EXE 하나만 생성됐는지 확인한 뒤, 같은 볼륨의 `installer\`에 원자적 move 또는 replace로 게시한다. 따라서 compile 또는 staging 검증 실패는 기존 최종 EXE를 건드리지 않는다. 설치 패키지는 x64 Windows와 .NET Framework 4.8을 요구한다.
+이 명령은 locked restore를 포함한 `Release|x64` 빌드, 전체 MSTest, Windows PowerShell 5.1 ACL snapshot·복원 round-trip, HTTPS binding rollback과 installed-state·live-endpoint parser 회귀 검사를 먼저 통과시킨 뒤 Inno Setup 6.3 이상으로 [`ServiceDirectory.iss`](./ServiceDirectory.iss)를 컴파일한다. 6.3부터 제공되는 helper console-output callback으로 숨겨 실행한 설치 helper의 출력을 설치 로그에 남기고, 실패 시 첫 출력 줄을 오류 상세에도 포함한다. `ISCC.exe`가 기본 설치 경로에 없으면 `-InnoSetupCompilerPath`로 정확한 경로를 전달한다. ISCC 출력은 `artifacts\package\installer-output\`의 격리된 staging에 만들고 예상한 이름의 비어 있지 않은 EXE 하나만 생성됐는지 확인한 뒤, 같은 볼륨의 `installer\`에 원자적 move 또는 replace로 게시한다. 따라서 compile 또는 staging 검증 실패는 기존 최종 EXE를 건드리지 않는다. 설치 패키지는 x64 Windows와 .NET Framework 4.8을 요구한다.
 
 installer bootstrap 하한은 Windows build 14393이다. 세부 검증은 Windows Server Standard·Datacenter Desktop Experience의 build 14393 이상(Windows Server 2016 이상)과 Windows client의 build 17763 이상(Windows 10 1809 이상)을 구분하며, Windows 11은 build 26100 이상과 Pro·Enterprise·IoT Enterprise edition만 허용한다. Server Core는 거부하고 .NET Framework 4.8이 없으면 설치를 중단한다. Windows Server 2016은 .NET Framework 4.8과 최신 보안 업데이트를 별도로 적용해야 하며 Microsoft extended support 종료일인 2027-01-12 전에 제품 지원 지속 여부를 다시 검토한다.
 
-2026-07-20 build 11의 Windows Server 2016 최초 설치는 파일 복사와 uninstall 등록 뒤 ACL snapshot collection 반환에서 `ArgumentException`으로 중단됐다. Windows PowerShell 5.1 회귀 검사에서 generic `List[object]`의 `@(...)` 반환으로 같은 오류를 재현해 `.ToArray()`로 수정하고 package에 ACL snapshot·복원 round-trip 검사를 연결했다. 이후 표준 package 명령의 locked restore, `Release|x64` 빌드, 568개 MSTest, ACL 회귀 검사, 라이선스·SBOM staging과 Inno Setup compile이 성공해 `DEEPAi-ServiceDirectory-1.0.0-build.12-x64.exe`를 생성했다. build 12의 실제 Windows Server 2016 설치·repair·upgrade·rollback·제거는 아직 실행 검증하지 않았다. 아래 ACL·URL ACL·방화벽·서비스 상태 rollback 설명은 구현 계약이며 현장 검증 완료를 뜻하지 않는다.
+2026-07-20 build 11의 Windows Server 2016 최초 설치는 파일 복사와 uninstall 등록 뒤 ACL snapshot collection 반환에서 `ArgumentException`으로 중단됐다. Windows PowerShell 5.1 회귀 검사에서 generic `List[object]`의 `@(...)` 반환으로 같은 오류를 재현해 `.ToArray()`로 수정하고 package에 ACL snapshot·복원 round-trip 검사를 연결했다. 이후 표준 package 명령의 locked restore, `Release|x64` 빌드, 568개 MSTest, ACL 회귀 검사, 라이선스·SBOM staging과 Inno Setup compile이 성공해 `DEEPAi-ServiceDirectory-1.0.0-build.12-x64.exe`를 생성했다. build 12 뒤 추가된 HTTPS·Directory leaf 설치 소스와 build 12의 실제 Windows Server 2016 설치·repair·upgrade·rollback·제거는 아직 실행 검증하지 않았다. 아래 ACL·URL ACL·HTTP.sys·인증서·방화벽·서비스 상태 rollback 설명은 구현 계약이며 현장 검증 완료를 뜻하지 않는다.
 
-interactive 설치에서는 활성 Domain·Private 네트워크 인터페이스의 지원되는 IP literal 하나를 선택한다. silent 설치는 `/ListenAddress=<canonical-ip-literal>`을 반드시 전달한다. 일반 제거는 운영 데이터를 보존하며 silent 전체 삭제는 별도의 `/PurgeData=1`을 명시한 경우에만 수행한다.
+interactive 설치에서는 활성 Domain·Private 네트워크 인터페이스의 canonical IPv4 하나와 CA 역할 작업을 선택한다. 기본값은 기존 역할 유지 또는 fresh active issuer 생성이고, 인증된 `.dpca`를 사용한 active restore, standby 구성, 기존 standby의 명시적 승격을 별도 항목으로 고른다. standby 구성·승격 암호도 maintenance process의 표준 입력으로만 전달한다. 최초 설치는 새 active issuer의 초기 backup 암호 또는 standby backup 암호 입력이 필요하므로 silent 설치를 지원하지 않는다. 기존 설치의 silent repair는 `/ListenAddress=<canonical-ipv4>`를 반드시 전달하며 CA backup 복원·role 변경을 함께 요청할 수 없다. config의 Directory hostname은 설치 대상 컴퓨터의 hostname과 DNS domain suffix를 결합한 FQDN을 우선해 canonical lowercase DNS 이름으로 검증·기록한다. 일반 제거는 운영 데이터를 보존하며 silent 전체 삭제는 별도의 `/PurgeData=1`을 명시한 경우에만 수행한다.
 
-설치·repair는 파일 복사 전에 보호된 임시 setup-state에 기존 메인·와치독 서비스의 실행 여부, 서비스 구성과 서비스 보안 설명자를 저장한다. 데이터 루트와 두 서비스 및 제품 등록이 모두 없던 진짜 최초 설치에서만 canonical empty `directory.xml`·`pending.xml`과 최초 `config.xml`을 생성한다. 보존 데이터 재설치·repair에서 이 primary들이 누락되면 high-water를 0으로 초기화하지 않고 설치를 실패시킨다. 와치독은 자동 시작, 메인은 지연 자동 시작으로 구성하고 서비스 의존성 없이 와치독을 먼저 시작한다. SCM failure restart는 와치독 자체에만 두고 메인 서비스에는 구성하지 않는다. 메인 재시작은 3회 연속 실패와 10분 3회 제한을 적용하는 와치독만 수행해 SCM이 suppression latch를 우회하지 않게 한다. post-install 구성에 들어가기 전 취소·실패 경로에서는 원래 실행 중이던 서비스를 와치독부터 다시 시작하며, 원래 중지된 서비스를 임의로 시작하지 않는다. 주소 변경·최초 상태 생성 중 실패하면 `config.xml`·`directory.xml`·`pending.xml`과 각 backup, 설치기 소유 URL ACL·방화벽 규칙, 제품 등록, 서비스 구성·보안과 기존 파일 ACL을 복원한다.
+설치·repair는 파일 복사 전에 보호된 임시 setup-state에 기존 메인·와치독 서비스의 실행 여부, 서비스 구성과 서비스 보안 설명자를 저장한다. 데이터 루트와 두 서비스 및 제품 등록이 모두 없던 진짜 최초 설치에서만 canonical empty `directory.xml`과 Directory hostname·IPv4 identity를 포함한 최초 `config.xml`을 생성한다. 기본 역할은 Site CA provision 뒤 `%ProgramData%\DEEPAi\ServiceDirectory\backups\ca\`에 암호화된 초기 backup을 만들고, standby 선택은 동일-site backup의 MAC·CA key/certificate·full ledger·CRL을 검증해 공개 metadata/cache/CRL/CA만 원자 저장하고 CA key primary를 남기지 않는다. 승격은 standby가 관찰한 high-water 이상이며 같은 revision·CRL number의 bytes가 같은 backup만 허용하고 local `InstanceId`와 backup `PkiRevision+1`, full ledger, DPAPI CA key, Peer cache 삭제를 한 journal로 전환한 뒤 새 issuer backup을 만든다. 두 역할 모두 exact DNS·IPv4 SAN과 두 absolute HTTPS CRL URI를 가진 Directory leaf를 `LocalMachine\My`에 설치하고, 개인키 파일은 SYSTEM·Administrators full control 및 메인 service SID read만 갖는 protected ACL로 고정한다. `pending.xml` 또는 그 backup이 있으면 미배포 개발 상태로 보고 자동 변환·삭제하지 않고 실패한다. 보존 데이터 재설치·repair에서 required primary가 누락되면 high-water를 0으로 초기화하지 않고 설치를 실패시킨다. 와치독은 자동 시작, 메인은 지연 자동 시작으로 구성하고 서비스 의존성 없이 와치독을 먼저 시작한다. SCM failure restart는 와치독 자체에만 두고 메인 서비스에는 구성하지 않는다. 메인 재시작은 3회 연속 실패와 10분 3회 제한을 적용하는 와치독만 수행해 SCM이 suppression latch를 우회하지 않게 한다. post-install 구성에 들어가기 전 취소·실패 경로에서는 원래 실행 중이던 서비스를 와치독부터 다시 시작하며, 원래 중지된 서비스를 임의로 시작하지 않는다. 주소·Directory identity 변경이나 최초 상태 생성 중 실패하면 `config.xml`·`directory.xml`과 각 backup, Site CA primary·backup 파일, 설치기 소유 URL ACL·HTTP.sys binding·새 Directory certificate/private key·방화벽 규칙, 제품 등록, 서비스 구성·보안과 기존 파일 ACL을 복원한다.
 
 파일·디렉터리 ACL rollback snapshot collection은 Windows PowerShell 5.1에서 generic list array-subexpression 변환을 사용하지 않고 `.ToArray()`로 materialize한다. 회귀 검사는 설치와 같은 snapshot·복원 round-trip을 실행해 반환 형식과 owner·group·DACL 보존을 함께 확인한다.
 
 설치 상태별 서비스·URL ACL 계약은 다음과 같다.
 
-- 최초 설치에서 서비스 등록과 URL ACL이 모두 없는 상태는 정상으로 처리하고 새 서비스와 설치기 소유 URL ACL을 만든다. exact URL ACL 조회가 성공하면서 SDDL을 반환하지 않거나 exact 조회가 실패했지만 전체 목록에도 prefix가 없으면 미등록 상태다.
+- 최초 설치에서 서비스 등록, URL ACL과 HTTP.sys binding이 모두 없는 상태는 정상으로 처리하고 새 서비스, `https://{selected-ipv4}:21000/`와 `https://{directory-hostname}:21000/`의 두 exact remote URL ACL, `http://127.0.0.1:21000/` loopback URL ACL과 exact IPv4 `ipport` TLS binding을 만든다. remote HTTP URL ACL은 남기지 않는다. exact URL ACL 조회가 성공하면서 SDDL을 반환하지 않거나 exact 조회가 실패했지만 전체 목록에도 prefix가 없으면 미등록 상태다.
 - 설치기 SDDL과 정확히 일치하는 URL ACL은 repair·재설치에서 재사용·갱신할 수 있다. 전체 목록에는 prefix가 있는데 exact SDDL을 읽지 못하거나 다른 SDDL이 있으면 외부 소유·모호한 상태로 보고 파일 교체 전에 중단한다.
+- HTTP.sys binding은 선택 IPv4와 21000 포트, installer AppId, `MY` store, 유일한 SHA-1 thumbprint와 개인키 존재를 확인한 설치기 소유 상태만 변경·복원한다. 외부 AppId 또는 불완전한 owned binding은 덮어쓰지 않는다.
 - 재설치·repair는 기존 메인·와치독 서비스 등록을 삭제하지 않는다. 실행 중·중지·일시중지 상태와 시작·중지 전환 중 상태를 최대 30초 안에서 안정화해 snapshot한 뒤 서비스를 중지하고 `sc.exe config`로 제자리 갱신한다. 성공한 설치는 제품 서비스를 정상 기동하고, post-install 전 취소·실패는 원래 실행 중이던 서비스만 복원한다.
 - 제거는 서비스가 실행 중이거나 중지된 경우 모두 와치독·메인 순서로 중지하고 `sc.exe delete`를 수행한다. SCM 조회와 `HKLM\SYSTEM\CurrentControlSet\Services\{service-name}` 등록이 모두 사라질 때까지 최대 30초 확인하며 남아 있으면 제거 실패로 처리하고 성공으로 보고하지 않는다.
 
@@ -38,6 +39,28 @@ Inno Setup은 `ssPostInstall` 전에 설치 파일 교체와 uninstaller·설치
 - 설치 EXE payload에는 저장소 루트 `THIRD-PARTY-NOTICES.md`와 실제 Release restore 결과에서 확정한 모든 직접·전이 의존성의 라이선스 고지 및 SBOM을 포함한다. 이 고지는 `installer\` 출력 루트에 별도 파일로 만들지 않아 최종 설치 산출물은 EXE 하나만 유지한다.
 
 생성된 설치 EXE는 Git에 커밋하지 않는다. `.iss`, 설치 지원 PowerShell 소스와 이 문서는 추적 대상으로 유지한다.
+
+## 설치 상태 증거 수집
+
+설치된 `%ProgramFiles%\DEEPAi\ServiceDirectory\installer-support\ServiceDirectory.InstalledValidation.ps1`은 관리자 PowerShell에서 현재 SCM·ACL·registry·IPv4·hostname 두 remote URL ACL·HTTPS binding·방화벽·인증서·role별 파일 상태를 읽기 전용으로 판정한다. 기존 보고서를 덮어쓰지 않으므로 실행마다 새 절대 로컬 경로를 지정한다.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File "$env:ProgramFiles\DEEPAi\ServiceDirectory\installer-support\ServiceDirectory.InstalledValidation.ps1" `
+  -OutputPath "C:\Temp\dpai-sd-installed-validation.json"
+```
+
+비밀 파일은 존재 여부와 길이만 수집하며 내용과 hash를 읽지 않는다. 보고서에는 장비·네트워크·인증서·ACL 정보가 포함되므로 내부 운영 자료로 보호한다. 세부 판정 범위와 실제 현장 실행 순서는 [현장 검증 실행계획](../docs/plan/06-release-validation.md)을 따른다.
+
+메인 서비스가 실행 중이고 설치 상태 보고서가 정상인 다음에는 같은 디렉터리의 `ServiceDirectory.LiveEndpointValidation.ps1`로 실제 External HTTPS를 비파괴 점검한다.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File "$env:ProgramFiles\DEEPAi\ServiceDirectory\installer-support\ServiceDirectory.LiveEndpointValidation.ps1" `
+  -OutputPath "C:\Temp\dpai-sd-live-endpoint-validation.json"
+```
+
+이 도구는 구성된 IPv4로 연결하면서 IPv4 SAN과 hostname/FQDN SAN을 각각 검증하고 TLS 1.2 이상 협상, HTTP/1.1 exact framing, `/pki/ca`·`/pki/crl`의 설치 원본·서명 일치와 무작위 IV `WDOG` 일일 키의 `/api/health`를 확인한다. 등록 모드를 열거나 등록·갱신·폐기·Peer 상태를 변경하지 않는다.
 
 ## Release 디버그 심볼
 

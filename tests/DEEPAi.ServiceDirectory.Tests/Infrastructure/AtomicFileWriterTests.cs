@@ -40,11 +40,11 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 byte[] first = Encoding.UTF8.GetBytes("first");
                 byte[] second = Encoding.UTF8.GetBytes("second");
                 var writer = new AtomicFileWriter(stateDirectory);
-                writer.Write("pending.xml", first);
+                writer.Write("config.xml", first);
 
-                writer.Write("pending.xml", second);
+                writer.Write("config.xml", second);
 
-                string destination = Path.Combine(stateDirectory, "pending.xml");
+                string destination = Path.Combine(stateDirectory, "config.xml");
                 CollectionAssert.AreEqual(second, File.ReadAllBytes(destination));
                 CollectionAssert.AreEqual(first, File.ReadAllBytes(destination + ".bak"));
                 Assert.AreEqual(0, Directory.GetFiles(stateDirectory, "*.tmp").Length);
@@ -112,6 +112,45 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 Assert.IsFalse(File.Exists(peerPath + ".bak"));
                 Assert.AreEqual(
                     1,
+                    Directory.GetFiles(
+                        transactionPath,
+                        "*.discard.bin").Length);
+            }
+            finally
+            {
+                DeleteStateDirectory(stateDirectory);
+            }
+        }
+
+        [TestMethod]
+        public void TransactionalDeletionMovesNonSecretPrimaryAndBackupToDiscards()
+        {
+            string stateDirectory = CreateStateDirectory();
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(
+                    stateDirectory,
+                    "pki"));
+                var writer = new AtomicFileWriter(stateDirectory);
+                byte[] first = Encoding.UTF8.GetBytes("first");
+                byte[] second = Encoding.UTF8.GetBytes("second");
+                writer.Write(StateFileTarget.PeerPkiCache, first);
+                writer.Write(StateFileTarget.PeerPkiCache, second);
+
+                string transactionPath = Path.Combine(
+                    stateDirectory,
+                    "journal",
+                    Guid.NewGuid().ToString("D"));
+                Directory.CreateDirectory(transactionPath);
+                writer.DeleteForTransaction(
+                    StateFileTarget.PeerPkiCache,
+                    transactionPath);
+
+                Assert.IsFalse(writer.Exists(StateFileTarget.PeerPkiCache));
+                Assert.IsFalse(
+                    writer.BackupExists(StateFileTarget.PeerPkiCache));
+                Assert.AreEqual(
+                    2,
                     Directory.GetFiles(
                         transactionPath,
                         "*.discard.bin").Length);

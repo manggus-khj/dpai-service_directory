@@ -32,19 +32,49 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                         hash,
                         hash),
                     new RecoveryJournalEntry(
-                        StateFileTarget.Pending,
+                        StateFileTarget.Config,
                         false,
                         true,
                         null,
                         hash),
                     new RecoveryJournalEntry(
-                        StateFileTarget.Config,
+                        StateFileTarget.PeerSecret,
                         true,
                         false,
                         hash,
                         null),
                     new RecoveryJournalEntry(
-                        StateFileTarget.PeerSecret,
+                        StateFileTarget.PkiMetadata,
+                        true,
+                        true,
+                        hash,
+                        hash),
+                    new RecoveryJournalEntry(
+                        StateFileTarget.CertificateLedger,
+                        true,
+                        true,
+                        hash,
+                        hash),
+                    new RecoveryJournalEntry(
+                        StateFileTarget.PeerPkiCache,
+                        true,
+                        true,
+                        hash,
+                        hash),
+                    new RecoveryJournalEntry(
+                        StateFileTarget.CertificateRevocationList,
+                        true,
+                        true,
+                        hash,
+                        hash),
+                    new RecoveryJournalEntry(
+                        StateFileTarget.CaCertificate,
+                        true,
+                        true,
+                        hash,
+                        hash),
+                    new RecoveryJournalEntry(
+                        StateFileTarget.CaPrivateKey,
                         true,
                         true,
                         hash,
@@ -60,10 +90,153 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             Assert.AreEqual(
                 RecoveryJournalPhase.Prepared,
                 actual.Phase);
-            Assert.AreEqual(4, actual.Entries.Count);
+            Assert.AreEqual(9, actual.Entries.Count);
             Assert.AreEqual(
-                StateFileTarget.PeerSecret,
-                actual.Entries[3].Target);
+                StateFileTarget.CaPrivateKey,
+                actual.Entries[8].Target);
+        }
+
+        [TestMethod]
+        public void FixedTargetDescriptorsMatchStorageV1Allowlist()
+        {
+            StateFileTargetDescriptor[] expected =
+            {
+                Descriptor(
+                    StateFileTarget.Directory,
+                    "Directory",
+                    "directory.xml",
+                    "directory.before.bin",
+                    "directory.after.bin"),
+                Descriptor(
+                    StateFileTarget.Config,
+                    "Config",
+                    "config.xml",
+                    "config.before.bin",
+                    "config.after.bin"),
+                Descriptor(
+                    StateFileTarget.PeerSecret,
+                    "PeerSecret",
+                    @"secrets\peer.dat",
+                    "peer.before.bin",
+                    "peer.after.bin"),
+                Descriptor(
+                    StateFileTarget.PkiMetadata,
+                    "PkiMetadata",
+                    @"pki\state.xml",
+                    "pki-state.before.bin",
+                    "pki-state.after.bin"),
+                Descriptor(
+                    StateFileTarget.CertificateLedger,
+                    "CertificateLedger",
+                    @"pki\ledger.xml",
+                    "ledger.before.bin",
+                    "ledger.after.bin"),
+                Descriptor(
+                    StateFileTarget.PeerPkiCache,
+                    "PeerPkiCache",
+                    @"pki\peer-cache.xml",
+                    "peer-pki.before.bin",
+                    "peer-pki.after.bin"),
+                Descriptor(
+                    StateFileTarget.CertificateRevocationList,
+                    "CertificateRevocationList",
+                    @"pki\crl.der",
+                    "crl.before.bin",
+                    "crl.after.bin"),
+                Descriptor(
+                    StateFileTarget.CaCertificate,
+                    "CaCertificate",
+                    @"pki\ca.der",
+                    "ca-certificate.before.bin",
+                    "ca-certificate.after.bin"),
+                Descriptor(
+                    StateFileTarget.CaPrivateKey,
+                    "CaPrivateKey",
+                    @"secrets\ca.key",
+                    "ca-key.before.bin",
+                    "ca-key.after.bin")
+            };
+
+            Assert.AreEqual(expected.Length, StateFileTargets.All.Count);
+            for (int index = 0; index < expected.Length; index++)
+            {
+                StateFileTargetDescriptor actual =
+                    StateFileTargets.All[index];
+                Assert.AreEqual(expected[index].Target, actual.Target);
+                Assert.AreEqual(
+                    expected[index].JournalName,
+                    actual.JournalName);
+                Assert.AreEqual(
+                    expected[index].RelativePath,
+                    actual.RelativePath);
+                Assert.AreEqual(
+                    expected[index].BeforeImageFileName,
+                    actual.BeforeImageFileName);
+                Assert.AreEqual(
+                    expected[index].AfterImageFileName,
+                    actual.AfterImageFileName);
+            }
+        }
+
+        [TestMethod]
+        public void CodecWritesExactCanonicalJournalBytes()
+        {
+            Guid transactionId = new Guid(
+                "44444444-4444-4444-4444-444444444444");
+            string beforeHash = new string('a', 64);
+            string afterHash = new string('b', 64);
+            var state = new RecoveryJournalState(
+                transactionId,
+                RecoveryJournalPhase.Prepared,
+                new[]
+                {
+                    new RecoveryJournalEntry(
+                        StateFileTarget.Directory,
+                        true,
+                        true,
+                        beforeHash,
+                        afterHash)
+                });
+            string expected =
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n"
+                + "<RecoveryJournal SchemaVersion=\"1\" TransactionId=\"44444444-4444-4444-4444-444444444444\" Phase=\"PREPARED\">\r\n"
+                + "  <Entry Target=\"Directory\" BeforeExists=\"true\" AfterExists=\"true\" BeforeSha256=\""
+                + beforeHash
+                + "\" AfterSha256=\""
+                + afterHash
+                + "\" />\r\n"
+                + "</RecoveryJournal>\r\n";
+
+            CollectionAssert.AreEqual(
+                StrictUtf8.GetBytes(expected),
+                new RecoveryJournalCodec().Serialize(state));
+        }
+
+        [TestMethod]
+        public void CodecRejectsDuplicateOrOutOfOrderTargets()
+        {
+            string hash = new string('a', 64);
+            var state = new RecoveryJournalState(
+                Guid.NewGuid(),
+                RecoveryJournalPhase.Prepared,
+                new[]
+                {
+                    new RecoveryJournalEntry(
+                        StateFileTarget.Config,
+                        true,
+                        true,
+                        hash,
+                        hash),
+                    new RecoveryJournalEntry(
+                        StateFileTarget.Directory,
+                        true,
+                        true,
+                        hash,
+                        hash)
+                });
+
+            Assert.ThrowsExactly<InvalidDataException>(() =>
+                new RecoveryJournalCodec().Serialize(state));
         }
 
         [TestMethod]
@@ -129,12 +302,17 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     "directory-before");
                 byte[] directoryAfter = StrictUtf8.GetBytes(
                     "directory-after");
-                byte[] pendingBefore = StrictUtf8.GetBytes(
-                    "pending-before");
-                byte[] pendingAfter = StrictUtf8.GetBytes(
-                    "pending-after");
+                byte[] peerCacheBefore = StrictUtf8.GetBytes(
+                    "peer-cache-before");
+                byte[] peerCacheAfter = StrictUtf8.GetBytes(
+                    "peer-cache-after");
                 writer.Write(StateFileTarget.Directory, directoryBefore);
-                writer.Write(StateFileTarget.Pending, pendingBefore);
+                Directory.CreateDirectory(Path.Combine(
+                    stateDirectory,
+                    "pki"));
+                writer.Write(
+                    StateFileTarget.PeerPkiCache,
+                    peerCacheBefore);
 
                 Guid transactionId = new Guid(
                     "66666666-6666-6666-6666-666666666666");
@@ -153,11 +331,11 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     directoryAfter);
                 WriteImage(
                     transactionPath,
-                    "pending.before.bin",
-                    pendingBefore);
+                    "peer-pki.before.bin",
+                    peerCacheBefore);
                 WriteImage(
                     transactionPath,
-                    "pending.after.bin",
+                    "peer-pki.after.bin",
                     StrictUtf8.GetBytes("corrupted-after"));
 
                 var journalState = new RecoveryJournalState(
@@ -170,9 +348,9 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                             directoryBefore,
                             directoryAfter),
                         CreateEntry(
-                            StateFileTarget.Pending,
-                            pendingBefore,
-                            pendingAfter)
+                            StateFileTarget.PeerPkiCache,
+                            peerCacheBefore,
+                            peerCacheAfter)
                     });
                 File.WriteAllBytes(
                     Path.Combine(transactionPath, "journal.xml"),
@@ -190,9 +368,12 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     File.ReadAllBytes(
                         Path.Combine(stateDirectory, "directory.xml")));
                 CollectionAssert.AreEqual(
-                    pendingBefore,
+                    peerCacheBefore,
                     File.ReadAllBytes(
-                        Path.Combine(stateDirectory, "pending.xml")));
+                        Path.Combine(
+                            stateDirectory,
+                            "pki",
+                            "peer-cache.xml")));
             }
             finally
             {
@@ -249,6 +430,23 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 RecoveryJournalManager.ComputeSha256(after));
         }
 
+        private static StateFileTargetDescriptor Descriptor(
+            StateFileTarget target,
+            string journalName,
+            string relativePath,
+            string beforeImage,
+            string afterImage)
+        {
+            return new StateFileTargetDescriptor(
+                target,
+                journalName,
+                relativePath,
+                beforeImage,
+                afterImage,
+                "unused.primary.discard.bin",
+                "unused.backup.discard.bin");
+        }
+
         private static void WriteImage(
             string transactionPath,
             string fileName,
@@ -266,9 +464,6 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             File.WriteAllBytes(
                 Path.Combine(stateDirectory, "directory.xml"),
                 codec.SerializeDirectory(empty));
-            File.WriteAllBytes(
-                Path.Combine(stateDirectory, "pending.xml"),
-                codec.SerializePending(empty));
         }
 
         private static string CreateStateDirectory()

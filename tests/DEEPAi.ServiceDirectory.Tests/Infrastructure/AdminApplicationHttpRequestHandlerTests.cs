@@ -4,11 +4,14 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using DEEPAi.ServiceDirectory.Application.Persistence;
+using DEEPAi.ServiceDirectory.Application.Registration;
 using DEEPAi.ServiceDirectory.Application.State;
 using DEEPAi.ServiceDirectory.Domain;
+using DEEPAi.ServiceDirectory.Domain.Certificates;
 using DEEPAi.ServiceDirectory.Infrastructure.Configuration;
 using DEEPAi.ServiceDirectory.Infrastructure.Http;
 using DEEPAi.ServiceDirectory.Infrastructure.Logging;
+using DEEPAi.ServiceDirectory.Infrastructure.Pki;
 using DEEPAi.ServiceDirectory.InternalProtocol.Admin;
 using DEEPAi.ServiceDirectory.Tests.TestSupport;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -153,78 +156,14 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void PendingPagesStayWithinCanonicalBodyLimitWithoutSkipping()
-        {
-            const int requestedPageSize = 40;
-            string maximumName = string.Concat(
-                Enumerable.Repeat("\U0001F600", 128));
-            PendingRegistration[] pending = Enumerable
-                .Range(0, requestedPageSize)
-                .Select(index => PendingNew(
-                    Guid.NewGuid(),
-                    "P" + index.ToString("D3"),
-                    maximumName,
-                    MutationUtc.AddSeconds(index)))
-                .ToArray();
-            var snapshot = new DirectorySnapshot(
-                new ServiceRecord[0],
-                pending,
-                0UL);
-            HandlerFixture fixture = CreateFixture(snapshot);
-            using (fixture.Handler)
-            {
-                var observed = new List<Guid>();
-                string cursor = null;
-                int pageCount = 0;
-                do
-                {
-                    AdminHandlerResult<AdminServerPendingResponse> page =
-                        fixture.Handler.GetPending(
-                            new AdminPendingQuery(
-                                requestedPageSize,
-                                cursor));
-
-                    Assert.IsTrue(page.IsSuccess);
-                    Assert.IsTrue(page.Value.Items.Count > 0);
-                    Assert.IsTrue(
-                        page.Value.Items.Count <= requestedPageSize);
-                    Assert.IsTrue(
-                        AdminServerResponseXmlCodec
-                            .SerializePendingResponse(page.Value)
-                            .Length
-                        <= AdminApiContract.MaximumBodyBytes);
-                    observed.AddRange(
-                        page.Value.Items.Select(item => item.Id));
-                    cursor = page.Value.NextCursor;
-                    pageCount++;
-                    Assert.IsTrue(pageCount <= requestedPageSize);
-                }
-                while (cursor != null);
-
-                Assert.IsTrue(pageCount > 1);
-                CollectionAssert.AreEqual(
-                    pending.Select(item => item.Id).ToArray(),
-                    observed.ToArray());
-            }
-        }
-
-        [TestMethod]
         public void SingleMaximumItemsCompleteWithoutContinuationCursor()
         {
             string maximumName = string.Concat(
                 Enumerable.Repeat("\U0001F600", 128));
             ServiceRecord current = Active("S000", maximumName, 1UL);
-            Guid pendingId = Guid.NewGuid();
-            var pending = new PendingRegistration(
-                pendingId,
-                PendingRequestType.Modify,
-                MutationUtc,
-                "2001:db8::1",
-                Definition("S000", maximumName),
-                DirectoryBaseRevision.Capture(current));
             var snapshot = new DirectorySnapshot(
                 new[] { current },
-                new[] { pending },
+                new PendingRegistration[0],
                 1UL);
             HandlerFixture fixture = CreateFixture(snapshot);
             using (fixture.Handler)
@@ -241,18 +180,6 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                         .Length
                     <= AdminApiContract.MaximumBodyBytes);
 
-                AdminHandlerResult<AdminServerPendingResponse> pendingPage =
-                    fixture.Handler.GetPending(
-                        new AdminPendingQuery(250, null));
-                Assert.IsTrue(pendingPage.IsSuccess);
-                Assert.AreEqual(1, pendingPage.Value.Items.Count);
-                Assert.AreEqual(pendingId, pendingPage.Value.Items[0].Id);
-                Assert.IsNull(pendingPage.Value.NextCursor);
-                Assert.IsTrue(
-                    AdminServerResponseXmlCodec
-                        .SerializePendingResponse(pendingPage.Value)
-                        .Length
-                    <= AdminApiContract.MaximumBodyBytes);
             }
         }
 
@@ -283,253 +210,6 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                             1,
                             first.Value.NextCursor)),
                     AdminServerErrorCode.Conflict);
-            }
-        }
-
-        [TestMethod]
-        public void PendingPageUsesTimeThenCanonicalIdAndBindsBaseRevision()
-        {
-            ServiceRecord current = Active("CD34", "Current", 2UL);
-            Guid laterId =
-                new Guid("99999999-9999-4999-8999-999999999999");
-            Guid earlierId =
-                new Guid("11111111-1111-4111-8111-111111111111");
-            PendingRegistration later = PendingNew(
-                laterId,
-                "AB12",
-                "Later",
-                MutationUtc.AddMinutes(1));
-            PendingRegistration earlier = new PendingRegistration(
-                earlierId,
-                PendingRequestType.Modify,
-                MutationUtc,
-                "192.0.2.20",
-                Definition("CD34", "Requested"),
-                DirectoryBaseRevision.Capture(current));
-            var snapshot = new DirectorySnapshot(
-                new[] { current },
-                new[] { later, earlier },
-                2UL);
-            HandlerFixture fixture = CreateFixture(snapshot);
-            using (fixture.Handler)
-            {
-                AdminHandlerResult<AdminServerPendingResponse> first =
-                    fixture.Handler.GetPending(
-                        new AdminPendingQuery(1, null));
-
-                Assert.IsTrue(first.IsSuccess);
-                Assert.AreEqual(2, first.Value.TotalCount);
-                Assert.AreEqual(earlierId, first.Value.Items[0].Id);
-                Assert.AreEqual(
-                    AdminPendingRequestType.Modify,
-                    first.Value.Items[0].Type);
-                Assert.AreEqual(
-                    "Current",
-                    first.Value.Items[0].Current.Name);
-
-                Assert.IsTrue(
-                    fixture.Handler.RejectPending(earlierId).IsSuccess);
-                AssertError(
-                    fixture.Handler.GetPending(
-                        new AdminPendingQuery(
-                            1,
-                            first.Value.NextCursor)),
-                    AdminServerErrorCode.Conflict);
-                Assert.AreEqual(0, fixture.Sync.ScheduleCallCount);
-                Assert.AreEqual(0, fixture.Log.Events.Count);
-            }
-        }
-
-        [TestMethod]
-        public void CreatedApprovalLogsAfterCommitThenSchedulesSync()
-        {
-            var order = new List<string>();
-            Guid pendingId = Guid.NewGuid();
-            var snapshot = new DirectorySnapshot(
-                new ServiceRecord[0],
-                new[]
-                {
-                    PendingNew(
-                        pendingId,
-                        "AB12",
-                        "Created service",
-                        MutationUtc.AddMinutes(-1))
-                },
-                0UL);
-            HandlerFixture fixture = CreateFixture(snapshot, order);
-            using (fixture.Handler)
-            {
-                AdminHandlerResult<AdminServerUnitResponse> result =
-                    fixture.Handler.ApprovePending(pendingId);
-
-                Assert.IsTrue(result.IsSuccess);
-                CollectionAssert.AreEqual(
-                    new[] { "commit", "created:AB12:30", "schedule" },
-                    order);
-                Assert.AreEqual(1, fixture.Sync.ScheduleCallCount);
-                Assert.IsTrue(
-                    fixture.Coordinator.CurrentSnapshot.TryGetActiveRecord(
-                        Product("AB12"),
-                        out ServiceRecord approved));
-                Assert.AreEqual(MutationUtc, approved.LastModifiedUtc);
-                Assert.AreEqual(
-                    fixture.Configuration.Current.InstanceId,
-                    approved.OriginInstanceId);
-            }
-        }
-
-        [TestMethod]
-        public void UpdatedApprovalWritesUpdatedEventOnly()
-        {
-            ServiceRecord current = Active("AB12", "Before", 1UL);
-            Guid pendingId = Guid.NewGuid();
-            var pending = new PendingRegistration(
-                pendingId,
-                PendingRequestType.Modify,
-                MutationUtc.AddMinutes(-1),
-                "192.0.2.30",
-                Definition("AB12", "After"),
-                DirectoryBaseRevision.Capture(current));
-            var snapshot = new DirectorySnapshot(
-                new[] { current },
-                new[] { pending },
-                1UL);
-            HandlerFixture fixture = CreateFixture(snapshot);
-            using (fixture.Handler)
-            {
-                Assert.IsTrue(
-                    fixture.Handler.ApprovePending(pendingId).IsSuccess);
-                CollectionAssert.AreEqual(
-                    new[] { "updated:AB12:30" },
-                    fixture.Log.Events.ToArray());
-                Assert.AreEqual(1, fixture.Sync.ScheduleCallCount);
-            }
-        }
-
-        [TestMethod]
-        public void AlreadySatisfiedApprovalRemovesPendingWithoutLogOrSync()
-        {
-            ServiceDefinition requested = Definition("AB12", "Same");
-            ServiceRecord baseRecord = ServiceRecord.CreateActive(
-                requested,
-                MutationUtc.AddMinutes(-2),
-                1UL,
-                TestData.OriginA);
-            ServiceRecord current = ServiceRecord.CreateActive(
-                requested,
-                MutationUtc.AddMinutes(-1),
-                2UL,
-                TestData.OriginB);
-            Guid pendingId = Guid.NewGuid();
-            var pending = new PendingRegistration(
-                pendingId,
-                PendingRequestType.Modify,
-                MutationUtc.AddMinutes(-1),
-                "192.0.2.40",
-                requested,
-                DirectoryBaseRevision.Capture(baseRecord));
-            var snapshot = new DirectorySnapshot(
-                new[] { current },
-                new[] { pending },
-                2UL);
-            HandlerFixture fixture = CreateFixture(snapshot);
-            using (fixture.Handler)
-            {
-                Assert.IsTrue(
-                    fixture.Handler.ApprovePending(pendingId).IsSuccess);
-                Assert.AreEqual(0, fixture.Log.Events.Count);
-                Assert.AreEqual(0, fixture.Sync.ScheduleCallCount);
-                Assert.AreEqual(1, fixture.Store.CommitCallCount);
-                Assert.AreEqual(2UL, fixture.Coordinator.CurrentSnapshot.LogicalClock);
-            }
-        }
-
-        [TestMethod]
-        public void PersistenceFailureDoesNotLogOrSchedule()
-        {
-            Guid pendingId = Guid.NewGuid();
-            var snapshot = new DirectorySnapshot(
-                new ServiceRecord[0],
-                new[]
-                {
-                    PendingNew(
-                        pendingId,
-                        "AB12",
-                        "Service",
-                        MutationUtc.AddMinutes(-1))
-                },
-                0UL);
-            HandlerFixture fixture = CreateFixture(snapshot);
-            fixture.Store.CommitResult = StateCommitResult.Failure(
-                StateCommitFailureCode.IoFailure);
-            using (fixture.Handler)
-            {
-                AssertError(
-                    fixture.Handler.ApprovePending(pendingId),
-                    AdminServerErrorCode.Internal);
-                Assert.AreEqual(0, fixture.Log.Events.Count);
-                Assert.AreEqual(0, fixture.Sync.ScheduleCallCount);
-                Assert.AreSame(snapshot, fixture.Coordinator.CurrentSnapshot);
-            }
-        }
-
-        [TestMethod]
-        public void PostCommitLogFailureReturnsInternalButStillSchedulesSync()
-        {
-            Guid pendingId = Guid.NewGuid();
-            var snapshot = new DirectorySnapshot(
-                new ServiceRecord[0],
-                new[]
-                {
-                    PendingNew(
-                        pendingId,
-                        "AB12",
-                        "Service",
-                        MutationUtc.AddMinutes(-1))
-                },
-                0UL);
-            HandlerFixture fixture = CreateFixture(snapshot);
-            fixture.Log.ThrowOnWrite = true;
-            using (fixture.Handler)
-            {
-                AssertError(
-                    fixture.Handler.ApprovePending(pendingId),
-                    AdminServerErrorCode.Internal);
-                Assert.AreEqual(1, fixture.Store.CommitCallCount);
-                Assert.AreEqual(1, fixture.Sync.ScheduleCallCount);
-                Assert.IsFalse(
-                    fixture.Coordinator.CurrentSnapshot.TryGetPending(
-                        pendingId,
-                        out _));
-            }
-        }
-
-        [TestMethod]
-        public void RetentionFailureAfterDurableLogKeepsMutationSuccessful()
-        {
-            Guid pendingId = Guid.NewGuid();
-            var snapshot = new DirectorySnapshot(
-                new ServiceRecord[0],
-                new[]
-                {
-                    PendingNew(
-                        pendingId,
-                        "AB12",
-                        "Service",
-                        MutationUtc.AddMinutes(-1))
-                },
-                0UL);
-            HandlerFixture fixture = CreateFixture(snapshot);
-            fixture.Log.ThrowRetentionAfterWrite = true;
-            using (fixture.Handler)
-            {
-                Assert.IsTrue(
-                    fixture.Handler.ApprovePending(pendingId).IsSuccess);
-                CollectionAssert.AreEqual(
-                    new[] { "created:AB12:30" },
-                    fixture.Log.Events.ToArray());
-                Assert.AreEqual(1, fixture.Store.CommitCallCount);
-                Assert.AreEqual(1, fixture.Sync.ScheduleCallCount);
             }
         }
 
@@ -610,6 +290,119 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void RegistrationModeOpenRequiresReadyActiveIssuer()
+        {
+            CertificateAuthorityStatus[] unavailableStatuses =
+            {
+                new CertificateAuthorityStatus(
+                    CertificateAuthorityOperationalState.NotProvisioned),
+                CreateCaStatus(
+                    CertificateAuthorityOperationalState.BackupRequired,
+                    CertificateAuthorityIssuerRole.ActiveIssuer),
+                CreateCaStatus(
+                    CertificateAuthorityOperationalState.Ready,
+                    CertificateAuthorityIssuerRole.Standby)
+            };
+
+            foreach (CertificateAuthorityStatus caStatus in unavailableStatuses)
+            {
+                HandlerFixture fixture = CreateFixture(
+                    DirectorySnapshot.Empty(),
+                    caStatus: caStatus);
+                using (fixture.Handler)
+                {
+                    AssertError(
+                        fixture.Handler.OpenRegistrationMode(),
+                        AdminServerErrorCode.Conflict);
+                    Assert.AreEqual(
+                        AdminRegistrationModeState.Closed,
+                        fixture.Handler.GetRegistrationMode()
+                            .Value.RegistrationMode.State);
+                }
+            }
+        }
+
+        [TestMethod]
+        public void RegistrationModeOpenAndCloseUseTheInjectedOwner()
+        {
+            var clock = new FakeRegistrationModeClock(MutationUtc);
+            var owner = new RegistrationModeOwner(
+                new StateMutationGate(),
+                clock);
+            HandlerFixture fixture = CreateFixture(
+                DirectorySnapshot.Empty(),
+                caStatus: CreateCaStatus(
+                    CertificateAuthorityOperationalState.Ready,
+                    CertificateAuthorityIssuerRole.ActiveIssuer),
+                registrationModeOwner: owner);
+            using (fixture.Handler)
+            {
+                AdminServerRegistrationModeResponse opened = fixture.Handler
+                    .OpenRegistrationMode().Value;
+                Assert.AreEqual(
+                    AdminRegistrationModeState.Open,
+                    opened.RegistrationMode.State);
+                Assert.AreEqual(
+                    MutationUtc,
+                    opened.RegistrationMode.OpenedUtc.Value);
+                Assert.AreEqual(
+                    RegistrationModeOwner.DurationSeconds,
+                    opened.RegistrationMode.RemainingSeconds.Value);
+                Assert.IsNull(opened.LastRegistration);
+
+                clock.Advance(TimeSpan.FromMinutes(5));
+                AdminServerRegistrationModeResponse reopened = fixture.Handler
+                    .OpenRegistrationMode().Value;
+                Assert.AreEqual(
+                    MutationUtc,
+                    reopened.RegistrationMode.OpenedUtc.Value);
+                Assert.AreEqual(
+                    RegistrationModeOwner.DurationSeconds - 300,
+                    reopened.RegistrationMode.RemainingSeconds.Value);
+
+                Assert.AreEqual(
+                    AdminRegistrationModeState.Closed,
+                    fixture.Handler.CloseRegistrationMode()
+                        .Value.RegistrationMode.State);
+                Assert.AreEqual(
+                    AdminRegistrationModeState.Closed,
+                    fixture.Handler.CloseRegistrationMode()
+                        .Value.RegistrationMode.State);
+            }
+        }
+
+        [TestMethod]
+        public void ClaimedRegistrationModeRejectsOpenAndClose()
+        {
+            var owner = new RegistrationModeOwner(
+                new StateMutationGate(),
+                new FakeRegistrationModeClock(MutationUtc));
+            owner.Open();
+            RegistrationModeClaimResult claimed =
+                owner.TryClaimValidatedRequest(true);
+            HandlerFixture fixture = CreateFixture(
+                DirectorySnapshot.Empty(),
+                caStatus: CreateCaStatus(
+                    CertificateAuthorityOperationalState.Ready,
+                    CertificateAuthorityIssuerRole.ActiveIssuer),
+                registrationModeOwner: owner);
+            using (claimed.Claim)
+            using (fixture.Handler)
+            {
+                AssertError(
+                    fixture.Handler.OpenRegistrationMode(),
+                    AdminServerErrorCode.Conflict);
+                AssertError(
+                    fixture.Handler.CloseRegistrationMode(),
+                    AdminServerErrorCode.Conflict);
+                Assert.AreEqual(
+                    AdminRegistrationModeState.Claimed,
+                    fixture.Handler.GetRegistrationMode()
+                        .Value.RegistrationMode.State);
+            }
+        }
+
+        [TestMethod]
         public void SynchronizationOperationsDelegateWithoutOwningPeerState()
         {
             HandlerFixture fixture = CreateFixture(DirectorySnapshot.Empty());
@@ -642,7 +435,9 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
 
         private static HandlerFixture CreateFixture(
             DirectorySnapshot snapshot,
-            IList<string> order = null)
+            IList<string> order = null,
+            CertificateAuthorityStatus caStatus = null,
+            RegistrationModeOwner registrationModeOwner = null)
         {
             var store = new FakeStateStore(snapshot, order);
             StateCoordinatorOpenResult opened =
@@ -660,7 +455,16 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 log,
                 sync,
                 () => MutationUtc,
-                new AdminCursorCodec(cursorKey));
+                new AdminCursorCodec(cursorKey),
+                new FakeCertificateAuthorityAdministration(
+                    caStatus
+                        ?? new CertificateAuthorityStatus(
+                            CertificateAuthorityOperationalState
+                                .NotProvisioned)),
+                registrationModeOwner
+                    ?? new RegistrationModeOwner(
+                        new StateMutationGate(),
+                        new FakeRegistrationModeClock(MutationUtc)));
             return new HandlerFixture(
                 handler,
                 opened.Coordinator,
@@ -668,6 +472,31 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 configuration,
                 log,
                 sync);
+        }
+
+        private static CertificateAuthorityStatus CreateCaStatus(
+            CertificateAuthorityOperationalState state,
+            CertificateAuthorityIssuerRole role)
+        {
+            CertificateSerialNumber serialNumber;
+            Assert.IsTrue(
+                CertificateSerialNumber.TryCreate(
+                    "01A4B5C6D7E8F90123456789ABCDEF01",
+                    out serialNumber));
+            return new CertificateAuthorityStatus(
+                state,
+                role,
+                TestData.OriginA,
+                TestData.OriginB,
+                serialNumber,
+                new byte[32],
+                MutationUtc.AddDays(-1),
+                MutationUtc.AddYears(1),
+                1UL,
+                1UL,
+                state == CertificateAuthorityOperationalState.Ready
+                    ? (DateTime?)MutationUtc
+                    : null);
         }
 
         private static ServiceRecord Active(
@@ -687,32 +516,10 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             string name)
         {
             return TestData.Definition(
-                name,
-                productCode,
-                "10.0.0.1",
-                21000);
-        }
-
-        private static PendingRegistration PendingNew(
-            Guid id,
-            string productCode,
-            string name,
-            DateTime requestedUtc)
-        {
-            return new PendingRegistration(
-                id,
-                PendingRequestType.New,
-                requestedUtc,
-                "192.0.2.10",
-                Definition(productCode, name),
-                DirectoryBaseRevision.Capture(null));
-        }
-
-        private static ProductCode Product(string value)
-        {
-            ProductCode productCode;
-            Assert.IsTrue(ProductCode.TryCreate(value, out productCode));
-            return productCode;
+                name: name,
+                productCode: productCode,
+                serviceIpv4Address: "10.0.0.1",
+                port: 21000);
         }
 
         private static string Tamper(string cursor)
@@ -736,7 +543,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             return AdminServerXmlCodec.ParseEnableSyncRequest(
                 Utf8(
                     "<EnableSync xmlns=\"urn:deepai:service-directory:admin\">"
-                    + "<PeerEndpoint>http://10.0.0.2:21000</PeerEndpoint>"
+                    + "<PeerEndpoint>https://10.0.0.2:21000</PeerEndpoint>"
                     + "<RePair>false</RePair></EnableSync>"));
         }
 
@@ -858,7 +665,9 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 _order = order;
                 UpdateStatus = AdminConfigurationUpdateStatus.Completed;
                 Current = ServiceDirectoryConfiguration.CreateInitial(
-                    "10.0.0.10",
+                    TestData.DirectoryIdentity(
+                        "management.internal",
+                        "10.0.0.10"),
                     new Guid("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
             }
 
@@ -1066,5 +875,63 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     lastPeerNotificationUtc: null);
             }
         }
+
+        private sealed class FakeRegistrationModeClock :
+            IRegistrationModeClock
+        {
+            internal FakeRegistrationModeClock(DateTime utcNow)
+            {
+                UtcNow = utcNow;
+            }
+
+            public DateTime UtcNow { get; private set; }
+
+            public TimeSpan MonotonicElapsed { get; private set; }
+
+            internal void Advance(TimeSpan elapsed)
+            {
+                UtcNow = UtcNow.Add(elapsed);
+                MonotonicElapsed = MonotonicElapsed.Add(elapsed);
+            }
+        }
+
+        private sealed class FakeCertificateAuthorityAdministration :
+            ICertificateAuthorityAdministration
+        {
+            private readonly CertificateAuthorityStatus _status;
+
+            internal FakeCertificateAuthorityAdministration(
+                CertificateAuthorityStatus status)
+            {
+                _status = status ?? throw new ArgumentNullException(
+                    nameof(status));
+            }
+
+            public CertificateAuthorityStatus GetStatus()
+            {
+                return _status;
+            }
+
+            public CertificateAuthorityBackupResult CreateBackup(
+                string password,
+                DateTime createdUtc)
+            {
+                throw new NotSupportedException();
+            }
+
+            public CertificateLedgerSnapshot GetLedgerSnapshot()
+            {
+                throw new NotSupportedException();
+            }
+
+            public CertificateRevocationResult Revoke(
+                string serialNumber,
+                CertificateRevocationReason reason,
+                DateTime revokedUtc)
+            {
+                throw new NotSupportedException();
+            }
+        }
+
     }
 }

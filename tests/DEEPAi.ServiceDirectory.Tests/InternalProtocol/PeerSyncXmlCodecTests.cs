@@ -37,6 +37,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                     "Active App",
                     "ABCD",
                     "service.internal",
+                    "10.0.0.5",
                     "21000",
                     "2026-07-18T00:00:00.1234567Z",
                     "false",
@@ -45,6 +46,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 + CreateService(
                     "Old App",
                     "WXYZ",
+                    "old-app.internal",
                     "10.0.0.7",
                     "22000",
                     "2026-07-01T00:00:00Z",
@@ -70,7 +72,12 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
             Assert.AreEqual(2, request.Items.Count);
             Assert.AreEqual("Active App", request.Items[0].Name);
             Assert.AreEqual("ABCD", request.Items[0].ProductCode);
-            Assert.AreEqual("service.internal", request.Items[0].ServerAddress);
+            Assert.AreEqual(
+                "service.internal",
+                request.Items[0].ServiceHostName);
+            Assert.AreEqual(
+                "10.0.0.5",
+                request.Items[0].ServiceIpv4Address);
             Assert.AreEqual(21000, request.Items[0].Port);
             Assert.AreEqual(DateTimeKind.Utc, request.Items[0].LastModifiedUtc.Kind);
             Assert.IsFalse(request.Items[0].Deleted);
@@ -305,6 +312,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                             supplementaryName,
                             "ABCD",
                             "service.internal",
+                            "10.0.0.5",
                             "65535",
                             "2026-07-18T00:00:00Z",
                             "false",
@@ -324,6 +332,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                     string.Concat(Repeat("\U0001F600", 129)),
                     "ABCD",
                     "service.internal",
+                    "10.0.0.5",
                     "21000",
                     "2026-07-18T00:00:00Z",
                     "false",
@@ -332,6 +341,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 CreateService(
                     "App",
                     "ABCD",
+                    "service.internal",
                     "999.1.1.1",
                     "21000",
                     "2026-07-18T00:00:00Z",
@@ -342,6 +352,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                     "App",
                     "ABCD",
                     "service.internal",
+                    "10.0.0.5",
                     "0",
                     "2026-07-18T00:00:00Z",
                     "false",
@@ -367,6 +378,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 "App",
                 "ABCD",
                 "service.internal",
+                "10.0.0.5",
                 "21000",
                 "2026-07-18T00:00:00Z",
                 "false",
@@ -376,6 +388,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 "App",
                 "ABCD",
                 "service.internal",
+                "10.0.0.5",
                 "21000",
                 "2026-07-18T00:00:00Z",
                 "true",
@@ -508,6 +521,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 "App " + productCode,
                 productCode,
                 "service.internal",
+                "10.0.0.5",
                 "21000",
                 "2026-07-18T00:00:00Z",
                 "false",
@@ -518,7 +532,8 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
         private static string CreateService(
             string name,
             string productCode,
-            string serverAddress,
+            string serviceHostName,
+            string serviceIpv4Address,
             string port,
             string lastModifiedUtc,
             string deleted,
@@ -529,9 +544,11 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 + name
                 + "</Name><ProductCode>"
                 + productCode
-                + "</ProductCode><ServerAddress>"
-                + serverAddress
-                + "</ServerAddress><Port>"
+                + "</ProductCode><ServiceHostName>"
+                + serviceHostName
+                + "</ServiceHostName><ServiceIpv4Address>"
+                + serviceIpv4Address
+                + "</ServiceIpv4Address><Port>"
                 + port
                 + "</Port><LastModifiedUtc>"
                 + lastModifiedUtc

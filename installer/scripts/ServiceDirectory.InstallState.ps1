@@ -67,12 +67,19 @@ function Remove-OperatorsGroup {
 function Assert-InstallResourceOwnership {
     param(
         [Parameter(Mandatory = $true)][string]$RequestedDataRoot,
-        [Parameter(Mandatory = $true)][string]$NewAddress
+        [Parameter(Mandatory = $true)][string]$NewAddress,
+        [Parameter(Mandatory = $true)][string]$NewHostName
     )
 
     $NewAddress = Assert-AddressIsEligible -Value $NewAddress
+    $NewHostName = ConvertTo-CanonicalDirectoryHostName -Value $NewHostName
     $configPath = Join-Path $RequestedDataRoot 'config.xml'
-    $oldAddress = Read-ConfigurationAddress -ConfigPath $configPath
+    $oldIdentity = Read-ConfigurationIdentity -ConfigPath $configPath
+    $oldAddress = if ($null -eq $oldIdentity) {
+        $null
+    } else {
+        [string]$oldIdentity.Address
+    }
     $productSnapshot = Get-ProductRegistrationSnapshot
     if ($null -eq $oldAddress `
         -and $productSnapshot.Exists `
@@ -105,10 +112,24 @@ function Assert-InstallResourceOwnership {
 
     $prefixes = New-Object 'System.Collections.Generic.HashSet[string]' `
         ([StringComparer]::OrdinalIgnoreCase)
+    $addresses = New-Object 'System.Collections.Generic.HashSet[string]' `
+        ([StringComparer]::Ordinal)
     if ($null -ne $oldAddress) {
-        [void]$prefixes.Add((Get-HttpPrefix -Value $oldAddress))
+        [void]$addresses.Add($oldAddress)
     }
-    [void]$prefixes.Add((Get-HttpPrefix -Value $NewAddress))
+    [void]$addresses.Add($NewAddress)
+    foreach ($address in $addresses) {
+        [void]$prefixes.Add((Get-HttpPrefix -Value $address))
+        [void]$prefixes.Add((Get-RemoteHttpsPrefix -Address $address))
+        Assert-HttpsBindingCanBeManaged `
+            -Snapshot (Get-HttpsBindingSnapshot -Address $address)
+    }
+    if ($null -ne $oldIdentity) {
+        [void]$prefixes.Add((Get-RemoteHttpsHostNamePrefix `
+                -HostName ([string]$oldIdentity.HostName)))
+    }
+    [void]$prefixes.Add((Get-RemoteHttpsHostNamePrefix `
+            -HostName $NewHostName))
     [void]$prefixes.Add("http://127.0.0.1:$servicePort/")
     foreach ($prefix in $prefixes) {
         Assert-UrlAclCanBeManaged `

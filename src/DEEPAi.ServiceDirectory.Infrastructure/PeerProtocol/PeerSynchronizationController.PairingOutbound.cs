@@ -209,7 +209,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                     CngKeyBlobFormat.EccPublicBlob);
                 Guid pairingId = CreateNonEmptyPairingId();
                 string localEndpoint = RequireListenerAddress(
-                    configuration.ListenAddress).HttpPrefix.TrimEnd('/');
+                    configuration.ListenAddress).HttpsPrefix.TrimEnd('/');
                 hello = new PeerPairingHelloRequest(
                     pairingId,
                     configuration.InstanceId,

@@ -70,12 +70,16 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
         internal AdminServiceDefinition(
             string name,
             string productCode,
-            string serverAddress,
+            string serviceHostName,
+            string serviceIpv4Address,
             int port)
         {
             Name = name ?? throw new ArgumentNullException(nameof(name));
             ProductCode = productCode ?? throw new ArgumentNullException(nameof(productCode));
-            ServerAddress = serverAddress ?? throw new ArgumentNullException(nameof(serverAddress));
+            ServiceHostName = serviceHostName
+                ?? throw new ArgumentNullException(nameof(serviceHostName));
+            ServiceIpv4Address = serviceIpv4Address
+                ?? throw new ArgumentNullException(nameof(serviceIpv4Address));
             Port = port;
         }
 
@@ -83,7 +87,9 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
 
         public string ProductCode { get; }
 
-        public string ServerAddress { get; }
+        public string ServiceHostName { get; }
+
+        public string ServiceIpv4Address { get; }
 
         public int Port { get; }
     }
@@ -125,7 +131,10 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
 
         public string ProductCode => Definition.ProductCode;
 
-        public string ServerAddress => Definition.ServerAddress;
+        public string ServiceHostName => Definition.ServiceHostName;
+
+        public string ServiceIpv4Address =>
+            Definition.ServiceIpv4Address;
 
         public int Port => Definition.Port;
 
@@ -134,63 +143,6 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
         public bool Deleted { get; }
 
         public DateTime? DeletedUtc { get; }
-    }
-
-    public enum AdminPendingRequestType
-    {
-        New = 1,
-        Modify = 2
-    }
-
-    public sealed class AdminPendingItem
-    {
-        internal AdminPendingItem(
-            Guid id,
-            AdminPendingRequestType type,
-            DateTime requestedUtc,
-            string sourceIp,
-            AdminServiceDefinition requested,
-            AdminServiceDefinition current)
-        {
-            if (id == Guid.Empty)
-            {
-                throw new ArgumentException("Pending ID cannot be empty.", nameof(id));
-            }
-
-            if (requestedUtc.Kind != DateTimeKind.Utc)
-            {
-                throw new ArgumentException("Requested time must be UTC.", nameof(requestedUtc));
-            }
-
-            if ((type == AdminPendingRequestType.New && current != null)
-                || (type == AdminPendingRequestType.Modify && current == null))
-            {
-                throw new ArgumentException(
-                    "Current service shape does not match the pending request type.",
-                    nameof(current));
-            }
-
-            Id = id;
-            Type = type;
-            RequestedUtc = requestedUtc;
-            SourceIp = sourceIp ?? throw new ArgumentNullException(nameof(sourceIp));
-            Requested = requested ?? throw new ArgumentNullException(nameof(requested));
-            Current = current;
-        }
-
-        public Guid Id { get; }
-
-        public AdminPendingRequestType Type { get; }
-
-        public string TypeText => Type == AdminPendingRequestType.New ? "New" : "Modify";
-
-        public DateTime RequestedUtc { get; }
-
-        public string SourceIp { get; }
-
-        public AdminServiceDefinition Requested { get; }
-
-        public AdminServiceDefinition Current { get; }
     }
 
     public enum AdminPairingState

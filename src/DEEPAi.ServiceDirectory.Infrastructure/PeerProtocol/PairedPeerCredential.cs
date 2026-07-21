@@ -1,5 +1,5 @@
 using System;
-using DEEPAi.ServiceDirectory.InternalProtocol.Admin;
+using DEEPAi.ServiceDirectory.Infrastructure.Configuration;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
 {
@@ -446,11 +446,13 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
             string parameterName)
         {
             string canonical;
-            if (!AdminPeerEndpoint.TryNormalize(endpoint, out canonical)
+            if (!ConfigurationAddress.TryNormalizePeerEndpoint(
+                    endpoint,
+                    out canonical)
                 || !StringComparer.Ordinal.Equals(endpoint, canonical))
             {
                 throw new ArgumentException(
-                    "The endpoint must use exact canonical HTTP IP literal form on port 21000.",
+                    "The endpoint must use exact canonical HTTPS IPv4 form on port 21000.",
                     parameterName);
             }
 

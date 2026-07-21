@@ -193,7 +193,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             DateTime revokedUtc);
     }
 
-    internal sealed class CertificateAuthorityAdministration
+    internal sealed partial class CertificateAuthorityAdministration
         : ICertificateAuthorityAdministration,
         IDisposable
     {
@@ -244,20 +244,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     state.CrlNumber,
                     state.LastBackupUtc);
             }
-        }
-
-        internal void EnsureProvisioned(
-            Guid installedInstanceId,
-            DateTime utcNow)
-        {
-            ThrowIfDisposed();
-            if (_provisioned)
-            {
-                return;
-            }
-
-            _store.Provision(installedInstanceId, utcNow);
-            _provisioned = true;
         }
 
         public CertificateAuthorityBackupResult CreateBackup(

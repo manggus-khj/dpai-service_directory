@@ -82,22 +82,39 @@ namespace DEEPAi.ServiceDirectory.Tray.Clients
                 cancellationToken);
         }
 
-        public Task<AdminPage<AdminPendingItem>> GetPendingAsync(
-            string cursor,
+        public Task<AdminServerRegistrationModeResponse>
+            GetRegistrationModeAsync(
             CancellationToken cancellationToken)
         {
-            string path = "admin/pending?pageSize="
-                + AdminApiContract.PageSize.ToString(CultureInfo.InvariantCulture);
-            if (!string.IsNullOrEmpty(cursor))
-            {
-                path += "&cursor=" + Uri.EscapeDataString(cursor);
-            }
-
             return SendAsync(
                 HttpMethod.Get,
-                path,
+                AdminApiContract.RegistrationModePath.TrimStart('/'),
                 null,
-                AdminXmlCodec.ParsePendingResponse,
+                AdminRegistrationModeXmlCodec.ParseRegistrationModeResponse,
+                cancellationToken);
+        }
+
+        public Task<AdminServerRegistrationModeResponse>
+            OpenRegistrationModeAsync(
+            CancellationToken cancellationToken)
+        {
+            return SendAsync(
+                HttpMethod.Post,
+                AdminApiContract.OpenRegistrationModePath.TrimStart('/'),
+                null,
+                AdminRegistrationModeXmlCodec.ParseRegistrationModeResponse,
+                cancellationToken);
+        }
+
+        public Task<AdminServerRegistrationModeResponse>
+            CloseRegistrationModeAsync(
+            CancellationToken cancellationToken)
+        {
+            return SendAsync(
+                HttpMethod.Post,
+                AdminApiContract.CloseRegistrationModePath.TrimStart('/'),
+                null,
+                AdminRegistrationModeXmlCodec.ParseRegistrationModeResponse,
                 cancellationToken);
         }
 
@@ -194,24 +211,6 @@ namespace DEEPAi.ServiceDirectory.Tray.Clients
                     + "/revoke",
                 AdminXmlCodec.SerializeRevokeCertificate(reason),
                 AdminXmlCodec.ParseCertificateRevocationResponse,
-                cancellationToken);
-        }
-
-        public Task ApprovePendingAsync(Guid id, CancellationToken cancellationToken)
-        {
-            return SendUnitAsync(
-                HttpMethod.Post,
-                "admin/pending/" + FormatGuid(id) + "/approve",
-                null,
-                cancellationToken);
-        }
-
-        public Task RejectPendingAsync(Guid id, CancellationToken cancellationToken)
-        {
-            return SendUnitAsync(
-                HttpMethod.Post,
-                "admin/pending/" + FormatGuid(id) + "/reject",
-                null,
                 cancellationToken);
         }
 

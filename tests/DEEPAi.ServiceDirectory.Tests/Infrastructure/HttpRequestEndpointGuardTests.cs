@@ -36,27 +36,13 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void ConfiguredIpv6EndpointRequiresExactFamilyAddressAndPort()
+        public void ConfiguredListenerRejectsIpv6Address()
         {
-            ServiceDirectoryListenerAddress configured =
-                CreateAddress("2001:db8::10");
-
-            Assert.IsTrue(
-                HttpRequestEndpointGuard.IsConfiguredLocalEndpointAllowed(
-                    Endpoint("2001:db8::10", 21000),
-                    configured));
+            ServiceDirectoryListenerAddress configured;
             Assert.IsFalse(
-                HttpRequestEndpointGuard.IsConfiguredLocalEndpointAllowed(
-                    Endpoint("2001:db8::11", 21000),
-                    configured));
-            Assert.IsFalse(
-                HttpRequestEndpointGuard.IsConfiguredLocalEndpointAllowed(
-                    Endpoint("10.0.0.10", 21000),
-                    configured));
-            Assert.IsFalse(
-                HttpRequestEndpointGuard.IsConfiguredLocalEndpointAllowed(
-                    Endpoint("2001:db8::10", 80),
-                    configured));
+                ServiceDirectoryListenerAddress.TryCreate(
+                    "2001:db8::10",
+                    out configured));
         }
 
         [TestMethod]

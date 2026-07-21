@@ -59,7 +59,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
                 TestData.Utc(1));
             ServiceDefinition conflictingDefinition = TestData.Definition(
                 name: "Changed Directory",
-                serverAddress: "10.20.30.41");
+                serviceIpv4Address: "10.20.30.41");
 
             SubmissionResult conflict = RegistrationStateMachine.Submit(
                 first.NextSnapshot,
@@ -124,7 +124,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
                 1UL);
             ServiceDefinition requested = TestData.Definition(
                 name: "Requested",
-                serverAddress: "10.20.30.41");
+                serviceIpv4Address: "10.20.30.41");
             Guid pendingId = new Guid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
             SubmissionResult submitted = RegistrationStateMachine.Submit(
                 initial,
@@ -134,7 +134,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
                 TestData.Utc(1));
             ServiceDefinition concurrentDefinition = TestData.Definition(
                 name: "Concurrent",
-                serverAddress: "10.20.30.42");
+                serviceIpv4Address: "10.20.30.42");
             ServiceRecord concurrentRecord = ServiceRecord.CreateActive(
                 concurrentDefinition,
                 TestData.Utc(2),

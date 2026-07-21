@@ -39,32 +39,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         }
     }
 
-    public sealed class AdminPendingQuery
-    {
-        internal AdminPendingQuery(int pageSize, string cursor)
-        {
-            if (pageSize < 1 || pageSize > AdminApiContract.PageSize)
-            {
-                throw new ArgumentOutOfRangeException(nameof(pageSize));
-            }
-
-            if (cursor != null
-                && (cursor.Length == 0 || cursor.Length > 2048))
-            {
-                throw new ArgumentException(
-                    "The Admin cursor is invalid.",
-                    nameof(cursor));
-            }
-
-            PageSize = pageSize;
-            Cursor = cursor;
-        }
-
-        public int PageSize { get; }
-
-        public string Cursor { get; }
-    }
-
     public sealed class AdminCertificatesQuery
     {
         internal AdminCertificatesQuery(int pageSize, string cursor)
@@ -144,12 +118,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         AdminHandlerResult<AdminServerServicesResponse> GetServices(
             AdminServicesQuery query);
 
-        AdminHandlerResult<AdminServerPendingResponse> GetPending(
-            AdminPendingQuery query);
+        AdminHandlerResult<AdminServerRegistrationModeResponse>
+            GetRegistrationMode();
 
-        AdminHandlerResult<AdminServerUnitResponse> ApprovePending(Guid id);
+        AdminHandlerResult<AdminServerRegistrationModeResponse>
+            OpenRegistrationMode();
 
-        AdminHandlerResult<AdminServerUnitResponse> RejectPending(Guid id);
+        AdminHandlerResult<AdminServerRegistrationModeResponse>
+            CloseRegistrationMode();
 
         AdminHandlerResult<AdminServerUnitResponse> DeleteService(
             string productCode);

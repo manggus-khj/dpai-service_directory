@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using DEEPAi.ServiceDirectory.Infrastructure.Configuration;
-using DEEPAi.ServiceDirectory.Infrastructure.Networking;
 using DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
@@ -110,18 +109,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         private static string GetLocalEndpoint(
             ServiceDirectoryConfiguration configuration)
         {
-            ServiceDirectoryListenerAddress address;
-            if (!ServiceDirectoryListenerAddress.TryCreate(
-                    configuration.ListenAddress,
-                    out address))
-            {
-                throw new InvalidDataException(
-                    "config.xml contains an invalid listener address.");
-            }
-
-            return address.HttpPrefix.Substring(
-                0,
-                address.HttpPrefix.Length - 1);
+            return "https://"
+                + configuration.DirectoryIpv4Address
+                + ":21000";
         }
     }
 }

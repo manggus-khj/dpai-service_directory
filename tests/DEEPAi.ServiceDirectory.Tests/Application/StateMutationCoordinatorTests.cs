@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using DEEPAi.ServiceDirectory.Application.Persistence;
@@ -35,6 +36,121 @@ namespace DEEPAi.ServiceDirectory.Tests.Application
             Assert.AreSame(store.LastNextSnapshot, coordinator.CurrentSnapshot);
             Assert.AreSame(result.DomainTransition.NextSnapshot, coordinator.CurrentSnapshot);
             Assert.IsTrue(coordinator.IsReady);
+        }
+
+        [TestMethod]
+        public void ExternalMutationReloadsBaselineBeforePublishing()
+        {
+            DirectorySnapshot initial = DirectorySnapshot.Empty();
+            DirectorySnapshot committed = new DirectorySnapshot(
+                new[]
+                {
+                    TestData.ActiveRecord(
+                        TestData.Definition(),
+                        1UL,
+                        TestData.OriginA)
+                },
+                new PendingRegistration[0],
+                1UL);
+            var store = new FakeStateStore(StateLoadResult.Success(initial));
+            StateMutationCoordinator coordinator = Open(store);
+            int durableCommitCalls = 0;
+
+            bool succeeded = coordinator.TryCommitExternalMutation(
+                initial,
+                () =>
+                {
+                    durableCommitCalls++;
+                    store.LoadResult = StateLoadResult.Success(committed);
+                });
+
+            Assert.IsTrue(succeeded);
+            Assert.AreEqual(1, durableCommitCalls);
+            Assert.AreEqual(2, store.LoadCallCount);
+            Assert.AreSame(committed, coordinator.CurrentSnapshot);
+            Assert.AreEqual(StateCoordinatorStatus.Ready, coordinator.Status);
+        }
+
+        [TestMethod]
+        public void ExternalMutationRejectsStaleSnapshotWithoutCommit()
+        {
+            DirectorySnapshot initial = DirectorySnapshot.Empty();
+            var store = new FakeStateStore(StateLoadResult.Success(initial));
+            StateMutationCoordinator coordinator = Open(store);
+            int durableCommitCalls = 0;
+
+            bool succeeded = coordinator.TryCommitExternalMutation(
+                DirectorySnapshot.Empty(),
+                () => durableCommitCalls++);
+
+            Assert.IsFalse(succeeded);
+            Assert.AreEqual(0, durableCommitCalls);
+            Assert.AreEqual(1, store.LoadCallCount);
+            Assert.AreSame(initial, coordinator.CurrentSnapshot);
+            Assert.AreEqual(StateCoordinatorStatus.Ready, coordinator.Status);
+        }
+
+        [TestMethod]
+        public void ExternalMutationFailureRequiresVerifiedReload()
+        {
+            DirectorySnapshot initial = DirectorySnapshot.Empty();
+            var store = new FakeStateStore(StateLoadResult.Success(initial));
+            StateMutationCoordinator coordinator = Open(store);
+
+            Assert.ThrowsExactly<StateRecoveryRequiredException>(() =>
+                coordinator.TryCommitExternalMutation(
+                    initial,
+                    () => throw new StateRecoveryRequiredException(
+                        "Injected durable commit failure.",
+                        null)));
+
+            Assert.AreEqual(
+                StateCoordinatorStatus.RecoveryRequired,
+                coordinator.Status);
+            Assert.IsFalse(coordinator.TryGetReadySnapshot(out _));
+
+            StateLoadResult recovered = coordinator.Recover();
+
+            Assert.IsTrue(recovered.IsSuccess);
+            Assert.AreSame(initial, recovered.Snapshot);
+            Assert.AreEqual(StateCoordinatorStatus.Ready, coordinator.Status);
+        }
+
+        [TestMethod]
+        public void ExternalMutationValidationFailureKeepsCoordinatorReady()
+        {
+            DirectorySnapshot initial = DirectorySnapshot.Empty();
+            var store = new FakeStateStore(StateLoadResult.Success(initial));
+            StateMutationCoordinator coordinator = Open(store);
+
+            Assert.ThrowsExactly<InvalidDataException>(() =>
+                coordinator.TryCommitExternalMutation(
+                    initial,
+                    () => throw new InvalidDataException(
+                        "Injected candidate validation failure.")));
+
+            Assert.AreSame(initial, coordinator.CurrentSnapshot);
+            Assert.AreEqual(StateCoordinatorStatus.Ready, coordinator.Status);
+            Assert.AreEqual(1, store.LoadCallCount);
+        }
+
+        [TestMethod]
+        public void ExternalMutationReloadFailureDoesNotPublishCandidate()
+        {
+            DirectorySnapshot initial = DirectorySnapshot.Empty();
+            var store = new FakeStateStore(StateLoadResult.Success(initial));
+            StateMutationCoordinator coordinator = Open(store);
+
+            bool succeeded = coordinator.TryCommitExternalMutation(
+                initial,
+                () => store.LoadResult = StateLoadResult.Failure(
+                    StateLoadFailureCode.InvalidData));
+
+            Assert.IsFalse(succeeded);
+            Assert.AreSame(initial, coordinator.CurrentSnapshot);
+            Assert.AreEqual(
+                StateCoordinatorStatus.RecoveryRequired,
+                coordinator.Status);
         }
 
         [TestMethod]

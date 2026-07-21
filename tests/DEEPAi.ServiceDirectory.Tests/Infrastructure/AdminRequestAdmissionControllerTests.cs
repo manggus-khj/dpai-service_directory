@@ -63,34 +63,38 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             {
                 AcquireAndRelease(
                     controller,
-                    AdminHttpOperation.GetPending);
+                    AdminHttpOperation.GetRegistrationMode);
             }
 
             AdminRequestAdmissionResult denied = controller.TryAcquire(
-                AdminHttpOperation.GetPending,
+                AdminHttpOperation.GetRegistrationMode,
                 ActorSid);
             Assert.IsFalse(denied.IsGranted);
             Assert.AreEqual(1, denied.RetryAfterSeconds.Value);
 
             now = 1;
-            AcquireAndRelease(controller, AdminHttpOperation.GetPending);
+            AcquireAndRelease(
+                controller,
+                AdminHttpOperation.GetRegistrationMode);
 
             for (now = 2; now <= 45; now++)
             {
                 AcquireAndRelease(
                     controller,
-                    AdminHttpOperation.GetPending);
+                    AdminHttpOperation.GetRegistrationMode);
             }
 
             now = 46;
             denied = controller.TryAcquire(
-                AdminHttpOperation.GetPending,
+                AdminHttpOperation.GetRegistrationMode,
                 ActorSid);
             Assert.IsFalse(denied.IsGranted);
             Assert.AreEqual(14, denied.RetryAfterSeconds.Value);
 
             now = 60;
-            AcquireAndRelease(controller, AdminHttpOperation.GetPending);
+            AcquireAndRelease(
+                controller,
+                AdminHttpOperation.GetRegistrationMode);
         }
 
         [TestMethod]
@@ -107,17 +111,19 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             {
                 AcquireAndRelease(
                     controller,
-                    AdminHttpOperation.ApprovePending);
+                    AdminHttpOperation.OpenRegistrationMode);
             }
 
             AdminRequestAdmissionResult denied = controller.TryAcquire(
-                AdminHttpOperation.RejectPending,
+                AdminHttpOperation.CloseRegistrationMode,
                 ActorSid);
             Assert.IsFalse(denied.IsGranted);
             Assert.AreEqual(60, denied.RetryAfterSeconds.Value);
 
             now = 60;
-            AcquireAndRelease(controller, AdminHttpOperation.RejectPending);
+            AcquireAndRelease(
+                controller,
+                AdminHttpOperation.CloseRegistrationMode);
         }
 
         [TestMethod]

@@ -49,57 +49,6 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
                 });
         }
 
-        public static AdminResponse<AdminPage<AdminPendingItem>> ParsePendingResponse(
-            byte[] body)
-        {
-            return ParseResponse(
-                body,
-                "PendingItems",
-                (root, pendingItems) =>
-                {
-                    var items = new List<AdminPendingItem>();
-                    foreach (XElement pending in pendingItems.Elements(Namespace + "PendingItem"))
-                    {
-                        Guid id = ReadRequiredGuid(pending, "Id");
-                        string typeText = ReadRequiredString(pending, "Type");
-                        AdminPendingRequestType type;
-                        if (StringComparer.Ordinal.Equals(typeText, "New"))
-                        {
-                            type = AdminPendingRequestType.New;
-                        }
-                        else if (StringComparer.Ordinal.Equals(typeText, "Modify"))
-                        {
-                            type = AdminPendingRequestType.Modify;
-                        }
-                        else
-                        {
-                            throw new AdminProtocolException(
-                                "Pending Type must be New or Modify.");
-                        }
-
-                        XElement requestedElement = ReadRequiredElement(
-                            pending,
-                            "Requested");
-                        XElement currentElement = ReadOptionalElement(pending, "Current");
-                        items.Add(
-                            new AdminPendingItem(
-                                id,
-                                type,
-                                ReadRequiredUtc(pending, "RequestedUtc"),
-                                ReadRequiredString(pending, "SourceIP"),
-                                ParseServiceDefinition(requestedElement),
-                                currentElement == null
-                                    ? null
-                                    : ParseServiceDefinition(currentElement)));
-                    }
-
-                    return new AdminPage<AdminPendingItem>(
-                        items.AsReadOnly(),
-                        ReadRequiredNonNegativeInt(root, "TotalCount"),
-                        ReadOptionalString(root, "NextCursor"));
-                });
-        }
-
         public static AdminResponse<AdminSyncStatus> ParseSyncResponse(byte[] body)
         {
             return ParseResponse(
@@ -472,43 +421,36 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
         {
             string name = ReadRequiredString(element, "Name");
             string productCode = ReadRequiredString(element, "ProductCode");
-            string serverAddress = ReadRequiredString(
+            string serviceHostName = ReadRequiredString(
                 element,
-                "ServerAddress");
+                "ServiceHostName");
+            string serviceIpv4Address = ReadRequiredString(
+                element,
+                "ServiceIpv4Address");
             int port = ReadRequiredInt(element, "Port");
 
-            ServiceDefinition definition;
-            ServiceDefinitionValidationError validationError;
-            if (!ServiceDefinition.TryCreate(
+            AdminServerServiceDefinition definition;
+            try
+            {
+                definition = new AdminServerServiceDefinition(
                     name,
                     productCode,
-                    serverAddress,
-                    port,
-                    out definition,
-                    out validationError))
-            {
-                throw new AdminProtocolException(
-                    "The Admin service definition is invalid: "
-                    + validationError
-                    + ".");
+                    serviceHostName,
+                    serviceIpv4Address,
+                    port);
             }
-
-            if (!StringComparer.Ordinal.Equals(name, definition.Name)
-                || !StringComparer.Ordinal.Equals(
-                    productCode,
-                    definition.ProductCode.Value)
-                || !StringComparer.Ordinal.Equals(
-                    serverAddress,
-                    definition.ServerAddress))
+            catch (ArgumentException exception)
             {
                 throw new AdminProtocolException(
-                    "The Admin service definition is not canonical.");
+                    "The Admin service definition is invalid.",
+                    exception);
             }
 
             return new AdminServiceDefinition(
                 definition.Name,
-                definition.ProductCode.Value,
-                definition.ServerAddress,
+                definition.ProductCode,
+                definition.ServiceHostName,
+                definition.ServiceIpv4Address,
                 definition.Port);
         }
 

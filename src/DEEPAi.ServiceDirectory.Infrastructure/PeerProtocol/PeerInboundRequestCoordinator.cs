@@ -386,6 +386,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
             }
 
             if (input.Operation != PeerInboundOperation.Exchange
+                && input.Operation != PeerInboundOperation.PkiState
                 && input.Operation != PeerInboundOperation.Release)
             {
                 throw new ArgumentException(
@@ -596,6 +597,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                     auditOperation = SecurityAuditOperation.PeerHandshake;
                     break;
                 case PeerInboundOperation.Exchange:
+                case PeerInboundOperation.PkiState:
                     auditOperation = SecurityAuditOperation.PeerExchange;
                     break;
                 case PeerInboundOperation.Release:

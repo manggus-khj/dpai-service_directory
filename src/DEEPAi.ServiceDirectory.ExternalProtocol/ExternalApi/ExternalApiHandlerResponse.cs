@@ -9,6 +9,7 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
         private ExternalApiHandlerResponse(
             int statusCode,
             byte[] body,
+            string contentType,
             int? retryAfterSeconds,
             bool requiresInvalidApiKeyAudit)
         {
@@ -34,6 +35,14 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
 
             StatusCode = statusCode;
             _body = (byte[])body.Clone();
+            if ((_body.Length == 0) != (contentType == null))
+            {
+                throw new ArgumentException(
+                    "Content-Type must exist exactly when the response has a body.",
+                    nameof(contentType));
+            }
+
+            ContentType = contentType;
             RetryAfterSeconds = retryAfterSeconds;
             RequiresInvalidApiKeyAudit = requiresInvalidApiKeyAudit;
         }
@@ -42,9 +51,7 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
 
         public bool HasBody => _body.Length != 0;
 
-        public string ContentType => HasBody
-            ? ExternalApiContract.XmlContentType
-            : null;
+        public string ContentType { get; }
 
         public int? RetryAfterSeconds { get; }
 
@@ -73,8 +80,36 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
             return new ExternalApiHandlerResponse(
                 statusCode,
                 body,
+                ExternalApiContract.XmlContentType,
                 retryAfterSeconds,
                 requiresInvalidApiKeyAudit);
+        }
+
+        internal static ExternalApiHandlerResponse Binary(
+            int statusCode,
+            byte[] body,
+            string contentType)
+        {
+            if (body == null || body.Length == 0)
+            {
+                throw new ArgumentException(
+                    "A binary handler response requires a non-empty body.",
+                    nameof(body));
+            }
+
+            if (string.IsNullOrWhiteSpace(contentType))
+            {
+                throw new ArgumentException(
+                    "A binary handler response requires a content type.",
+                    nameof(contentType));
+            }
+
+            return new ExternalApiHandlerResponse(
+                statusCode,
+                body,
+                contentType,
+                null,
+                false);
         }
 
         internal static ExternalApiHandlerResponse UndefinedRoute()
@@ -82,6 +117,22 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
             return new ExternalApiHandlerResponse(
                 404,
                 new byte[0],
+                null,
+                null,
+                false);
+        }
+
+        internal static ExternalApiHandlerResponse Bodyless(int statusCode)
+        {
+            if (statusCode != 401)
+            {
+                throw new ArgumentOutOfRangeException(nameof(statusCode));
+            }
+
+            return new ExternalApiHandlerResponse(
+                statusCode,
+                new byte[0],
+                null,
                 null,
                 false);
         }

@@ -20,10 +20,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
     public sealed class AdminHttpAdapter
     {
         private const string ServicesPath = "/admin/services";
-        private const string PendingPath = "/admin/pending";
-        private const string PendingPrefix = "/admin/pending/";
-        private const string ApproveSuffix = "/approve";
-        private const string RejectSuffix = "/reject";
+        private const string RegistrationModePath =
+            AdminApiContract.RegistrationModePath;
+        private const string OpenRegistrationModePath =
+            AdminApiContract.OpenRegistrationModePath;
+        private const string CloseRegistrationModePath =
+            AdminApiContract.CloseRegistrationModePath;
         private const string ServicePrefix = "/admin/services/";
         private const string SyncPath = "/admin/sync";
         private const string EnableSyncPath = "/admin/sync/enable";
@@ -201,22 +203,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             }
 
             AdminServicesQuery servicesQuery = null;
-            AdminPendingQuery pendingQuery = null;
             AdminCertificatesQuery certificatesQuery = null;
             if (operation == AdminHttpOperation.GetServices)
             {
                 if (!AdminQueryStringParser.TryParseServices(
                     request.RawQuery,
                     out servicesQuery))
-                {
-                    return BadRequest();
-                }
-            }
-            else if (operation == AdminHttpOperation.GetPending)
-            {
-                if (!AdminQueryStringParser.TryParsePending(
-                    request.RawQuery,
-                    out pendingQuery))
                 {
                     return BadRequest();
                 }
@@ -320,14 +312,21 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                     return Execute(
                         () => _handler.GetServices(servicesQuery),
                         AdminServerResponseXmlCodec.SerializeServicesResponse);
-                case AdminHttpOperation.GetPending:
+                case AdminHttpOperation.GetRegistrationMode:
                     return Execute(
-                        () => _handler.GetPending(pendingQuery),
-                        AdminServerResponseXmlCodec.SerializePendingResponse);
-                case AdminHttpOperation.ApprovePending:
-                    return ProcessPendingAction(routeValue, true);
-                case AdminHttpOperation.RejectPending:
-                    return ProcessPendingAction(routeValue, false);
+                        _handler.GetRegistrationMode,
+                        AdminRegistrationModeXmlCodec
+                            .SerializeRegistrationModeResponse);
+                case AdminHttpOperation.OpenRegistrationMode:
+                    return Execute(
+                        _handler.OpenRegistrationMode,
+                        AdminRegistrationModeXmlCodec
+                            .SerializeRegistrationModeResponse);
+                case AdminHttpOperation.CloseRegistrationMode:
+                    return Execute(
+                        _handler.CloseRegistrationMode,
+                        AdminRegistrationModeXmlCodec
+                            .SerializeRegistrationModeResponse);
                 case AdminHttpOperation.DeleteService:
                     return ProcessDelete(routeValue);
                 case AdminHttpOperation.GetSyncStatus:
@@ -386,29 +385,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 default:
                     return InternalError();
             }
-        }
-
-        private AdminHttpResponseData ProcessPendingAction(
-            string routeValue,
-            bool approve)
-        {
-            Guid id;
-            if (!Guid.TryParseExact(routeValue, "D", out id)
-                || id == Guid.Empty
-                || !StringComparer.Ordinal.Equals(
-                    routeValue,
-                    id.ToString("D")))
-            {
-                return BadRequest();
-            }
-
-            return approve
-                ? Execute(
-                    () => _handler.ApprovePending(id),
-                    AdminServerResponseXmlCodec.SerializeUnitResponse)
-                : Execute(
-                    () => _handler.RejectPending(id),
-                    AdminServerResponseXmlCodec.SerializeUnitResponse);
         }
 
         private AdminHttpResponseData ProcessDelete(string routeValue)
@@ -634,29 +610,27 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             }
 
             if (StringComparer.Ordinal.Equals(method, "GET")
-                && StringComparer.Ordinal.Equals(path, PendingPath))
+                && StringComparer.Ordinal.Equals(
+                    path,
+                    RegistrationModePath))
             {
-                return AdminHttpOperation.GetPending;
+                return AdminHttpOperation.GetRegistrationMode;
             }
 
             if (StringComparer.Ordinal.Equals(method, "POST")
-                && TryExtractBetween(
+                && StringComparer.Ordinal.Equals(
                     path,
-                    PendingPrefix,
-                    ApproveSuffix,
-                    out routeValue))
+                    OpenRegistrationModePath))
             {
-                return AdminHttpOperation.ApprovePending;
+                return AdminHttpOperation.OpenRegistrationMode;
             }
 
             if (StringComparer.Ordinal.Equals(method, "POST")
-                && TryExtractBetween(
+                && StringComparer.Ordinal.Equals(
                     path,
-                    PendingPrefix,
-                    RejectSuffix,
-                    out routeValue))
+                    CloseRegistrationModePath))
             {
-                return AdminHttpOperation.RejectPending;
+                return AdminHttpOperation.CloseRegistrationMode;
             }
 
             if (StringComparer.Ordinal.Equals(method, "DELETE")

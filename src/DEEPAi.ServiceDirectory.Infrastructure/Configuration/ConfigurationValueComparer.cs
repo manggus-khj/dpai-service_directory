@@ -21,6 +21,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Configuration
             return StringComparer.Ordinal.Equals(
                     left.ListenAddress,
                     right.ListenAddress)
+                && left.DirectoryEndpointIdentity.Equals(
+                    right.DirectoryEndpointIdentity)
                 && left.InstanceId == right.InstanceId
                 && left.LastPeerKeyEpoch == right.LastPeerKeyEpoch
                 && left.LogRetentionDays == right.LogRetentionDays
@@ -29,7 +31,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Configuration
                     right.Synchronization);
         }
 
-        internal static bool EqualsExceptListenAddress(
+        internal static bool EqualsExceptDirectoryIdentity(
             ServiceDirectoryConfiguration left,
             ServiceDirectoryConfiguration right)
         {

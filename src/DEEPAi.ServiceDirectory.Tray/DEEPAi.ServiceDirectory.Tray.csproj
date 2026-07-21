@@ -98,6 +98,7 @@
     <Compile Include="ViewModels\StatusMonitorViewModel.Actions.cs" />
     <Compile Include="ViewModels\StatusMonitorViewModel.Certificates.cs" />
     <Compile Include="ViewModels\StatusMonitorViewModel.Polling.cs" />
+    <Compile Include="ViewModels\StatusMonitorViewModel.RegistrationMode.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.manifest" />

@@ -10,7 +10,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
         Handshake = 1,
         Exchange = 2,
         Release = 3,
-        Revoke = 4
+        Revoke = 4,
+        PkiState = 5
     }
 
     internal sealed class PeerRateLimitDecision
@@ -176,6 +177,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                     case PeerInboundOperation.Handshake:
                         return TryAcquireHandshake(now);
                     case PeerInboundOperation.Exchange:
+                    case PeerInboundOperation.PkiState:
                         return TryAcquireExchange(now);
                     case PeerInboundOperation.Release:
                     case PeerInboundOperation.Revoke:

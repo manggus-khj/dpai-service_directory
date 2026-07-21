@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text;
+using DEEPAi.ServiceDirectory.Domain;
 using DEEPAi.ServiceDirectory.Infrastructure.Configuration;
 using DEEPAi.ServiceDirectory.Infrastructure.Persistence;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -8,7 +9,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
 {
     [TestClass]
-    public sealed class ConfigurationPersistenceTests
+    public sealed partial class ConfigurationPersistenceTests
     {
         private static readonly Encoding StrictUtf8 =
             new UTF8Encoding(false, true);
@@ -49,6 +50,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             Assert.ThrowsExactly<ArgumentOutOfRangeException>(
                 () => new ServiceDirectoryConfiguration(
                     "10.20.30.40",
+                    CreateDirectoryIdentity(),
                     InstanceId,
                     0UL,
                     retentionDays,
@@ -75,7 +77,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         {
             SynchronizationConfiguration synchronization =
                 SynchronizationConfiguration.Enabled(
-                    "http://10.20.30.41:21000",
+                    "https://10.20.30.41:21000",
                     PeerInstanceId,
                     7UL,
                     LastSynchronizationStatus.NotRun(),
@@ -84,6 +86,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             Assert.ThrowsExactly<ArgumentException>(
                 () => new ServiceDirectoryConfiguration(
                     "10.20.30.40",
+                    CreateDirectoryIdentity(),
                     InstanceId,
                     8UL,
                     30,
@@ -162,6 +165,8 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n"
                 + "<Config SchemaVersion=\"1\">\r\n"
                 + "  <ListenAddress>10.20.30.40</ListenAddress>\r\n"
+                + "  <DirectoryHostName>management.internal</DirectoryHostName>\r\n"
+                + "  <DirectoryIpv4Address>10.20.30.40</DirectoryIpv4Address>\r\n"
                 + "  <InstanceId>11111111-1111-1111-1111-111111111111</InstanceId>\r\n"
                 + "  <LastPeerKeyEpoch>0</LastPeerKeyEpoch>\r\n"
                 + "  <LogRetentionDays>30</LogRetentionDays>\r\n"
@@ -171,7 +176,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 + "    <LastPeerNotificationOperation>NONE</LastPeerNotificationOperation>\r\n"
                 + "    <LastPeerNotificationResult>NOT_RUN</LastPeerNotificationResult>\r\n"
                 + "  </Sync>\r\n"
-                + "</Config>";
+                + "</Config>\r\n";
             Assert.AreEqual(expected, xml);
         }
 
@@ -191,7 +196,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 DurableSynchronizationState.Enabled,
                 actual.Synchronization.State);
             Assert.AreEqual(
-                "http://10.20.30.41:21000",
+                "https://10.20.30.41:21000",
                 actual.Synchronization.PeerEndpoint);
             Assert.AreEqual(-2L, actual.Synchronization
                 .LastSynchronization.ClockSkewSeconds.Value);
@@ -207,7 +212,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             var notification = PeerNotificationStatus.NotRun();
             SynchronizationConfiguration synchronization =
                 SynchronizationConfiguration.PairedPendingCommit(
-                    "http://[2001:db8::2]:21000",
+                    "https://10.20.30.41:21000",
                     PeerInstanceId,
                     9UL,
                     PairingId,
@@ -217,7 +222,8 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     lastSync,
                     notification);
             var expected = new ServiceDirectoryConfiguration(
-                "2001:db8::1",
+                "10.20.30.40",
+                CreateDirectoryIdentity(),
                 InstanceId,
                 9UL,
                 30,
@@ -279,11 +285,12 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             var codec = new StateXmlCodec();
             var pending = new ServiceDirectoryConfiguration(
                 "10.20.30.40",
+                CreateDirectoryIdentity(),
                 InstanceId,
                 9UL,
                 30,
                 SynchronizationConfiguration.PairedPendingCommit(
-                    "http://10.20.30.41:21000",
+                    "https://10.20.30.41:21000",
                     PeerInstanceId,
                     9UL,
                     PairingId,
@@ -302,7 +309,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 codec.SerializeConfiguration(CreateEnabledConfiguration()));
             byte[] missingPeerEndpoint = StrictUtf8.GetBytes(
                 enabledXml.Replace(
-                    "    <PeerEndpoint>http://10.20.30.41:21000</PeerEndpoint>\r\n",
+                    "    <PeerEndpoint>https://10.20.30.41:21000</PeerEndpoint>\r\n",
                     string.Empty));
 
             Assert.ThrowsExactly<InvalidDataException>(
@@ -517,8 +524,9 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     loaded.Configuration,
                     retentionChanged);
                 ConfigurationCommitResult repaired =
-                    store.CommitListenAddressForRepair(
+                    store.CommitDirectoryIdentityForRepair(
                         retentionChanged,
+                        "management-repaired.internal",
                         "10.20.30.42");
                 ConfigurationLoadResult reloaded =
                     new XmlServiceDirectoryConfigurationStore(
@@ -531,29 +539,10 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 Assert.AreEqual(
                     "10.20.30.42",
                     reloaded.Configuration.ListenAddress);
+                Assert.AreEqual(
+                    "management-repaired.internal",
+                    reloaded.Configuration.DirectoryHostName);
                 Assert.AreEqual(InstanceId, reloaded.Configuration.InstanceId);
-            }
-            finally
-            {
-                DeleteStateDirectory(stateDirectory);
-            }
-        }
-
-        [TestMethod]
-        public void NormalCommitRejectsListenAddressChange()
-        {
-            string stateDirectory = CreateInitializedStateDirectory();
-            try
-            {
-                var store = new XmlServiceDirectoryConfigurationStore(
-                    stateDirectory);
-                ConfigurationLoadResult loaded = store.Load();
-                ServiceDirectoryConfiguration next =
-                    loaded.Configuration.WithListenAddressForRepair(
-                        "10.20.30.42");
-
-                Assert.ThrowsExactly<ArgumentException>(
-                    () => store.Commit(loaded.Configuration, next));
             }
             finally
             {
@@ -572,6 +561,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 ConfigurationLoadResult loaded = store.Load();
                 var next = new ServiceDirectoryConfiguration(
                     loaded.Configuration.ListenAddress,
+                    loaded.Configuration.DirectoryEndpointIdentity,
                     new Guid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
                     loaded.Configuration.LastPeerKeyEpoch,
                     loaded.Configuration.LogRetentionDays,
@@ -866,7 +856,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             CreateInitialConfiguration()
         {
             return ServiceDirectoryConfiguration.CreateInitial(
-                "10.20.30.40",
+                CreateDirectoryIdentity(),
                 InstanceId);
         }
 
@@ -875,6 +865,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         {
             return new ServiceDirectoryConfiguration(
                 "10.20.30.40",
+                CreateDirectoryIdentity(),
                 InstanceId,
                 epoch,
                 30,
@@ -896,17 +887,32 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 Utc(1));
             SynchronizationConfiguration synchronization =
                 SynchronizationConfiguration.Enabled(
-                    "http://10.20.30.41:21000",
+                    "https://10.20.30.41:21000",
                     PeerInstanceId,
                     7UL,
                     lastSynchronization,
                     notification);
             return new ServiceDirectoryConfiguration(
                 "10.20.30.40",
+                CreateDirectoryIdentity(),
                 InstanceId,
                 7UL,
                 30,
                 synchronization);
+        }
+
+        private static DirectoryEndpointIdentity CreateDirectoryIdentity(
+            string hostName = "management.internal",
+            string ipv4Address = "10.20.30.40")
+        {
+            DirectoryEndpointIdentity identity;
+            EndpointIdentityValidationError error;
+            Assert.IsTrue(DirectoryEndpointIdentity.TryCreate(
+                hostName,
+                ipv4Address,
+                out identity,
+                out error));
+            return identity;
         }
 
         private static DateTime Utc(int hour)

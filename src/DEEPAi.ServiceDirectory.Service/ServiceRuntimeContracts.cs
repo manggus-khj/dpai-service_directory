@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using DEEPAi.ServiceDirectory.Application.Registration;
 using DEEPAi.ServiceDirectory.Application.State;
 using DEEPAi.ServiceDirectory.Infrastructure.Configuration;
 using DEEPAi.ServiceDirectory.Infrastructure.Http;
@@ -20,7 +21,8 @@ namespace DEEPAi.ServiceDirectory.Service
             SystemFileLogger systemFileLogger,
             SecurityAuditEventLogger securityAuditLogger,
             ICertificateAuthorityAdministration
-                certificateAuthorityAdministration)
+                certificateAuthorityAdministration,
+            RegistrationModeOwner registrationModeOwner)
         {
             StateCoordinator = stateCoordinator
                 ?? throw new ArgumentNullException(
@@ -40,6 +42,9 @@ namespace DEEPAi.ServiceDirectory.Service
                 certificateAuthorityAdministration
                 ?? throw new ArgumentNullException(
                     nameof(certificateAuthorityAdministration));
+            RegistrationModeOwner = registrationModeOwner
+                ?? throw new ArgumentNullException(
+                    nameof(registrationModeOwner));
         }
 
         public StateMutationCoordinator StateCoordinator { get; }
@@ -61,6 +66,8 @@ namespace DEEPAi.ServiceDirectory.Service
 
         public ICertificateAuthorityAdministration
             CertificateAuthorityAdministration { get; }
+
+        public RegistrationModeOwner RegistrationModeOwner { get; }
     }
 
     // The composition root owns persistence and listener primitives. The
@@ -103,11 +110,20 @@ namespace DEEPAi.ServiceDirectory.Service
                 throw new ArgumentNullException(nameof(context));
             }
 
+            var peerPki = context.CertificateAuthorityAdministration
+                as ICertificateAuthorityPeerSynchronization;
+            if (peerPki == null)
+            {
+                throw new InvalidOperationException(
+                    "The runtime CA administration must provide Peer PKI synchronization.");
+            }
+
             var controller = new PeerSynchronizationController(
                 context.RuntimeConfigurationState,
                 context.StateCoordinator,
                 context.SystemFileLogger,
-                context.SecurityAuditLogger);
+                context.SecurityAuditLogger,
+                peerPki);
             AdminApplicationHttpRequestHandler handler = null;
             try
             {
@@ -116,7 +132,8 @@ namespace DEEPAi.ServiceDirectory.Service
                     context.ConfigurationState,
                     context.SystemFileLogger,
                     controller,
-                    context.CertificateAuthorityAdministration);
+                    context.CertificateAuthorityAdministration,
+                    context.RegistrationModeOwner);
                 lock (_gate)
                 {
                     _pendingControllers.Add(context, controller);

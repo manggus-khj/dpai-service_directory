@@ -4,6 +4,7 @@ using System.IO;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using DEEPAi.ServiceDirectory.Domain;
 using DEEPAi.ServiceDirectory.Infrastructure.Networking;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.Http
@@ -45,11 +46,13 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
 
         public ServiceDirectoryHttpListenerHost(
             ServiceDirectoryListenerAddress configuredAddress,
+            DirectoryEndpointIdentity directoryEndpointIdentity,
             ExternalHttpAdapter externalAdapter,
             AdminHttpAdapter adminAdapter,
             WatchdogHealthHttpAdapter watchdogAdapter)
             : this(
                 configuredAddress,
+                directoryEndpointIdentity,
                 externalAdapter,
                 adminAdapter,
                 watchdogAdapter,
@@ -59,6 +62,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
 
         public ServiceDirectoryHttpListenerHost(
             ServiceDirectoryListenerAddress configuredAddress,
+            DirectoryEndpointIdentity directoryEndpointIdentity,
             ExternalHttpAdapter externalAdapter,
             AdminHttpAdapter adminAdapter,
             WatchdogHealthHttpAdapter watchdogAdapter,
@@ -66,6 +70,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             : this(
                 new SystemHttpListenerServer(),
                 configuredAddress,
+                directoryEndpointIdentity,
                 GetExternalProcessor(externalAdapter),
                 GetAdminProcessor(adminAdapter),
                 GetWatchdogProcessor(watchdogAdapter),
@@ -79,6 +84,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         internal ServiceDirectoryHttpListenerHost(
             IHttpListenerServer listener,
             ServiceDirectoryListenerAddress configuredAddress,
+            DirectoryEndpointIdentity directoryEndpointIdentity,
             Func<ExternalHttpRequestData,
                 ExternalHttpResponseData> externalProcessor,
             Func<AdminHttpRequestData,
@@ -89,6 +95,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             : this(
                 listener,
                 configuredAddress,
+                directoryEndpointIdentity,
                 externalProcessor,
                 adminProcessor,
                 watchdogProcessor,
@@ -100,6 +107,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         internal ServiceDirectoryHttpListenerHost(
             IHttpListenerServer listener,
             ServiceDirectoryListenerAddress configuredAddress,
+            DirectoryEndpointIdentity directoryEndpointIdentity,
             Func<ExternalHttpRequestData,
                 ExternalHttpResponseData> externalProcessor,
             Func<AdminHttpRequestData,
@@ -115,6 +123,21 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             _configuredAddress = configuredAddress
                 ?? throw new ArgumentNullException(
                     nameof(configuredAddress));
+            if (directoryEndpointIdentity == null)
+            {
+                throw new ArgumentNullException(
+                    nameof(directoryEndpointIdentity));
+            }
+
+            if (!StringComparer.Ordinal.Equals(
+                    _configuredAddress.CanonicalAddress,
+                    directoryEndpointIdentity.DirectoryIpv4Address))
+            {
+                throw new ArgumentException(
+                    "The Directory identity IPv4 address must match the configured listener address.",
+                    nameof(directoryEndpointIdentity));
+            }
+
             _externalProcessor = externalProcessor
                 ?? throw new ArgumentNullException(
                     nameof(externalProcessor));
@@ -140,7 +163,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 _listener.Configure(
                     new[]
                     {
-                        _configuredAddress.HttpPrefix,
+                        _configuredAddress.HttpsPrefix,
+                        "https://"
+                            + directoryEndpointIdentity.DirectoryHostName
+                            + ":21000/",
                         LoopbackPrefix
                     },
                     HttpListenerRequestRouting.SelectAuthentication,

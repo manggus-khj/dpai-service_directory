@@ -10,6 +10,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         private ExternalHttpResponseData(
             int statusCode,
             byte[] body,
+            string contentType,
             int? retryAfterSeconds)
         {
             if (statusCode < 100 || statusCode > 599)
@@ -32,6 +33,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
 
             StatusCode = statusCode;
             _body = (byte[])body.Clone();
+            if ((_body.Length == 0) != (contentType == null))
+            {
+                throw new ArgumentException(
+                    "Content-Type must exist exactly when the response has a body.",
+                    nameof(contentType));
+            }
+
+            ContentType = contentType;
             RetryAfterSeconds = retryAfterSeconds;
         }
 
@@ -41,9 +50,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
 
         public int ContentLength => _body.Length;
 
-        public string ContentType => HasBody
-            ? ExternalApiContract.XmlContentType
-            : null;
+        public string ContentType { get; }
 
         public int? RetryAfterSeconds { get; }
 
@@ -63,6 +70,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             return new ExternalHttpResponseData(
                 response.StatusCode,
                 response.GetBody(),
+                response.ContentType,
                 response.RetryAfterSeconds);
         }
 
@@ -77,6 +85,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             return new ExternalHttpResponseData(
                 statusCode,
                 body,
+                ExternalApiContract.XmlContentType,
                 retryAfterSeconds);
         }
 
@@ -95,6 +104,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             return new ExternalHttpResponseData(
                 statusCode,
                 new byte[0],
+                null,
                 null);
         }
     }

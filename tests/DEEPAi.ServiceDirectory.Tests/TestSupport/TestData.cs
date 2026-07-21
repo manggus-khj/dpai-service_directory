@@ -32,15 +32,30 @@ namespace DEEPAi.ServiceDirectory.Tests.TestSupport
         internal static ServiceDefinition Definition(
             string name = "Directory Service",
             string productCode = "AB12",
-            string serverAddress = "10.20.30.40",
+            string serviceHostName = "service.internal",
+            string serviceIpv4Address = "10.20.30.40",
             int port = 21000)
         {
+            ServiceEndpointIdentity identity;
+            EndpointIdentityValidationError identityError;
+            if (!ServiceEndpointIdentity.TryCreate(
+                    serviceHostName,
+                    serviceIpv4Address,
+                    out identity,
+                    out identityError))
+            {
+                throw new InvalidOperationException(
+                    "The test service identity is invalid: "
+                    + identityError
+                    + ".");
+            }
+
             ServiceDefinition definition;
             ServiceDefinitionValidationError error;
             if (!ServiceDefinition.TryCreate(
                 name,
                 productCode,
-                serverAddress,
+                identity,
                 port,
                 out definition,
                 out error))
@@ -50,6 +65,27 @@ namespace DEEPAi.ServiceDirectory.Tests.TestSupport
             }
 
             return definition;
+        }
+
+        internal static DirectoryEndpointIdentity DirectoryIdentity(
+            string hostName = "management.internal",
+            string ipv4Address = "10.20.30.40")
+        {
+            DirectoryEndpointIdentity identity;
+            EndpointIdentityValidationError error;
+            if (!DirectoryEndpointIdentity.TryCreate(
+                    hostName,
+                    ipv4Address,
+                    out identity,
+                    out error))
+            {
+                throw new InvalidOperationException(
+                    "The test Directory identity is invalid: "
+                    + error
+                    + ".");
+            }
+
+            return identity;
         }
 
         internal static ServiceRecord ActiveRecord(

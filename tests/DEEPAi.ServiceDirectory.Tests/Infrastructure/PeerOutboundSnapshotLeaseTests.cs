@@ -123,13 +123,20 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         private static ServiceRecord CreateRecord(int index)
         {
             string productCode = ToProductCode(index);
+            ServiceEndpointIdentity identity;
+            EndpointIdentityValidationError identityError;
+            Assert.IsTrue(ServiceEndpointIdentity.TryCreate(
+                "service.internal",
+                "10.0.0.1",
+                out identity,
+                out identityError));
             ServiceDefinition definition;
             ServiceDefinitionValidationError error;
             Assert.IsTrue(
                 ServiceDefinition.TryCreate(
                     "Service " + productCode,
                     productCode,
-                    "10.0.0.1",
+                    identity,
                     21001,
                     out definition,
                     out error));

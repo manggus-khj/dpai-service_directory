@@ -16,6 +16,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
         internal const int MaximumDocumentBytes = 16 * 1024 * 1024;
 
         private const string SchemaVersion = "1";
+        private const string DocumentSizeLimitMessage =
+            "PKI XML exceeds its size limit.";
         private static readonly UTF8Encoding StrictUtf8 =
             new UTF8Encoding(false, true);
 
@@ -131,9 +133,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             byte[] caSpkiSha256 = ParseSha256(
                 elements[4].Value,
                 "CaSpkiSha256");
+            CertificateAuthorityState state;
             try
             {
-                return new CertificateAuthorityState(
+                state = new CertificateAuthorityState(
                     siteId,
                     issuerInstanceId,
                     role,
@@ -157,6 +160,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             {
                 Array.Clear(caSpkiSha256, 0, caSpkiSha256.Length);
             }
+
+            RequireCanonicalDocument(
+                contents,
+                SerializeState(state),
+                "pki/state.xml");
+            return state;
         }
 
         internal byte[] SerializeLedger(CertificateLedgerSnapshot snapshot)
@@ -193,11 +202,18 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                         "IssuanceKind",
                         FormatIssuanceKind(entry.IssuanceKind)),
                     new XElement(
+                        "Name",
+                        entry.ServiceDefinition.Name),
+                    new XElement(
                         "ServiceHostName",
                         entry.ServiceIdentity.ServiceHostName),
                     new XElement(
                         "ServiceIpv4Address",
                         entry.ServiceIdentity.ServiceIpv4Address),
+                    new XElement(
+                        "Port",
+                        entry.ServiceDefinition.Port.ToString(
+                            CultureInfo.InvariantCulture)),
                     new XElement(
                         "CsrSha256",
                         Convert.ToBase64String(entry.GetCsrSha256())),
@@ -210,9 +226,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                         Convert.ToBase64String(
                             entry.GetSubjectPublicKeyInfoSha256())),
                     new XElement(
-                        "LeafCertificateSha256",
+                        "LeafCertificate",
                         Convert.ToBase64String(
-                            entry.GetLeafCertificateSha256())),
+                            entry.GetLeafCertificate())),
                     new XElement("IssuedUtc", FormatUtc(entry.IssuedUtc)),
                     new XElement(
                         "NotBeforeUtc",
@@ -242,6 +258,31 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             }
 
             return Serialize(root);
+        }
+
+        internal bool IsLedgerWithinDocumentLimit(
+            CertificateLedgerSnapshot snapshot)
+        {
+            byte[] contents = null;
+            try
+            {
+                contents = SerializeLedger(snapshot);
+                return true;
+            }
+            catch (InvalidDataException exception)
+                when (StringComparer.Ordinal.Equals(
+                    exception.Message,
+                    DocumentSizeLimitMessage))
+            {
+                return false;
+            }
+            finally
+            {
+                if (contents != null)
+                {
+                    Array.Clear(contents, 0, contents.Length);
+                }
+            }
         }
 
         internal CertificateLedgerSnapshot DeserializeLedger(byte[] contents)
@@ -281,9 +322,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 entries.Add(ParseLedgerEntry(element));
             }
 
+            CertificateLedgerSnapshot snapshot;
             try
             {
-                return new CertificateLedgerSnapshot(
+                snapshot = new CertificateLedgerSnapshot(
                     entries,
                     pkiRevision,
                     crlNumber);
@@ -294,13 +336,19 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     "Certificate ledger invariants are invalid.",
                     exception);
             }
+
+            RequireCanonicalDocument(
+                contents,
+                SerializeLedger(snapshot),
+                "pki/ledger.xml");
+            return snapshot;
         }
 
         private static CertificateLedgerEntry ParseLedgerEntry(
             XElement element)
         {
             XElement[] values = element.Elements().ToArray();
-            if (values.Length < 14 || values.Length > 17)
+            if (values.Length < 16 || values.Length > 19)
             {
                 throw Invalid("Certificate ledger entry shape is invalid.");
             }
@@ -311,12 +359,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 "ProductCode",
                 "IssuanceRequestId",
                 "IssuanceKind",
+                "Name",
                 "ServiceHostName",
                 "ServiceIpv4Address",
+                "Port",
                 "CsrSha256",
                 "RequestPayloadSha256",
                 "SubjectPublicKeyInfoSha256",
-                "LeafCertificateSha256",
+                "LeafCertificate",
                 "IssuedUtc",
                 "NotBeforeUtc",
                 "NotAfterUtc",
@@ -335,21 +385,40 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     values[1].Value,
                     productCode.Value)
                 || !ServiceEndpointIdentity.TryCreate(
-                    values[4].Value,
                     values[5].Value,
+                    values[6].Value,
                     out identity,
                     out identityError)
                 || !StringComparer.Ordinal.Equals(
-                    values[4].Value,
+                    values[5].Value,
                     identity.ServiceHostName)
                 || !StringComparer.Ordinal.Equals(
-                    values[5].Value,
+                    values[6].Value,
                     identity.ServiceIpv4Address))
             {
                 throw Invalid("Certificate ledger identity is invalid.");
             }
 
-            int index = 14;
+            ServiceDefinition definition;
+            ServiceDefinitionValidationError definitionError;
+            if (!ServiceDefinition.TryCreate(
+                    values[4].Value,
+                    productCode.Value,
+                    identity,
+                    ParsePort(values[7].Value),
+                    out definition,
+                    out definitionError)
+                || !StringComparer.Ordinal.Equals(
+                    values[4].Value,
+                    definition.Name))
+            {
+                throw Invalid(
+                    "Certificate ledger service definition is invalid: "
+                    + definitionError
+                    + ".");
+            }
+
+            int index = 16;
             DateTime? scheduled = null;
             DateTime? revoked = null;
             CertificateRevocationReason? reason = null;
@@ -390,27 +459,26 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
 
             byte[][] hashes =
             {
-                ParseSha256(values[6].Value, "CsrSha256"),
-                ParseSha256(values[7].Value, "RequestPayloadSha256"),
-                ParseSha256(values[8].Value, "SubjectPublicKeyInfoSha256"),
-                ParseSha256(values[9].Value, "LeafCertificateSha256")
+                ParseSha256(values[8].Value, "CsrSha256"),
+                ParseSha256(values[9].Value, "RequestPayloadSha256"),
+                ParseSha256(values[10].Value, "SubjectPublicKeyInfoSha256")
             };
+            byte[] leafCertificate = ParseLeafCertificate(values[11].Value);
             try
             {
                 return CertificateLedgerEntry.Restore(
                     serialNumber,
-                    productCode,
+                    definition,
                     ParseGuid(values[2].Value, "IssuanceRequestId"),
                     ParseIssuanceKind(values[3].Value),
-                    identity,
                     hashes[0],
                     hashes[1],
                     hashes[2],
-                    hashes[3],
-                    ParseUtc(values[10].Value, "IssuedUtc"),
-                    ParseUtc(values[11].Value, "NotBeforeUtc"),
-                    ParseUtc(values[12].Value, "NotAfterUtc"),
-                    ParseStatus(values[13].Value),
+                    leafCertificate,
+                    ParseUtc(values[12].Value, "IssuedUtc"),
+                    ParseUtc(values[13].Value, "NotBeforeUtc"),
+                    ParseUtc(values[14].Value, "NotAfterUtc"),
+                    ParseStatus(values[15].Value),
                     scheduled,
                     revoked,
                     reason);
@@ -427,6 +495,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 {
                     Array.Clear(hash, 0, hash.Length);
                 }
+
+                Array.Clear(
+                    leafCertificate,
+                    0,
+                    leafCertificate.Length);
             }
         }
 
@@ -482,6 +555,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                         throw Invalid("PKI XML root is invalid.");
                     }
 
+                    if (document.Root.DescendantsAndSelf().Any(
+                        element => element.Ancestors().Count() + 1 > 16))
+                    {
+                        throw Invalid("PKI XML exceeds the maximum depth.");
+                    }
+
                     if (document.Nodes().Any(node => !(node is XElement))
                         || document.DescendantNodes().Any(node =>
                             node is XComment
@@ -514,7 +593,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 Encoding = StrictUtf8,
                 Indent = true,
                 IndentChars = "  ",
-                NewLineChars = "\n",
+                NewLineChars = "\r\n",
                 NewLineHandling = NewLineHandling.None,
                 OmitXmlDeclaration = false,
                 CloseOutput = false
@@ -528,13 +607,31 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                         root).Save(writer);
                 }
 
-                if (stream.Length > MaximumDocumentBytes)
+                byte[] contents = EnsureFinalCrLf(stream.ToArray());
+                if (contents.Length > MaximumDocumentBytes)
                 {
-                    throw Invalid("PKI XML exceeds its size limit.");
+                    Array.Clear(contents, 0, contents.Length);
+                    throw Invalid(DocumentSizeLimitMessage);
                 }
 
-                return stream.ToArray();
+                return contents;
             }
+        }
+
+        private static byte[] EnsureFinalCrLf(byte[] contents)
+        {
+            if (contents.Length >= 2
+                && contents[contents.Length - 2] == (byte)'\r'
+                && contents[contents.Length - 1] == (byte)'\n')
+            {
+                return contents;
+            }
+
+            var canonical = new byte[contents.Length + 2];
+            Buffer.BlockCopy(contents, 0, canonical, 0, contents.Length);
+            canonical[canonical.Length - 2] = (byte)'\r';
+            canonical[canonical.Length - 1] = (byte)'\n';
+            return canonical;
         }
 
         private static void RequireRootAttribute(XElement root)
@@ -548,6 +645,28 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     SchemaVersion))
             {
                 throw Invalid("PKI state schema version is invalid.");
+            }
+        }
+
+        private static void RequireCanonicalDocument(
+            byte[] supplied,
+            byte[] canonical,
+            string fileName)
+        {
+            if (supplied.Length != canonical.Length)
+            {
+                throw Invalid(
+                    fileName + " does not use the canonical v1 representation.");
+            }
+
+            for (int index = 0; index < supplied.Length; index++)
+            {
+                if (supplied[index] != canonical[index])
+                {
+                    throw Invalid(
+                        fileName
+                        + " does not use the canonical v1 representation.");
+                }
             }
         }
 
@@ -683,6 +802,52 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             {
                 Array.Clear(parsed, 0, parsed.Length);
                 throw Invalid(fieldName + " is invalid.");
+            }
+
+            return parsed;
+        }
+
+        private static byte[] ParseLeafCertificate(string value)
+        {
+            byte[] parsed;
+            try
+            {
+                parsed = Convert.FromBase64String(value);
+            }
+            catch (FormatException exception)
+            {
+                throw Invalid("LeafCertificate is invalid.", exception);
+            }
+
+            if (parsed.Length == 0
+                || parsed.Length
+                    > CertificateLedgerEntry.MaximumLeafCertificateBytes
+                || !StringComparer.Ordinal.Equals(
+                    value,
+                    Convert.ToBase64String(parsed)))
+            {
+                Array.Clear(parsed, 0, parsed.Length);
+                throw Invalid("LeafCertificate is invalid.");
+            }
+
+            return parsed;
+        }
+
+        private static int ParsePort(string value)
+        {
+            int parsed;
+            if (!int.TryParse(
+                    value,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out parsed)
+                || parsed < 1
+                || parsed > ushort.MaxValue
+                || !StringComparer.Ordinal.Equals(
+                    value,
+                    parsed.ToString(CultureInfo.InvariantCulture)))
+            {
+                throw Invalid("Port is invalid.");
             }
 
             return parsed;

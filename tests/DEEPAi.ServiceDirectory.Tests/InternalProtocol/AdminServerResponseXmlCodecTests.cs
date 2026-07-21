@@ -20,6 +20,10 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 typeof(AdminServerResponseXmlCodec).Assembly
                     .GetManifestResourceNames(),
                 "DEEPAi.ServiceDirectory.InternalProtocol.Admin.admin.xsd");
+            CollectionAssert.DoesNotContain(
+                typeof(AdminServerResponseXmlCodec).Assembly
+                    .GetManifestResourceNames(),
+                "DEEPAi.ServiceDirectory.InternalProtocol.Admin.legacy-admin.xsd");
         }
 
         [TestMethod]
@@ -88,7 +92,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 CreateServiceItem(
                     "Old App",
                     "WXYZ",
-                    "10.0.0.7",
+                    "old.service.internal",
                     Utc(3),
                     true,
                     deletedUtc)
@@ -110,6 +114,12 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
             Assert.AreEqual(4, parsed.Payload.TotalCount);
             Assert.AreEqual("opaque-cursor", parsed.Payload.NextCursor);
             Assert.AreEqual("ABCD", parsed.Payload.Items[0].ProductCode);
+            Assert.AreEqual(
+                "service.internal",
+                parsed.Payload.Items[0].ServiceHostName);
+            Assert.AreEqual(
+                "10.0.0.5",
+                parsed.Payload.Items[0].ServiceIpv4Address);
             Assert.IsFalse(parsed.Payload.Items[0].Deleted);
             Assert.IsNull(parsed.Payload.Items[0].DeletedUtc);
             Assert.AreEqual("WXYZ", parsed.Payload.Items[1].ProductCode);
@@ -128,6 +138,9 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                     < xml.IndexOf("<NextCursor>", StringComparison.Ordinal));
             Assert.IsFalse(xml.Contains("LogicalVersion"));
             Assert.IsFalse(xml.Contains("OriginInstanceId"));
+            Assert.IsFalse(xml.Contains("ServerAddress"));
+            Assert.IsTrue(xml.Contains("ServiceHostName"));
+            Assert.IsTrue(xml.Contains("ServiceIpv4Address"));
             Assert.IsFalse(xml.Contains("<Extensions"));
             Assert.IsTrue(body.Length <= AdminApiContract.MaximumBodyBytes);
         }
@@ -165,6 +178,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                     string.Concat(Repeat("\U0001F600", 129)),
                     "ABCD",
                     "service.internal",
+                    "10.0.0.5",
                     21000));
         }
 
@@ -181,17 +195,6 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 .Payload;
             Assert.AreEqual(0, services.Items.Count);
             Assert.AreEqual(0, services.TotalCount);
-
-            AdminPage<AdminPendingItem> pending = AdminXmlCodec
-                .ParsePendingResponse(
-                    AdminServerResponseXmlCodec.SerializePendingResponse(
-                        new AdminServerPendingResponse(
-                            new AdminServerPendingItem[0],
-                            0,
-                            null)))
-                .Payload;
-            Assert.AreEqual(0, pending.Items.Count);
-            Assert.AreEqual(0, pending.TotalCount);
         }
 
         [TestMethod]
@@ -202,24 +205,35 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                     " App ",
                     "ABCD",
                     "service.internal",
+                    "10.0.0.5",
                     21000));
             Assert.ThrowsExactly<ArgumentException>(
                 () => new AdminServerServiceDefinition(
                     "App",
                     "ABCD",
                     "999.1.1.1",
+                    "10.0.0.5",
                     21000));
             Assert.ThrowsExactly<ArgumentException>(
                 () => new AdminServerServiceDefinition(
                     "App",
                     "abcd",
                     "service.internal",
+                    "10.0.0.5",
                     21000));
             Assert.ThrowsExactly<ArgumentException>(
                 () => new AdminServerServiceDefinition(
                     "App",
                     "ABCD",
                     " service.internal ",
+                    "10.0.0.5",
+                    21000));
+            Assert.ThrowsExactly<ArgumentException>(
+                () => new AdminServerServiceDefinition(
+                    "App",
+                    "ABCD",
+                    "service.internal",
+                    "010.0.0.5",
                     21000));
             Assert.ThrowsExactly<ArgumentException>(
                 () => CreateServiceItem(
@@ -305,121 +319,6 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
         }
 
         [TestMethod]
-        public void PendingResponseRoundTripsNewAndModifyInRequiredOrder()
-        {
-            DateTime requestedUtc = Utc(1);
-            var first = new AdminServerPendingItem(
-                new Guid("11111111-1111-1111-1111-111111111111"),
-                AdminPendingRequestType.New,
-                requestedUtc,
-                "10.0.0.5",
-                CreateDefinition("New App", "ABCD", "10.0.0.9"),
-                null);
-            var second = new AdminServerPendingItem(
-                new Guid("22222222-2222-2222-2222-222222222222"),
-                AdminPendingRequestType.Modify,
-                requestedUtc,
-                "2001:db8::1",
-                CreateDefinition("Changed App", "WXYZ", "10.0.0.8"),
-                CreateDefinition("Current App", "WXYZ", "10.0.0.7"));
-            var response = new AdminServerPendingResponse(
-                new[] { first, second },
-                2,
-                null);
-
-            byte[] body = AdminServerResponseXmlCodec
-                .SerializePendingResponse(response);
-            string xml = Decode(body);
-            AdminResponse<AdminPage<AdminPendingItem>> parsed =
-                AdminXmlCodec.ParsePendingResponse(body);
-
-            Assert.IsTrue(parsed.IsSuccess);
-            Assert.AreEqual(2, parsed.Payload.Items.Count);
-            Assert.AreEqual(AdminPendingRequestType.New,
-                parsed.Payload.Items[0].Type);
-            Assert.IsNull(parsed.Payload.Items[0].Current);
-            Assert.AreEqual(AdminPendingRequestType.Modify,
-                parsed.Payload.Items[1].Type);
-            Assert.IsNotNull(parsed.Payload.Items[1].Current);
-            StringAssert.Contains(
-                xml,
-                "<Id>11111111-1111-1111-1111-111111111111</Id>");
-            Assert.IsTrue(
-                xml.IndexOf("<Requested>", StringComparison.Ordinal)
-                    < xml.IndexOf("<Current>", StringComparison.Ordinal));
-            Assert.IsFalse(xml.Contains("<NextCursor>"));
-            AssertExtensionsAbsent(body);
-        }
-
-        [TestMethod]
-        public void PendingModelsRejectTypeIpProductAndOrderingViolations()
-        {
-            AdminServerServiceDefinition abcd = CreateDefinition(
-                "App",
-                "ABCD",
-                "service.internal");
-            AdminServerServiceDefinition wxyz = CreateDefinition(
-                "Other",
-                "WXYZ",
-                "service.internal");
-            Guid id = new Guid(
-                "11111111-1111-1111-1111-111111111111");
-
-            Assert.ThrowsExactly<ArgumentException>(
-                () => new AdminServerPendingItem(
-                    id,
-                    AdminPendingRequestType.New,
-                    Utc(0),
-                    "10.0.0.5",
-                    abcd,
-                    abcd));
-            Assert.ThrowsExactly<ArgumentException>(
-                () => new AdminServerPendingItem(
-                    id,
-                    AdminPendingRequestType.Modify,
-                    Utc(0),
-                    "10.0.0.5",
-                    abcd,
-                    null));
-            Assert.ThrowsExactly<ArgumentException>(
-                () => new AdminServerPendingItem(
-                    id,
-                    AdminPendingRequestType.Modify,
-                    Utc(0),
-                    "010.0.0.5",
-                    abcd,
-                    abcd));
-            Assert.ThrowsExactly<ArgumentException>(
-                () => new AdminServerPendingItem(
-                    id,
-                    AdminPendingRequestType.Modify,
-                    Utc(0),
-                    "10.0.0.5",
-                    abcd,
-                    wxyz));
-
-            var later = new AdminServerPendingItem(
-                id,
-                AdminPendingRequestType.New,
-                Utc(2),
-                "10.0.0.5",
-                abcd,
-                null);
-            var earlier = new AdminServerPendingItem(
-                new Guid("22222222-2222-2222-2222-222222222222"),
-                AdminPendingRequestType.New,
-                Utc(1),
-                "10.0.0.5",
-                wxyz,
-                null);
-            Assert.ThrowsExactly<ArgumentException>(
-                () => new AdminServerPendingResponse(
-                    new[] { later, earlier },
-                    2,
-                    null));
-        }
-
-        [TestMethod]
         public void SasPendingSyncStatusRoundTripsConditionalFieldsInOrder()
         {
             Guid peerId = new Guid(
@@ -429,7 +328,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
             var response = new AdminServerSyncStatusResponse(
                 false,
                 AdminPairingState.SasPending,
-                "http://10.0.0.2:21000",
+                "https://10.0.0.2:21000",
                 peerId,
                 null,
                 null,
@@ -503,7 +402,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
             var enabled = new AdminServerSyncStatusResponse(
                 true,
                 AdminPairingState.Enabled,
-                "http://10.0.0.2:21000",
+                "https://10.0.0.2:21000",
                 peerId,
                 2,
                 Utc(3),
@@ -534,7 +433,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
             var commit = new AdminServerSyncStatusResponse(
                 false,
                 AdminPairingState.PairedPendingCommit,
-                "http://10.0.0.2:21000",
+                "https://10.0.0.2:21000",
                 peerId,
                 3,
                 null,
@@ -569,7 +468,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
         [TestMethod]
         public void RemainingPairingStatesRoundTripTheirExactShapes()
         {
-            const string Endpoint = "http://10.0.0.2:21000";
+            const string Endpoint = "https://10.0.0.2:21000";
             Guid peerId = new Guid(
                 "9f2ed127-9834-42b4-a379-eaad9df8fcec");
             Guid pairingId = new Guid(
@@ -717,7 +616,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
             Assert.ThrowsExactly<ArgumentException>(
                 () => CreateSyncStatus(
                     AdminPairingState.Enabled,
-                    "http://10.0.0.2:21000",
+                    "https://10.0.0.2:21000",
                     peerInstanceId: new Guid(
                         "9f2ed127-9834-42b4-a379-eaad9df8fcec"),
                     keyEpoch: 1,
@@ -879,13 +778,13 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
         private static AdminServerServiceItem CreateServiceItem(
             string name,
             string productCode,
-            string serverAddress,
+            string serviceHostName,
             DateTime lastModifiedUtc,
             bool deleted,
             DateTime? deletedUtc)
         {
             return new AdminServerServiceItem(
-                CreateDefinition(name, productCode, serverAddress),
+                CreateDefinition(name, productCode, serviceHostName),
                 lastModifiedUtc,
                 deleted,
                 deletedUtc);
@@ -894,12 +793,13 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
         private static AdminServerServiceDefinition CreateDefinition(
             string name,
             string productCode,
-            string serverAddress)
+            string serviceHostName)
         {
             return new AdminServerServiceDefinition(
                 name,
                 productCode,
-                serverAddress,
+                serviceHostName,
+                "10.0.0.5",
                 21000);
         }
 

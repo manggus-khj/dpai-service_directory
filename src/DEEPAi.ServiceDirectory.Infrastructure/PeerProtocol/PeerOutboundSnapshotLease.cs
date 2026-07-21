@@ -202,7 +202,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                 items.Add(new PeerSyncServiceItem(
                     record.Definition.Name,
                     record.Definition.ProductCode.Value,
-                    record.Definition.ServerAddress,
+                    record.Definition.ServiceHostName,
+                    record.Definition.ServiceIpv4Address,
                     record.Definition.Port,
                     record.LastModifiedUtc,
                     record.Deleted,

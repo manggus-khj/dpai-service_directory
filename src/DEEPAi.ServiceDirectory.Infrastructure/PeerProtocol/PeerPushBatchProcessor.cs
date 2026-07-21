@@ -552,10 +552,17 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
 
                 ServiceDefinition definition;
                 ServiceDefinitionValidationError validationError;
-                if (!ServiceDefinition.TryCreate(
+                ServiceEndpointIdentity identity;
+                EndpointIdentityValidationError identityError;
+                if (!ServiceEndpointIdentity.TryCreate(
+                        item.ServiceHostName,
+                        item.ServiceIpv4Address,
+                        out identity,
+                        out identityError)
+                    || !ServiceDefinition.TryCreate(
                         item.Name,
                         item.ProductCode,
-                        item.ServerAddress,
+                        identity,
                         item.Port,
                         out definition,
                         out validationError)
@@ -566,8 +573,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                         definition.ProductCode.Value,
                         item.ProductCode)
                     || !StringComparer.Ordinal.Equals(
-                        definition.ServerAddress,
-                        item.ServerAddress))
+                        definition.ServiceHostName,
+                        item.ServiceHostName)
+                    || !StringComparer.Ordinal.Equals(
+                        definition.ServiceIpv4Address,
+                        item.ServiceIpv4Address))
                 {
                     records.Clear();
                     return false;

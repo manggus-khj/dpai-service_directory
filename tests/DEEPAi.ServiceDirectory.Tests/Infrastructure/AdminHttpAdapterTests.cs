@@ -266,6 +266,30 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void RegistrationModeRoutesRejectBodyAndQuery()
+        {
+            var bodyHandler = new FakeHandler();
+            AdminHttpResponseData bodyResponse = AuthorizedAdapter(
+                bodyHandler).Process(
+                    Request(
+                        "POST",
+                        AdminApiContract.OpenRegistrationModePath,
+                        body: new TrackingStream(new byte[] { 1 })));
+            AssertError(bodyResponse, 400, 1000);
+            Assert.AreEqual(0, bodyHandler.TotalCalls);
+
+            var queryHandler = new FakeHandler();
+            AdminHttpResponseData queryResponse = AuthorizedAdapter(
+                queryHandler).Process(
+                    Request(
+                        "GET",
+                        AdminApiContract.RegistrationModePath,
+                        "?productCode=AB12"));
+            AssertError(queryResponse, 400, 1000);
+            Assert.AreEqual(0, queryHandler.TotalCalls);
+        }
+
+        [TestMethod]
         public void LoggingPutValidatesMediaTypeXmlAndTypedRequest()
         {
             var handler = new FakeHandler();
@@ -312,26 +336,22 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void DynamicPathValuesMustBeCanonical()
+        public void RemovedPendingRoutesAreUndefinedAndDynamicValuesAreCanonical()
         {
             Guid id = new Guid("abcdefab-cdef-4abc-8def-abcdefabcdef");
-            var approveHandler = new FakeHandler();
-            AdminHttpResponseData approve = AuthorizedAdapter(
-                approveHandler).Process(
+            var pendingHandler = new FakeHandler();
+            AdminHttpResponseData pendingList = AuthorizedAdapter(
+                pendingHandler).Process(
+                    Request("GET", "/admin/pending"));
+            AssertBodyless(pendingList, 404);
+
+            AdminHttpResponseData pendingAction = AuthorizedAdapter(
+                pendingHandler).Process(
                     Request(
                         "POST",
                         "/admin/pending/" + id.ToString("D") + "/approve"));
-            Assert.AreEqual(200, approve.StatusCode);
-            Assert.AreEqual(id, approveHandler.LastApprovedId);
-
-            AdminHttpResponseData nonCanonicalId = AuthorizedAdapter(
-                new FakeHandler()).Process(
-                    Request(
-                        "POST",
-                        "/admin/pending/"
-                        + id.ToString("D").ToUpperInvariant()
-                        + "/approve"));
-            AssertError(nonCanonicalId, 400, 1000);
+            AssertBodyless(pendingAction, 404);
+            Assert.AreEqual(0, pendingHandler.TotalCalls);
 
             AdminHttpResponseData nonCanonicalCode = AuthorizedAdapter(
                 new FakeHandler()).Process(
@@ -345,20 +365,19 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             Guid id = new Guid("abcdefab-cdef-4abc-8def-abcdefabcdef");
             AssertRoute(
                 "GET",
-                "/admin/pending",
+                AdminApiContract.RegistrationModePath,
                 null,
-                "GetPending",
-                handler =>
-                {
-                    Assert.AreEqual(100, handler.LastPendingQuery.PageSize);
-                    Assert.IsNull(handler.LastPendingQuery.Cursor);
-                });
+                "GetRegistrationMode");
             AssertRoute(
                 "POST",
-                "/admin/pending/" + id.ToString("D") + "/reject",
+                AdminApiContract.OpenRegistrationModePath,
                 null,
-                "RejectPending",
-                handler => Assert.AreEqual(id, handler.LastRejectedId));
+                "OpenRegistrationMode");
+            AssertRoute(
+                "POST",
+                AdminApiContract.CloseRegistrationModePath,
+                null,
+                "CloseRegistrationMode");
             AssertRoute(
                 "DELETE",
                 "/admin/services/AB12",
@@ -372,13 +391,13 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 "POST",
                 "/admin/sync/enable",
                 AdminXmlCodec.SerializeEnableSync(
-                    "http://10.0.0.2:21000",
+                    "https://10.0.0.2:21000",
                     false),
                 "EnableSync",
                 handler =>
                 {
                     Assert.AreEqual(
-                        "http://10.0.0.2:21000",
+                        "https://10.0.0.2:21000",
                         handler.LastEnableRequest.PeerEndpoint);
                     Assert.IsFalse(handler.LastEnableRequest.RePair);
                 });
@@ -754,10 +773,6 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
 
             public AdminServicesQuery LastServicesQuery { get; private set; }
 
-            public AdminPendingQuery LastPendingQuery { get; private set; }
-
-            public Guid LastRejectedId { get; private set; }
-
             public string LastDeletedProductCode { get; private set; }
 
             public AdminEnableSyncRequest LastEnableRequest { get; private set; }
@@ -775,8 +790,6 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 get;
                 private set;
             }
-
-            public Guid LastApprovedId { get; private set; }
 
             public AdminServerErrorCode? LoggingError { get; set; }
 
@@ -798,35 +811,28 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                         null));
             }
 
-            public AdminHandlerResult<AdminServerPendingResponse> GetPending(
-                AdminPendingQuery query)
+            public AdminHandlerResult<AdminServerRegistrationModeResponse>
+                GetRegistrationMode()
             {
                 TotalCalls++;
-                LastOperation = "GetPending";
-                LastPendingQuery = query;
-                return AdminHandlerResult<AdminServerPendingResponse>.Success(
-                    new AdminServerPendingResponse(
-                        new List<AdminServerPendingItem>().AsReadOnly(),
-                        0,
-                        null));
+                LastOperation = "GetRegistrationMode";
+                return RegistrationModeSuccess();
             }
 
-            public AdminHandlerResult<AdminServerUnitResponse> ApprovePending(
-                Guid id)
+            public AdminHandlerResult<AdminServerRegistrationModeResponse>
+                OpenRegistrationMode()
             {
                 TotalCalls++;
-                LastApprovedId = id;
-                LastOperation = "ApprovePending";
-                return UnitSuccess();
+                LastOperation = "OpenRegistrationMode";
+                return RegistrationModeSuccess();
             }
 
-            public AdminHandlerResult<AdminServerUnitResponse> RejectPending(
-                Guid id)
+            public AdminHandlerResult<AdminServerRegistrationModeResponse>
+                CloseRegistrationMode()
             {
                 TotalCalls++;
-                LastRejectedId = id;
-                LastOperation = "RejectPending";
-                return UnitSuccess();
+                LastOperation = "CloseRegistrationMode";
+                return RegistrationModeSuccess();
             }
 
             public AdminHandlerResult<AdminServerUnitResponse> DeleteService(
@@ -1016,6 +1022,21 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             {
                 return AdminHandlerResult<AdminServerUnitResponse>.Success(
                     Unit);
+            }
+
+            private static AdminHandlerResult<
+                AdminServerRegistrationModeResponse>
+                RegistrationModeSuccess()
+            {
+                return AdminHandlerResult<
+                    AdminServerRegistrationModeResponse>.Success(
+                        new AdminServerRegistrationModeResponse(
+                            new AdminRegistrationModeStatus(
+                                AdminRegistrationModeState.Closed,
+                                null,
+                                null,
+                                null),
+                            null));
             }
         }
 

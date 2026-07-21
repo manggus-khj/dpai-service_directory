@@ -14,7 +14,7 @@ function ConvertTo-CanonicalAddress {
 
     $parsed = $null
     if (-not [System.Net.IPAddress]::TryParse($Value, [ref]$parsed)) {
-        throw 'ListenAddress is not an IPv4 or IPv6 literal.'
+        throw 'ListenAddress is not an IPv4 literal.'
     }
 
     if ([System.Net.IPAddress]::IsLoopback($parsed) `
@@ -43,19 +43,8 @@ function ConvertTo-CanonicalAddress {
 
         $canonical = $parsed.ToString()
     }
-    elseif ($parsed.AddressFamily `
-        -eq [System.Net.Sockets.AddressFamily]::InterNetworkV6) {
-        if ($parsed.IsIPv4MappedToIPv6 `
-            -or $parsed.IsIPv6LinkLocal `
-            -or $parsed.IsIPv6Multicast `
-            -or $parsed.ScopeId -ne 0) {
-            throw 'Mapped, link-local, multicast and scoped IPv6 addresses are not supported.'
-        }
-
-        $canonical = $parsed.ToString().ToLowerInvariant()
-    }
     else {
-        throw 'Only IPv4 and IPv6 ListenAddress values are supported.'
+        throw 'The target v1 Directory identity requires an IPv4 ListenAddress.'
     }
 
     if (-not [StringComparer]::Ordinal.Equals($Value, $canonical)) {

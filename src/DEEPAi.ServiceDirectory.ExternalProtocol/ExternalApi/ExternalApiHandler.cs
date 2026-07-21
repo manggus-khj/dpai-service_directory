@@ -2,7 +2,6 @@ using System;
 using DEEPAi.ServiceDirectory.Application.Queries;
 using DEEPAi.ServiceDirectory.Application.State;
 using DEEPAi.ServiceDirectory.Domain;
-using DEEPAi.ServiceDirectory.Domain.Registration;
 using DEEPAi.ServiceDirectory.ExternalProtocol.Authentication;
 
 namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
@@ -17,33 +16,57 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
         private const string HealthPath = "/api/health";
         private const string ServicesPath = "/api/services";
         private const string RegistrationPath = "/api/registration";
+        private const string RenewalPath = "/api/certificates/renew";
         private const string ProductCodeQueryName = "productCode";
 
-        private readonly StateMutationCoordinator _coordinator;
         private readonly ApprovedServiceLookup _approvedServiceLookup;
         private readonly Func<DateTimeOffset> _localNowProvider;
-        private readonly Func<Guid> _pendingIdProvider;
+        private readonly IExternalCertificateService _certificateService;
 
         public ExternalApiHandler(StateMutationCoordinator coordinator)
             : this(
                 coordinator,
                 () => DateTimeOffset.Now,
-                () => Guid.NewGuid())
+                UnavailableExternalCertificateService.Instance)
+        {
+        }
+
+        internal ExternalApiHandler(
+            StateMutationCoordinator coordinator,
+            IExternalCertificateService certificateService)
+            : this(
+                coordinator,
+                () => DateTimeOffset.Now,
+                certificateService)
+        {
+        }
+
+        internal ExternalApiHandler(
+            StateMutationCoordinator coordinator,
+            Func<DateTimeOffset> localNowProvider)
+            : this(
+                coordinator,
+                localNowProvider,
+                UnavailableExternalCertificateService.Instance)
         {
         }
 
         internal ExternalApiHandler(
             StateMutationCoordinator coordinator,
             Func<DateTimeOffset> localNowProvider,
-            Func<Guid> pendingIdProvider)
+            IExternalCertificateService certificateService)
         {
-            _coordinator = coordinator
-                ?? throw new ArgumentNullException(nameof(coordinator));
+            if (coordinator == null)
+            {
+                throw new ArgumentNullException(nameof(coordinator));
+            }
+
             _approvedServiceLookup = new ApprovedServiceLookup(coordinator);
             _localNowProvider = localNowProvider
                 ?? throw new ArgumentNullException(nameof(localNowProvider));
-            _pendingIdProvider = pendingIdProvider
-                ?? throw new ArgumentNullException(nameof(pendingIdProvider));
+            _certificateService = certificateService
+                ?? throw new ArgumentNullException(
+                    nameof(certificateService));
         }
 
         public ExternalApiHandlerResponse Handle(
@@ -57,6 +80,15 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
             DateTimeOffset localNow;
             try
             {
+                ExternalEndpoint endpoint = ResolveEndpoint(
+                    request.Method,
+                    request.AbsolutePath);
+                if (endpoint == ExternalEndpoint.CertificateAuthority
+                    || endpoint == ExternalEndpoint.CertificateRevocationList)
+                {
+                    return HandlePublicPki(request, endpoint);
+                }
+
                 localNow = _localNowProvider();
                 ProductCode authenticatedProductCode;
                 if (!DailyApiKeyAuthenticator.TryAuthenticate(
@@ -117,7 +149,15 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                         return HandleRegistration(
                             request,
                             authenticatedProductCode,
-                            authenticatedAt);
+                            authenticatedAt.UtcDateTime);
+                    case ExternalEndpoint.Renewal:
+                        return HandleRenewal(
+                            request,
+                            authenticatedProductCode,
+                            authenticatedAt.UtcDateTime);
+                    case ExternalEndpoint.CertificateAuthority:
+                    case ExternalEndpoint.CertificateRevocationList:
+                        return HandlePublicPki(request, endpoint);
                     case ExternalEndpoint.Undefined:
                         return ExternalApiHandlerResponse.UndefinedRoute();
                     default:
@@ -191,7 +231,8 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                     var externalService = new ExternalServiceItem(
                         service.Name,
                         service.ProductCode,
-                        service.ServerAddress,
+                        service.ServiceHostName,
+                        service.ServiceIpv4Address,
                         service.Port,
                         service.LastModifiedUtc);
                     return ExternalApiHandlerResponse.Xml(
@@ -211,7 +252,7 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
         private ExternalApiHandlerResponse HandleRegistration(
             ExternalApiHandlerRequest request,
             ProductCode authenticatedProductCode,
-            DateTimeOffset localNow)
+            DateTime utcNow)
         {
             if (request.QueryParameters.Count != 0)
             {
@@ -230,8 +271,11 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                 return Error(400, ExternalResponseCode.BadRequest);
             }
 
-            if (registrationRequest.Definition.ProductCode !=
-                authenticatedProductCode)
+            ProductCode requestProductCode;
+            if (!ProductCode.TryCreate(
+                    registrationRequest.ProductCode,
+                    out requestProductCode)
+                || requestProductCode != authenticatedProductCode)
             {
                 return Error(
                     401,
@@ -239,76 +283,156 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                     true);
             }
 
-            StateMutationResult<SubmissionResult> mutation =
-                _coordinator.Submit(
-                    registrationRequest.Definition,
-                    request.RemoteAddress,
-                    _pendingIdProvider(),
-                    localNow.UtcDateTime);
-            if (mutation.Status != StateMutationStatus.Completed
-                || !mutation.HasDomainTransition)
+            ExternalRegistrationServiceResult result =
+                _certificateService.Register(
+                    registrationRequest,
+                    utcNow);
+            switch (result.Status)
             {
-                return Error(500, ExternalResponseCode.Internal);
-            }
-
-            SubmissionResult submission = mutation.DomainTransition;
-            if (!submission.IsSuccess)
-            {
-                return MapDomainFailure(submission.ErrorCode);
-            }
-
-            ExternalRegistrationStatus status;
-            switch (submission.Status)
-            {
-                case SubmissionStatus.PendingNew:
-                    status = ExternalRegistrationStatus.PendingNew;
-                    break;
-                case SubmissionStatus.PendingModify:
-                    status = ExternalRegistrationStatus.PendingModify;
-                    break;
-                case SubmissionStatus.PendingExists:
-                    status = ExternalRegistrationStatus.PendingExists;
-                    break;
-                case SubmissionStatus.AlreadyRegistered:
-                    status = ExternalRegistrationStatus.AlreadyRegistered;
-                    break;
+                case ExternalRegistrationServiceStatus.Registered:
+                case ExternalRegistrationServiceStatus.Reregistered:
+                case ExternalRegistrationServiceStatus.Replayed:
+                    return ExternalApiHandlerResponse.Xml(
+                        200,
+                        ExternalXmlCodec.SerializeRegistrationResponse(
+                            ExternalResponse.CreateRegistrationSuccess(
+                                ToIssuanceStatus(result.Status),
+                                registrationRequest.RegistrationRequestId,
+                                result.Service,
+                                result.Certificate)));
+                case ExternalRegistrationServiceStatus.RegistrationModeClosed:
+                    return Error(
+                        409,
+                        ExternalResponseCode.RegistrationModeClosed);
+                case ExternalRegistrationServiceStatus.Conflict:
+                    return Error(409, ExternalResponseCode.Conflict);
+                case ExternalRegistrationServiceStatus.CertificateRequestInvalid:
+                    return Error(
+                        400,
+                        ExternalResponseCode.CertificateRequestInvalid);
+                case ExternalRegistrationServiceStatus.LimitExceeded:
+                    return Error(
+                        429,
+                        ExternalResponseCode.LimitExceeded);
                 default:
                     return Error(500, ExternalResponseCode.Internal);
             }
-
-            return ExternalApiHandlerResponse.Xml(
-                200,
-                ExternalXmlCodec.SerializeRegistrationResponse(
-                    ExternalResponse.CreateRegistrationSuccess(
-                        status,
-                        submission.PendingId)));
         }
 
-        private static ExternalApiHandlerResponse MapDomainFailure(
-            DomainErrorCode? errorCode)
+        private ExternalApiHandlerResponse HandlePublicPki(
+            ExternalApiHandlerRequest request,
+            ExternalEndpoint endpoint)
         {
-            if (!errorCode.HasValue)
+            if (request.QueryParameters.Count != 0
+                || request.BodyLength != 0)
             {
-                return Error(500, ExternalResponseCode.Internal);
+                return Error(400, ExternalResponseCode.BadRequest);
             }
 
-            switch (errorCode.Value)
+            if (endpoint == ExternalEndpoint.CertificateAuthority)
             {
-                case DomainErrorCode.BadRequest:
-                    return Error(400, ExternalResponseCode.BadRequest);
-                case DomainErrorCode.NotFound:
-                    return Error(404, ExternalResponseCode.NotFound);
-                case DomainErrorCode.Conflict:
+                ExternalTrustInfo trustInfo =
+                    _certificateService.GetTrustInfo();
+                return ExternalApiHandlerResponse.Xml(
+                    200,
+                    ExternalXmlCodec.SerializeTrustInfoResponse(
+                        ExternalResponse.CreateTrustInfoSuccess(
+                            trustInfo)));
+            }
+
+            if (endpoint == ExternalEndpoint.CertificateRevocationList)
+            {
+                return ExternalApiHandlerResponse.Binary(
+                    200,
+                    _certificateService.GetCertificateRevocationList(),
+                    ExternalApiContract.CrlContentType);
+            }
+
+            return ExternalApiHandlerResponse.UndefinedRoute();
+        }
+
+        private ExternalApiHandlerResponse HandleRenewal(
+            ExternalApiHandlerRequest request,
+            ProductCode authenticatedProductCode,
+            DateTime utcNow)
+        {
+            if (request.QueryParameters.Count != 0)
+            {
+                return Error(400, ExternalResponseCode.BadRequest);
+            }
+
+            ExternalCertificateRenewalRequest renewalRequest;
+            try
+            {
+                renewalRequest =
+                    ExternalXmlCodec.ParseCertificateRenewalRequest(
+                        request.CopyBody());
+            }
+            catch (ExternalProtocolException)
+            {
+                return Error(400, ExternalResponseCode.BadRequest);
+            }
+
+            ProductCode requestProductCode;
+            if (!ProductCode.TryCreate(
+                    renewalRequest.ProductCode,
+                    out requestProductCode)
+                || requestProductCode != authenticatedProductCode)
+            {
+                return Error(
+                    401,
+                    ExternalResponseCode.InvalidApiKey,
+                    true);
+            }
+
+            ExternalRegistrationServiceResult result =
+                _certificateService.Renew(renewalRequest, utcNow);
+            switch (result.Status)
+            {
+                case ExternalRegistrationServiceStatus.Renewed:
+                case ExternalRegistrationServiceStatus.Replayed:
+                    return ExternalApiHandlerResponse.Xml(
+                        200,
+                        ExternalXmlCodec
+                            .SerializeCertificateRenewalResponse(
+                                ExternalResponse.CreateRenewalSuccess(
+                                    renewalRequest.RenewalRequestId,
+                                    result.Service,
+                                    result.Certificate)));
+                case ExternalRegistrationServiceStatus.Conflict:
                     return Error(409, ExternalResponseCode.Conflict);
-                case DomainErrorCode.LimitExceeded:
-                    // The pending-cap release time is unknowable, so this 429
-                    // intentionally has no Retry-After value.
-                    return Error(429, ExternalResponseCode.LimitExceeded);
-                case DomainErrorCode.Internal:
-                case DomainErrorCode.RevisionCollision:
-                case DomainErrorCode.DirectoryCapacity:
+                case ExternalRegistrationServiceStatus.CertificateRequestInvalid:
+                    return Error(
+                        400,
+                        ExternalResponseCode.CertificateRequestInvalid);
+                case ExternalRegistrationServiceStatus.CertificateNotRenewable:
+                    return Error(
+                        409,
+                        ExternalResponseCode.CertificateNotRenewable);
+                case ExternalRegistrationServiceStatus.InvalidCertificateProof:
+                    return ExternalApiHandlerResponse.Bodyless(401);
+                case ExternalRegistrationServiceStatus.LimitExceeded:
+                    return Error(
+                        429,
+                        ExternalResponseCode.LimitExceeded);
                 default:
                     return Error(500, ExternalResponseCode.Internal);
+            }
+        }
+
+        private static ExternalCertificateIssuanceStatus ToIssuanceStatus(
+            ExternalRegistrationServiceStatus status)
+        {
+            switch (status)
+            {
+                case ExternalRegistrationServiceStatus.Registered:
+                    return ExternalCertificateIssuanceStatus.Registered;
+                case ExternalRegistrationServiceStatus.Reregistered:
+                    return ExternalCertificateIssuanceStatus.Reregistered;
+                case ExternalRegistrationServiceStatus.Replayed:
+                    return ExternalCertificateIssuanceStatus.Replayed;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(status));
             }
         }
 
@@ -359,6 +483,30 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                 return ExternalEndpoint.Registration;
             }
 
+            if (StringComparer.Ordinal.Equals(method, "POST")
+                && StringComparer.Ordinal.Equals(
+                    absolutePath,
+                    RenewalPath))
+            {
+                return ExternalEndpoint.Renewal;
+            }
+
+            if (StringComparer.Ordinal.Equals(method, "GET")
+                && StringComparer.Ordinal.Equals(
+                    absolutePath,
+                    ExternalApiContract.CaPath))
+            {
+                return ExternalEndpoint.CertificateAuthority;
+            }
+
+            if (StringComparer.Ordinal.Equals(method, "GET")
+                && StringComparer.Ordinal.Equals(
+                    absolutePath,
+                    ExternalApiContract.CrlPath))
+            {
+                return ExternalEndpoint.CertificateRevocationList;
+            }
+
             return ExternalEndpoint.Undefined;
         }
 
@@ -380,7 +528,46 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
             Undefined = 0,
             Health = 1,
             Services = 2,
-            Registration = 3
+            Registration = 3,
+            CertificateAuthority = 4,
+            CertificateRevocationList = 5,
+            Renewal = 6
+        }
+
+        private sealed class UnavailableExternalCertificateService
+            : IExternalCertificateService
+        {
+            internal static readonly IExternalCertificateService Instance =
+                new UnavailableExternalCertificateService();
+
+            public ExternalTrustInfo GetTrustInfo()
+            {
+                throw new InvalidOperationException(
+                    "The External certificate service is unavailable.");
+            }
+
+            public byte[] GetCertificateRevocationList()
+            {
+                throw new InvalidOperationException(
+                    "The External certificate service is unavailable.");
+            }
+
+            public ExternalRegistrationServiceResult Register(
+                ExternalRegistrationRequest request,
+                DateTime utcNow)
+            {
+                return ExternalRegistrationServiceResult.Failure(
+                    ExternalRegistrationServiceStatus.Conflict);
+            }
+
+            public ExternalRegistrationServiceResult Renew(
+                ExternalCertificateRenewalRequest request,
+                DateTime utcNow)
+            {
+                return ExternalRegistrationServiceResult.Failure(
+                    ExternalRegistrationServiceStatus
+                        .CertificateNotRenewable);
+            }
         }
     }
 }

@@ -236,6 +236,17 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                     retryAfterSeconds);
             }
 
+            if (operation == PeerInboundOperation.PkiState)
+            {
+                return PeerAuthenticatedResponseFactory.CreatePkiState(
+                    verifiedRequest,
+                    _activeSession,
+                    statusCode,
+                    PeerPkiStateResponse.CreateError(responseCode),
+                    now,
+                    retryAfterSeconds);
+            }
+
             PeerResponseKeySource keySource =
                 operation == PeerInboundOperation.Handshake
                 ? PeerResponseKeySource.Handshake
@@ -362,6 +373,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                 case PeerAuthenticationContract.ExchangePath:
                     operation = PeerInboundOperation.Exchange;
                     return true;
+                case PeerAuthenticationContract.PkiStatePath:
+                    operation = PeerInboundOperation.PkiState;
+                    return true;
                 case PeerAuthenticationContract.ReleasePath:
                     operation = PeerInboundOperation.Release;
                     return true;
@@ -382,6 +396,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                 case PeerInboundOperation.Handshake:
                     return SecurityAuditOperation.PeerHandshake;
                 case PeerInboundOperation.Exchange:
+                case PeerInboundOperation.PkiState:
                     return SecurityAuditOperation.PeerExchange;
                 case PeerInboundOperation.Release:
                     return SecurityAuditOperation.PeerRelease;
@@ -406,36 +421,29 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
             address = null;
             if (string.IsNullOrEmpty(endpoint)
                 || !endpoint.StartsWith(
-                    "http://",
+                    "https://",
                     StringComparison.Ordinal))
             {
                 return false;
             }
 
-            string authority = endpoint.Substring("http://".Length);
-            string literal;
-            if (authority.StartsWith("[", StringComparison.Ordinal))
+            string authority = endpoint.Substring("https://".Length);
+            if (authority.IndexOf('[') >= 0
+                || authority.IndexOf(']') >= 0)
             {
-                int closingBracket = authority.IndexOf(']');
-                if (closingBracket <= 1)
-                {
-                    return false;
-                }
-
-                literal = authority.Substring(1, closingBracket - 1);
-            }
-            else
-            {
-                int portSeparator = authority.LastIndexOf(':');
-                if (portSeparator <= 0)
-                {
-                    return false;
-                }
-
-                literal = authority.Substring(0, portSeparator);
+                return false;
             }
 
-            return IPAddress.TryParse(literal, out address);
+            int portSeparator = authority.LastIndexOf(':');
+            if (portSeparator <= 0)
+            {
+                return false;
+            }
+
+            string literal = authority.Substring(0, portSeparator);
+            return IPAddress.TryParse(literal, out address)
+                && address.AddressFamily
+                    == System.Net.Sockets.AddressFamily.InterNetwork;
         }
 
         private static bool NormalPeerAddressesEqual(

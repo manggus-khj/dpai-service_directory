@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using DEEPAi.ServiceDirectory.Domain;
 using DEEPAi.ServiceDirectory.Domain.Certificates;
+using Org.BouncyCastle.Asn1;
 using Org.BouncyCastle.Asn1.Pkcs;
 using Org.BouncyCastle.Asn1.X509;
 using Org.BouncyCastle.Crypto;
@@ -19,7 +21,7 @@ using Org.BouncyCastle.X509.Extension;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
 {
-    internal sealed class SiteCertificateAuthority
+    internal sealed partial class SiteCertificateAuthority
     {
         internal const int CaKeySizeBits = 3072;
         internal const int DirectoryLeafKeySizeBits = 3072;
@@ -75,7 +77,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 random,
                 isSerialReserved);
             DateTime notBeforeUtc = utcNow.AddMinutes(-ActivationBackdateMinutes);
-            DateTime notAfterUtc = utcNow.AddYears(MaximumCaValidityYears);
+            DateTime notAfterUtc = notBeforeUtc.AddYears(
+                MaximumCaValidityYears);
             var subject = new X509Name(
                 "CN=DEEPAi Service Directory Site CA "
                 + siteId.ToString("D").ToLowerInvariant());
@@ -444,7 +447,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             }
 
             DateTime notBeforeUtc = utcNow.AddMinutes(-ActivationBackdateMinutes);
-            DateTime notAfterUtc = utcNow.AddYears(LeafValidityYears);
+            DateTime notAfterUtc = notBeforeUtc.AddYears(LeafValidityYears);
             if (notAfterUtc > NotAfterUtc)
             {
                 throw new InvalidOperationException(
@@ -583,13 +586,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             var rsaPublicKey = publicKey as RsaKeyParameters;
             if (rsaPublicKey == null
                 || rsaPublicKey.IsPrivate
-                || rsaPublicKey.Modulus.BitLength < CaKeySizeBits)
+                || rsaPublicKey.Modulus.BitLength != CaKeySizeBits)
             {
                 throw new CryptographicException(
-                    "The restored site CA must use an RSA key of at least 3072 bits.");
+                    "The restored site CA must use an RSA 3072-bit key.");
             }
 
-            if (!StringComparer.Ordinal.Equals(
+            if (certificate.Version != 3
+                || !StringComparer.Ordinal.Equals(
                     certificate.SigAlgOid,
                     PkcsObjectIdentifiers.Sha256WithRsaEncryption.Id))
             {
@@ -607,10 +611,24 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             if (keyUsage == null
                 || keyUsage.Length <= 6
                 || !keyUsage[5]
-                || !keyUsage[6])
+                || !keyUsage[6]
+                || keyUsage.Where((value, index) => index != 5 && index != 6)
+                    .Any(value => value)
+                || !HasExactExtensions(
+                    certificate,
+                    new[]
+                    {
+                        X509Extensions.BasicConstraints.Id,
+                        X509Extensions.KeyUsage.Id
+                    },
+                    new[]
+                    {
+                        X509Extensions.SubjectKeyIdentifier.Id,
+                        X509Extensions.AuthorityKeyIdentifier.Id
+                    }))
             {
                 throw new CryptographicException(
-                    "The restored site CA does not permit certificate and CRL signing.");
+                    "The restored site CA extensions do not match the required profile.");
             }
 
             if (!certificate.SubjectDN.Equivalent(certificate.IssuerDN))
@@ -628,11 +646,15 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     "The restored site CA subject does not match the configured Site ID.");
             }
 
-            if (AsUtc(certificate.NotBefore) > utcNow
-                || AsUtc(certificate.NotAfter) < utcNow)
+            DateTime notBeforeUtc = AsUtc(certificate.NotBefore);
+            DateTime notAfterUtc = AsUtc(certificate.NotAfter);
+            if (notBeforeUtc > utcNow
+                || notAfterUtc < utcNow
+                || notAfterUtc > notBeforeUtc.AddYears(
+                    MaximumCaValidityYears))
             {
                 throw new CryptographicException(
-                    "The restored site CA is not valid at the current UTC time.");
+                    "The restored site CA validity period is invalid.");
             }
 
             byte[] certificateSpki = certificate.SubjectPublicKeyInfo.GetDerEncoded();
@@ -666,9 +688,15 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             X509Certificate certificate,
             ServiceEndpointIdentity expectedIdentity)
         {
-            GeneralName[] names = certificate
-                .GetSubjectAlternativeNameExtension()
-                .GetNames();
+            GeneralNames subjectAlternativeNames =
+                certificate.GetSubjectAlternativeNameExtension();
+            if (subjectAlternativeNames == null)
+            {
+                throw new CryptographicException(
+                    "The issued service certificate is missing its SAN pair.");
+            }
+
+            GeneralName[] names = subjectAlternativeNames.GetNames();
             if (names.Length != 2)
             {
                 throw new CryptographicException(

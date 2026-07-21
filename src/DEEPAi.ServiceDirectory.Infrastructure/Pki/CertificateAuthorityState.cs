@@ -116,11 +116,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             ulong pkiRevision,
             ulong crlNumber)
         {
-            if (pkiRevision <= PkiRevision || crlNumber <= CrlNumber)
+            if (pkiRevision < PkiRevision
+                || crlNumber < CrlNumber
+                || (pkiRevision == PkiRevision
+                    && crlNumber == CrlNumber))
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(pkiRevision),
-                    "PKI and CRL high-water values must both increase.");
+                    "At least one PKI high-water value must increase and neither may decrease.");
             }
 
             return new CertificateAuthorityState(

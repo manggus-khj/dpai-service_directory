@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Net;
 using System.Text;
 using System.Xml;
 using System.Xml.Serialization;
@@ -16,12 +15,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         private const string CurrentSchemaVersion = "1";
         private const string UtcTimestampFormat = "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'";
         private const int MaximumXmlDepth = 16;
+        internal const int MaximumDocumentBytes = 16 * 1024 * 1024;
 
         private static readonly Encoding StrictUtf8 = new UTF8Encoding(false, true);
         private static readonly XmlSerializer DirectorySerializer =
             new XmlSerializer(typeof(DirectoryDocument));
-        private static readonly XmlSerializer PendingSerializer =
-            new XmlSerializer(typeof(PendingDocument));
         private static readonly XmlSerializerNamespaces EmptyNamespaces =
             CreateEmptyNamespaces();
         private static readonly object SerializerGate = new object();
@@ -31,6 +29,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             if (snapshot == null)
             {
                 throw new ArgumentNullException(nameof(snapshot));
+            }
+
+            if (snapshot.PendingCount != 0)
+            {
+                throw new InvalidOperationException(
+                    "The target v1 directory state cannot persist pending registrations.");
             }
 
             var document = new DirectoryDocument
@@ -49,40 +53,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             return SerializeDocument(document, DirectorySerializer, "directory.xml");
         }
 
-        internal byte[] SerializePending(DirectorySnapshot snapshot)
-        {
-            if (snapshot == null)
-            {
-                throw new ArgumentNullException(nameof(snapshot));
-            }
-
-            var document = new PendingDocument
-            {
-                SchemaVersion = CurrentSchemaVersion
-            };
-
-            var pending = new List<PendingRegistration>(snapshot.PendingById.Values);
-            pending.Sort(ComparePendingRegistrations);
-            foreach (PendingRegistration item in pending)
-            {
-                document.Items.Add(ToDocument(item));
-            }
-
-            return SerializeDocument(document, PendingSerializer, "pending.xml");
-        }
-
         internal DirectorySnapshot DeserializeSnapshot(
-            byte[] directoryContents,
-            byte[] pendingContents)
+            byte[] directoryContents)
         {
             if (directoryContents == null)
             {
                 throw new ArgumentNullException(nameof(directoryContents));
-            }
-
-            if (pendingContents == null)
-            {
-                throw new ArgumentNullException(nameof(pendingContents));
             }
 
             try
@@ -90,31 +66,19 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 string directoryXml = DecodeStrictUtf8(
                     directoryContents,
                     "directory.xml");
-                string pendingXml = DecodeStrictUtf8(
-                    pendingContents,
-                    "pending.xml");
 
                 StrictShapeReader.ValidateDirectory(directoryXml);
-                StrictShapeReader.ValidatePending(pendingXml);
 
                 DirectoryDocument directory = DeserializeDocument<DirectoryDocument>(
                     directoryXml,
                     DirectorySerializer,
                     "directory.xml");
-                PendingDocument pending = DeserializeDocument<PendingDocument>(
-                    pendingXml,
-                    PendingSerializer,
-                    "pending.xml");
 
-                DirectorySnapshot snapshot = ToSnapshot(directory, pending);
+                DirectorySnapshot snapshot = ToSnapshot(directory);
                 RequireCanonicalDocument(
                     directoryContents,
                     SerializeDirectory(snapshot),
                     "directory.xml");
-                RequireCanonicalDocument(
-                    pendingContents,
-                    SerializePending(snapshot),
-                    "pending.xml");
                 return snapshot;
             }
             catch (InvalidDataException)
@@ -136,25 +100,18 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         }
 
         private static DirectorySnapshot ToSnapshot(
-            DirectoryDocument directory,
-            PendingDocument pending)
+            DirectoryDocument directory)
         {
-            if (directory == null || pending == null)
+            if (directory == null)
             {
                 throw InvalidStateXml("A persisted state document is missing its root.");
             }
 
             RequireSchemaVersion(directory.SchemaVersion, "directory.xml");
-            RequireSchemaVersion(pending.SchemaVersion, "pending.xml");
 
             if (directory.Records == null)
             {
                 throw InvalidStateXml("directory.xml is missing its Records collection.");
-            }
-
-            if (pending.Items == null)
-            {
-                throw InvalidStateXml("pending.xml is missing its Items collection.");
             }
 
             ulong logicalClock = ParseCanonicalUInt64(
@@ -178,57 +135,22 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 records.Add(record);
             }
 
-            var pendingRegistrations =
-                new List<PendingRegistration>(pending.Items.Count);
-            string previousPendingProductCode = null;
-            string previousPendingId = null;
-            foreach (PendingRegistrationDocument item in pending.Items)
-            {
-                PendingRegistration registration = ToDomain(item);
-                string productCode = registration.Requested.ProductCode.Value;
-                string id = registration.Id.ToString("D");
-                if (previousPendingProductCode != null)
-                {
-                    int productComparison = string.CompareOrdinal(
-                        previousPendingProductCode,
-                        productCode);
-                    if (productComparison > 0
-                        || (productComparison == 0
-                            && string.CompareOrdinal(previousPendingId, id) >= 0))
-                    {
-                        throw InvalidStateXml(
-                            "pending.xml items are not in canonical ProductCode and ID order.");
-                    }
-                }
-
-                previousPendingProductCode = productCode;
-                previousPendingId = id;
-                pendingRegistrations.Add(registration);
-            }
-
             return new DirectorySnapshot(
                 records,
-                pendingRegistrations,
+                new PendingRegistration[0],
                 logicalClock);
-        }
-
-        private static ServiceDefinitionDocument ToDocument(
-            ServiceDefinition definition)
-        {
-            return new ServiceDefinitionDocument
-            {
-                Name = definition.Name,
-                ProductCode = definition.ProductCode.Value,
-                ServerAddress = definition.ServerAddress,
-                Port = definition.Port.ToString(CultureInfo.InvariantCulture)
-            };
         }
 
         private static ServiceRecordDocument ToDocument(ServiceRecord record)
         {
             return new ServiceRecordDocument
             {
-                Definition = ToDocument(record.Definition),
+                Name = record.Definition.Name,
+                ProductCode = record.Definition.ProductCode.Value,
+                ServiceHostName = record.Definition.ServiceHostName,
+                ServiceIpv4Address = record.Definition.ServiceIpv4Address,
+                Port = record.Definition.Port.ToString(
+                    CultureInfo.InvariantCulture),
                 LastModifiedUtc = FormatUtc(record.LastModifiedUtc),
                 Deleted = record.Deleted ? "true" : "false",
                 DeletedUtc = record.DeletedUtc.HasValue
@@ -239,28 +161,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             };
         }
 
-        private static PendingRegistrationDocument ToDocument(
-            PendingRegistration pending)
-        {
-            return new PendingRegistrationDocument
-            {
-                Id = pending.Id.ToString("D"),
-                Type = FormatPendingType(pending.Type),
-                RequestedUtc = FormatUtc(pending.RequestedUtc),
-                SourceIp = pending.SourceIp,
-                Requested = ToDocument(pending.Requested),
-                BaseRevision = new BaseRevisionDocument
-                {
-                    Kind = FormatBaseRevisionKind(pending.BaseRevision.Kind),
-                    Record = pending.BaseRevision.Record == null
-                        ? null
-                        : ToDocument(pending.BaseRevision.Record)
-                }
-            };
-        }
-
-        private static ServiceDefinition ToDomain(
-            ServiceDefinitionDocument document,
+        private static ServiceDefinition ToServiceDefinition(
+            ServiceRecordDocument document,
             string context)
         {
             if (document == null)
@@ -269,12 +171,26 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             }
 
             int port = ParseCanonicalInt32(document.Port, context + ".Port");
+            ServiceEndpointIdentity identity;
+            EndpointIdentityValidationError identityError;
+            if (!ServiceEndpointIdentity.TryCreate(
+                    document.ServiceHostName,
+                    document.ServiceIpv4Address,
+                    out identity,
+                    out identityError))
+            {
+                throw InvalidStateXml(
+                    context + " contains an invalid service identity: "
+                    + identityError
+                    + ".");
+            }
+
             ServiceDefinition definition;
             ServiceDefinitionValidationError error;
             if (!ServiceDefinition.TryCreate(
                     document.Name,
                     document.ProductCode,
-                    document.ServerAddress,
+                    identity,
                     port,
                     out definition,
                     out error))
@@ -290,8 +206,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                     document.ProductCode,
                     definition.ProductCode.Value)
                 || !StringComparer.Ordinal.Equals(
-                    document.ServerAddress,
-                    definition.ServerAddress))
+                    document.ServiceHostName,
+                    definition.ServiceHostName)
+                || !StringComparer.Ordinal.Equals(
+                    document.ServiceIpv4Address,
+                    definition.ServiceIpv4Address))
             {
                 throw InvalidStateXml(
                     context + " contains a non-canonical service definition.");
@@ -309,9 +228,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 throw InvalidStateXml(context + " is missing.");
             }
 
-            ServiceDefinition definition = ToDomain(
-                document.Definition,
-                context + ".Definition");
+            ServiceDefinition definition = ToServiceDefinition(
+                document,
+                context);
             DateTime lastModifiedUtc = ParseCanonicalUtc(
                 document.LastModifiedUtc,
                 context + ".LastModifiedUtc");
@@ -348,50 +267,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 originInstanceId);
         }
 
-        private static PendingRegistration ToDomain(
-            PendingRegistrationDocument document)
-        {
-            if (document == null)
-            {
-                throw InvalidStateXml("pending.xml contains a missing Pending item.");
-            }
-
-            Guid id = ParseCanonicalGuid(document.Id, "Pending.Id");
-            PendingRequestType type = ParsePendingType(document.Type);
-            DateTime requestedUtc = ParseCanonicalUtc(
-                document.RequestedUtc,
-                "Pending.RequestedUtc");
-            string sourceIp = ParseCanonicalIpAddress(document.SourceIp);
-            ServiceDefinition requested = ToDomain(
-                document.Requested,
-                "Pending.Requested");
-
-            if (document.BaseRevision == null)
-            {
-                throw InvalidStateXml("Pending.BaseRevision is missing.");
-            }
-
-            BaseRevisionKind declaredKind = ParseBaseRevisionKind(
-                document.BaseRevision.Kind);
-            ServiceRecord baseRecord = document.BaseRevision.Record == null
-                ? null
-                : ToDomain(document.BaseRevision.Record, "Pending.BaseRevision.Record");
-            DirectoryBaseRevision baseRevision = DirectoryBaseRevision.Capture(baseRecord);
-            if (declaredKind != baseRevision.Kind)
-            {
-                throw InvalidStateXml(
-                    "Pending.BaseRevision Kind does not match its Record.");
-            }
-
-            return new PendingRegistration(
-                id,
-                type,
-                requestedUtc,
-                sourceIp,
-                requested,
-                baseRevision);
-        }
-
         private static byte[] SerializeDocument(
             object document,
             XmlSerializer serializer,
@@ -421,7 +296,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                         }
                     }
 
-                    return stream.ToArray();
+                    byte[] contents = EnsureFinalCrLf(stream.ToArray());
+                    if (contents.Length > MaximumDocumentBytes)
+                    {
+                        throw InvalidStateXml(
+                            fileName + " exceeds the 16 MiB size limit.");
+                    }
+
+                    return contents;
                 }
             }
             catch (InvalidOperationException exception)
@@ -475,9 +357,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
 
         private static string DecodeStrictUtf8(byte[] contents, string fileName)
         {
-            if (contents.Length == 0)
+            if (contents.Length == 0
+                || contents.Length > MaximumDocumentBytes)
             {
-                throw InvalidStateXml(fileName + " is empty.");
+                throw InvalidStateXml(
+                    fileName + " is empty or exceeds the size limit.");
             }
 
             if (contents.Length >= 3
@@ -633,76 +517,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             return parsed;
         }
 
-        private static string ParseCanonicalIpAddress(string value)
-        {
-            IPAddress parsed;
-            if (value == null
-                || !IPAddress.TryParse(value, out parsed)
-                || !StringComparer.Ordinal.Equals(value, parsed.ToString()))
-            {
-                throw InvalidStateXml(
-                    "Pending.SourceIp is not a canonical IP address literal.");
-            }
-
-            return value;
-        }
-
-        private static PendingRequestType ParsePendingType(string value)
-        {
-            switch (value)
-            {
-                case "New":
-                    return PendingRequestType.New;
-                case "Modify":
-                    return PendingRequestType.Modify;
-                default:
-                    throw InvalidStateXml("Pending.Type is invalid.");
-            }
-        }
-
-        private static BaseRevisionKind ParseBaseRevisionKind(string value)
-        {
-            switch (value)
-            {
-                case "Missing":
-                    return BaseRevisionKind.Missing;
-                case "Active":
-                    return BaseRevisionKind.Active;
-                case "Tombstone":
-                    return BaseRevisionKind.Tombstone;
-                default:
-                    throw InvalidStateXml("Pending.BaseRevision Kind is invalid.");
-            }
-        }
-
-        private static string FormatPendingType(PendingRequestType value)
-        {
-            switch (value)
-            {
-                case PendingRequestType.New:
-                    return "New";
-                case PendingRequestType.Modify:
-                    return "Modify";
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(value));
-            }
-        }
-
-        private static string FormatBaseRevisionKind(BaseRevisionKind value)
-        {
-            switch (value)
-            {
-                case BaseRevisionKind.Missing:
-                    return "Missing";
-                case BaseRevisionKind.Active:
-                    return "Active";
-                case BaseRevisionKind.Tombstone:
-                    return "Tombstone";
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(value));
-            }
-        }
-
         private static string FormatUtc(DateTime value)
         {
             if (value.Kind != DateTimeKind.Utc)
@@ -727,23 +541,27 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 right.Definition.ProductCode.Value);
         }
 
-        private static int ComparePendingRegistrations(
-            PendingRegistration left,
-            PendingRegistration right)
-        {
-            int productComparison = string.CompareOrdinal(
-                left.Requested.ProductCode.Value,
-                right.Requested.ProductCode.Value);
-            return productComparison != 0
-                ? productComparison
-                : string.CompareOrdinal(left.Id.ToString("D"), right.Id.ToString("D"));
-        }
-
         private static XmlSerializerNamespaces CreateEmptyNamespaces()
         {
             var namespaces = new XmlSerializerNamespaces();
             namespaces.Add(string.Empty, string.Empty);
             return namespaces;
+        }
+
+        private static byte[] EnsureFinalCrLf(byte[] contents)
+        {
+            if (contents.Length >= 2
+                && contents[contents.Length - 2] == (byte)'\r'
+                && contents[contents.Length - 1] == (byte)'\n')
+            {
+                return contents;
+            }
+
+            var canonical = new byte[contents.Length + 2];
+            Buffer.BlockCopy(contents, 0, canonical, 0, contents.Length);
+            canonical[canonical.Length - 2] = (byte)'\r';
+            canonical[canonical.Length - 1] = (byte)'\n';
+            return canonical;
         }
 
         private static InvalidDataException InvalidStateXml(string message)

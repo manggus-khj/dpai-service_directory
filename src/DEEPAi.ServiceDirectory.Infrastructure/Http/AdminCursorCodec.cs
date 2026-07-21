@@ -6,7 +6,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
     internal enum AdminCursorKind : byte
     {
         Services = 1,
-        Pending = 2,
         Certificates = 3
     }
 
@@ -259,7 +258,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         private static bool IsDefinedKind(AdminCursorKind kind)
         {
             return kind == AdminCursorKind.Services
-                || kind == AdminCursorKind.Pending
                 || kind == AdminCursorKind.Certificates;
         }
 

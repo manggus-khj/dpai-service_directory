@@ -24,6 +24,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             "/api/sync/pairing/commit";
         private const string HandshakePath = "/api/sync/handshake";
         private const string ExchangePath = "/api/sync/exchange";
+        private const string PkiStatePath = PeerSyncContract.PkiStatePath;
         private const string ReleasePath = "/api/sync/release";
         private const string RevokePath = "/api/sync/revoke";
 
@@ -307,6 +308,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                     operation = SecurityAuditOperation.PeerHandshake;
                     return true;
                 case ExchangePath:
+                    operation = SecurityAuditOperation.PeerExchange;
+                    exchange = true;
+                    return true;
+                case PkiStatePath:
                     operation = SecurityAuditOperation.PeerExchange;
                     exchange = true;
                     return true;

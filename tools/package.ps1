@@ -583,6 +583,12 @@ $noticesStaging = Join-Path $stagingRoot 'notices'
 $installerOutputStaging = Join-Path $stagingRoot 'installer-output'
 $installerAclRegressionTest = Join-Path $repositoryRoot `
     'tests\installer\ServiceDirectory.FileSystemSecurity.Tests.ps1'
+$installerHttpsRegressionTest = Join-Path $repositoryRoot `
+    'tests\installer\ServiceDirectory.HttpsBinding.Tests.ps1'
+$installedValidationRegressionTest = Join-Path $repositoryRoot `
+    'tests\installer\ServiceDirectory.InstalledValidation.Tests.ps1'
+$liveEndpointValidationRegressionTest = Join-Path $repositoryRoot `
+    'tests\installer\ServiceDirectory.LiveEndpointValidation.Tests.ps1'
 $runtimeBuilds = @(
     [pscustomobject]@{
         ProjectPath = Join-Path $repositoryRoot `
@@ -618,7 +624,14 @@ foreach ($requiredFile in @(
         (Join-Path $installerRoot 'scripts\ServiceDirectory.Network.ps1'),
         (Join-Path $installerRoot 'scripts\ServiceDirectory.InstallState.ps1'),
         (Join-Path $installerRoot 'scripts\ServiceDirectory.FileSystemSecurity.ps1'),
-        $installerAclRegressionTest)) {
+        (Join-Path $installerRoot 'scripts\ServiceDirectory.HttpsBinding.ps1'),
+        (Join-Path $installerRoot 'scripts\ServiceDirectory.PkiRepair.ps1'),
+        (Join-Path $installerRoot 'scripts\ServiceDirectory.InstalledValidation.ps1'),
+        (Join-Path $installerRoot 'scripts\ServiceDirectory.LiveEndpointValidation.ps1'),
+        $installerAclRegressionTest,
+        $installerHttpsRegressionTest,
+        $installedValidationRegressionTest,
+        $liveEndpointValidationRegressionTest)) {
     if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
         throw "Required package input '$requiredFile' was not found."
     }
@@ -669,6 +682,9 @@ if (-not [string]::IsNullOrWhiteSpace($VSTestPath)) {
 }
 & (Join-Path $PSScriptRoot 'test.ps1') @testParameters
 & $installerAclRegressionTest
+& $installerHttpsRegressionTest
+& $installedValidationRegressionTest
+& $liveEndpointValidationRegressionTest
 
 Remove-ExactPackageDirectoryTree `
     -ExpectedPath (Join-Path $repositoryRoot 'artifacts\package') `

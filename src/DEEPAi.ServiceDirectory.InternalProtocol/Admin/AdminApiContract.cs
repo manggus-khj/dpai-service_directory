@@ -10,6 +10,14 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
         public const int PageSize = 250;
         public const int MinimumLogRetentionDays = 1;
         public const int MaximumLogRetentionDays = 1095;
+        public const int RegistrationModeDurationSeconds = 60 * 60;
+        public const int MaximumFailureReasonCharacters = 512;
+        public const string RegistrationModePath =
+            "/admin/registration-mode";
+        public const string OpenRegistrationModePath =
+            "/admin/registration-mode/open";
+        public const string CloseRegistrationModePath =
+            "/admin/registration-mode/close";
 
         public static readonly Uri BaseAddress =
             new Uri("http://127.0.0.1:21000/", UriKind.Absolute);

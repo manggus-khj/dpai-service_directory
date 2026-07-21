@@ -33,6 +33,7 @@
   <ItemGroup>
     <Compile Include="Certificates\CertificateLedgerEntry.cs" />
     <Compile Include="Certificates\CertificateLedgerSnapshot.cs" />
+    <Compile Include="Certificates\CertificateIssuanceRequestEvidence.cs" />
     <Compile Include="Certificates\CertificateSerialNumber.cs" />
     <Compile Include="DirectoryBaseRevision.cs" />
     <Compile Include="DirectoryEndpointIdentity.cs" />

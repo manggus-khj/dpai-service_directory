@@ -2,22 +2,24 @@
 
 ```text
 최초 작성일: 2026-07-20
-최종 변경일: 2026-07-20
-revision: 3
+최종 변경일: 2026-07-21
+revision: 27
 ```
 
 ## 1. 목적과 범위
 
 이 문서는 [인증서 전환 변경계획](./02-certificate-transition.md#8-구현-단계와-종료-조건)과 [전체 개발 단계](./03-development.md#11-개발-단계)를 실제 개발 순서로 나눈 실행계획이다. 저장 형식은 [최초 정식 저장 schema v1](./03-development-01-storage-schema.md), API 필드·오류·인증 절차는 [외부 API](./04-api-01-external-application.md)와 [내부 API](./04-api-02-internal.md)를 단일 원본으로 사용한다.
 
-다음 개발의 목표는 현재의 `HTTP + pending 승인` runtime을 `HTTPS + 등록 모드 + CSR 즉시 발급` runtime으로 완전히 전환하는 것이다. 새 계약의 일부만 원격에 노출하거나 HTTP와 HTTPS를 장기간 병행하지 않는다. 새 도메인·저장·프로토콜 구현은 테스트 가능한 내부 단위로 먼저 추가하고, 저장 복구·Admin 등록 모드·HTTPS 설치 흐름·External 발급이 모두 준비된 시점에 원격 runtime을 한 번에 전환한다.
+다음 개발의 목표는 기존 `HTTP + pending 승인` 기준선을 `HTTPS + 등록 모드 + CSR 즉시 발급` runtime으로 완전히 전환하는 것이다. 저장·Admin 등록 모드·HTTPS 설치/리스너, 공개 PKI·즉시 등록·renewal 발급과 삭제·재등록 원자 폐기·commit 이후 시스템 이벤트 전환 뒤 남은 Peer trust 경계를 연결하며, HTTP 호환 endpoint·redirect·fallback을 다시 추가하지 않는다.
 
 ## 2. 현재 기준선
 
-- 현재 제품 버전은 `v1.0.0 build 12`다.
+- 현재 제품 버전은 `v1.0.0 build 14`다. build 12 설치 EXE는 인증서 전환 전 설치 오류 수정 기준선이다.
 - 사이트 CA, Directory/service leaf, CSR 검증, serial, certificate ledger, signed CRL, DPAPI CA key, 암호화 backup, CA 상태·원장 조회·serial 폐기 Admin/UI와 repair restore 진입점 소스가 있다.
 - 2026-07-20 `Debug|x64`, locked restore·`Release|x64`, 568개 자동 테스트, Windows PowerShell 5.1 ACL round-trip과 build 12 패키징은 성공했다.
-- 실제 remote runtime은 여전히 HTTP, 단일 `ServerAddress`, `pending.xml`, 승인·거절 API와 승인 대기 UI를 사용한다.
+- 2026-07-21 인증서 전환 작업 트리의 `Debug|x64`·`Release|x64` locked restore·빌드와 자동 테스트 663개가 각 구성에서 모두 통과했고 installer ACL round-trip·HTTPS binding rollback 회귀도 통과했다. Admin은 목표 `admin.xsd` 하나만 사용하며 서비스 DNS+IPv4 pair를 응답하고 pending DTO·codec·legacy schema를 제공하지 않는다.
+- remote runtime source는 External·Peer의 Directory IPv4·hostname 두 exact HTTPS prefix와 Admin·WDOG exact loopback HTTP로 전환했다. Admin runtime과 설정 UI는 process-local registration-mode 조회·열기·닫기로 전환했고 pending route·application handler·UI와 저장 `pending.xml`, External legacy 등록 경계는 제거했다.
+- 목표 External `external.xsd`·공개 DTO·strict codec, Admin registration-mode `admin.xsd`·DTO·strict codec, Peer DNS+IPv4·PKI high-water `peer.xsd`·DTO·strict codec 계약 테스트 소스를 구현했다. `ServiceDefinition`·snapshot·Peer exchange와 최초 정식 v1 directory·config·role별 PKI storage도 canonical 목표 형식으로 전환했다. Admin 실제 route와 CA `READY`·active issuer gate, 설정 UI binding, installer의 초기 CA backup·Directory leaf/private-key ACL·exact HTTP.sys binding rollback 및 서비스 기동 전 HTTPS 상태 검증을 연결했다. 공개 PKI와 registration·재등록·renewal 발급·exact replay·overlap 폐기·실제 Admin 마지막 결과, 삭제 원자 폐기와 commit 이후 등록 서비스 시스템 이벤트를 연결했다. Peer는 request 전 CA SPKI pin·exact SAN/profile·signed CRL을 검증하고 session `pki-state` current mapping을 standby metadata·cache·CRL에 원자 저장한다.
 - build 12의 Windows Server 2016 실제 재설치와 DPAPI·서비스 SID ACL·SCM·HTTP.sys 현장 동작은 검증하지 않았다.
 
 ## 3. 확정된 데이터 전환 정책과 원칙
@@ -69,6 +71,8 @@ revision: 3
 
 이 단계에서는 새 원격 endpoint를 활성화하지 않는다. 목표 codec과 도메인 모델을 먼저 완성해 이후 저장·handler가 같은 타입을 사용하게 한다.
 
+구현 상태: 계약·도메인 전환과 실패 경로를 구현하고 단일 주소 External legacy codec·모델·schema 및 Admin pending DTO·codec·legacy schema를 제거했다. 2026-07-21 양 구성 자동 테스트에 포함해 검증했다.
+
 ### 5.2 저장 schema·복구·등록 transaction
 
 - [저장 schema v1](./03-development-01-storage-schema.md)에 따라 directory·config·PKI metadata·active issuer ledger·standby Peer cache strict codec, DER·DPAPI 검증과 9개 journal target을 구현한다. build 12 이하 구형 v1 reader·migration·운영자 매핑 경로는 추가하지 않는다.
@@ -77,6 +81,8 @@ revision: 3
 - 등록·재등록·삭제와 service definition이 바뀌는 갱신에서 필요한 `directory.xml`, certificate ledger, CRL과 logical clock을 mutation gate 안의 한 recovery transaction으로 commit한다. definition이 그대로인 갱신과 serial 단독 폐기는 바뀌지 않는 directory target을 포함하지 않는다.
 - claim 직전, serial 예약, 서명, 각 파일 교체, COMMITTED 전후와 응답 직전 장애를 주입해 부분 게시·serial 재사용·CRL number rollback이 없음을 검증한다.
 
+구현 상태: strict canonical codec, leaf DER·active/standby 교차 검증, 9개 journal target, exact replay·용량 preflight와 operation별 복합 journal을 구현했다. transactional delete는 primary와 기존 `.bak`을 journal discard로 옮겨 역할 전환 뒤 금지 backup을 남기지 않는다. claim·serial·서명·journal·응답 장애 경계와 lost-response replay를 포함해 2026-07-21 양 구성 자동 테스트에서 검증했다.
+
 ### 5.3 Admin 등록 모드·설정 UI
 
 - process-local `CLOSED/OPEN/CLAIMED` owner를 monotonic deadline으로 구현한다. 유효성 검사가 끝난 첫 요청만 원자 claim하며 invalid key·CSR·SAN·용량 초과는 창을 소비하지 않는다.
@@ -84,13 +90,17 @@ revision: 3
 - pending 조회·승인·거절 route, application handler, DTO와 설정 UI를 제거한다.
 - `등록 서비스` 화면 상단에 상태, `HH:mm:ss` countdown, 시작·종료, first-wins 경고와 마지막 성공 결과를 표시한다. tray context menu에는 등록 모드를 추가하지 않는다.
 
+구현 상태: process-local `CLOSED/OPEN/CLAIMED` owner, 공용 mutation gate 원자 claim, 고정 1시간 deadline, first-wins Admin 세 route와 설정 UI를 연결했다. pending route·DTO·codec·legacy schema·application handler·화면은 제거했고 2026-07-21 양 구성 자동 테스트에서 검증했다.
+
 ### 5.4 HTTPS·설치
 
 - 설치·repair가 로컬 Management Server hostname/FQDN과 선택한 IPv4를 검증하고, CA certificate가 아니라 Directory leaf에 정확한 DNS·IP SAN과 두 absolute HTTPS CRL URI를 발급한다.
-- HTTP.sys exact `ipport` certificate binding, URL ACL, Domain·Private 방화벽과 파일·private key ACL을 rollback 가능한 설치 state에 포함한다.
+- HTTP.sys exact IPv4 `ipport` certificate binding, Directory IPv4·hostname 두 remote URL ACL, Domain·Private 방화벽과 파일·private key ACL을 rollback 가능한 설치 state에 포함한다.
 - 메인 서비스 기동 시 config identity, 실제 IPv4 할당·network profile, leaf/private-key 접근, SAN·chain·validity와 binding을 검증한 뒤에만 remote HTTPS listener를 연다.
 - `/admin/*`와 `WDOG` health의 exact loopback 경계는 유지하고, External·Peer remote HTTP prefix·redirect·fallback을 제거한다.
 - repair 주소 변경, 보존 CA leaf 재발급, 일반 제거의 binding 제거와 운영 CA·ledger·CRL 보존을 검증할 수 있는 installer 회귀 검사를 추가한다.
+
+구현 상태: installer·repair의 canonical Directory identity·leaf·service SID private-key ACL, IPv4·hostname 두 exact remote URL ACL·exact HTTP.sys binding·방화벽 및 rollback과 메인 서비스의 두 exact HTTPS prefix·기동 전 검증을 구현했다. 두 prefix 보완까지 포함한 2026-07-21 최신 작업 트리의 양 구성 663개 자동 테스트와 installer ACL·HTTPS binding·installed-state·live endpoint 회귀는 통과했으며 실제 Windows TLS 설치 검증은 남아 있다.
 
 ### 5.5 External 발급과 갱신
 
@@ -100,6 +110,8 @@ revision: 3
 - renewal은 현재 유효·미폐기 leaf 개인키 proof, 새 CSR proof-of-possession과 identity hash를 검증하고, hostname 또는 IPv4가 바뀌면 변경 뒤의 완전한 pair로 재발급한다.
 - 이전 승인 대기 응답·`PendingId`와 approve/reject 의존을 protocol·handler·테스트에서 제거한다.
 
+구현 상태: `/pki/ca`·`/pki/crl`, 목표 조회·즉시 등록·재등록·renewal·exact replay와 overlap 폐기를 runtime에 연결하고 2026-07-21 양 구성 자동 테스트에서 검증했다. 외부 앱 TOFU/pin 통합과 실제 HTTPS 실행 검증은 남아 있다.
+
 ### 5.6 삭제·재등록·Peer
 
 - 서비스 삭제와 열린 모드 재등록은 현재 serial 폐기, CRL publish, directory tombstone/활성 record와 ledger 상태를 한 transaction으로 바꾼다.
@@ -107,6 +119,8 @@ revision: 3
 - `pki-state`에서 CRL high-water와 ProductCode별 current serial을 검증해 standby 전용 `pki/peer-cache.xml`과 CRL에 원자 저장한다. full ledger·CA private key와 process-local 등록 모드는 동기화하지 않는다.
 - standby 구성은 인증된 동일-site backup으로 Directory leaf와 공개 cache를 만들되 full ledger·CA key primary를 남기지 않는다. 승격은 중지된 repair에서 관찰 high-water 이상인 backup을 복원하고 issuer identity·role·`PkiRevision`을 원자 전환하는 명시적 절차로만 허용한다.
 - 이번 범위는 동일 site CA와 single active issuer·명시적 승격까지다. CA key rotation·dual-pin endpoint/UI는 별도 후속 계획으로 남긴다.
+
+구현 상태: 재등록·삭제 폐기, commit 이후 이벤트·sync, Peer pinned TLS·session PKI state, standby 공개 cache와 backup 기반 승격을 구현하고 2026-07-21 양 구성 자동 테스트에서 검증했다. 실제 두 장비 동기화·승격·장애 복구 실행 검증은 남아 있다.
 
 ## 6. 주요 변경 위치
 
@@ -129,5 +143,7 @@ revision: 3
 - 데이터 migration 또는 복구가 모호하면 listener와 snapshot을 게시하지 않고 fail closed한다.
 - HTTPS certificate·binding·ACL·Event Log source 검증 중 하나라도 실패하면 remote listener를 열지 않는다.
 - 실제 빌드 성공만으로 HTTPS·DPAPI·ACL·SCM·Milestone 상호운용을 완료로 표시하지 않는다.
+- 실제 설치 증거 수집과 실행 순서는 [현장 검증 실행계획](./06-release-validation.md)을 따른다.
+- 설치 상태 정적 증적 뒤에는 live endpoint 도구로 실제 IPv4·hostname TLS 1.2+와 공개 CA·CRL·health를 확인하되 이 결과를 외부 앱 TOFU/pin 영속화나 등록·갱신·폐기 완료로 확대 해석하지 않는다.
 - CA rotation, 인증 전 Peer endpoint-only 수치 제한, release·revoke 별도 제한은 상세 계약이 확정되기 전 임의 구현하지 않는다.
 - 다음 구현 착수는 [todo-01.md](./todo-01.md)의 이 계획 항목을 위에서부터 수행한다.

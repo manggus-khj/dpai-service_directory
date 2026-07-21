@@ -1,4 +1,5 @@
 using System;
+using DEEPAi.ServiceDirectory.Domain;
 using DEEPAi.ServiceDirectory.Infrastructure.Logging;
 using DEEPAi.ServiceDirectory.Infrastructure.Networking;
 
@@ -201,7 +202,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Configuration
                         canonicalPeerEndpoint)))
             {
                 throw new ArgumentException(
-                    "The peer endpoint must use the canonical HTTP IP literal form on port 21000.",
+                    "The peer endpoint must use the canonical HTTPS IPv4 form on port 21000.",
                     nameof(peerEndpoint));
             }
 
@@ -419,6 +420,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Configuration
 
         public ServiceDirectoryConfiguration(
             string listenAddress,
+            DirectoryEndpointIdentity directoryEndpointIdentity,
             Guid instanceId,
             ulong lastPeerKeyEpoch,
             int logRetentionDays,
@@ -434,6 +436,21 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Configuration
             {
                 throw new ArgumentException(
                     "ListenAddress must be a canonical supported IP literal.",
+                    nameof(listenAddress));
+            }
+
+            if (directoryEndpointIdentity == null)
+            {
+                throw new ArgumentNullException(
+                    nameof(directoryEndpointIdentity));
+            }
+
+            if (!StringComparer.Ordinal.Equals(
+                    listenAddress,
+                    directoryEndpointIdentity.DirectoryIpv4Address))
+            {
+                throw new ArgumentException(
+                    "ListenAddress must equal the Directory IPv4 identity.",
                     nameof(listenAddress));
             }
 
@@ -464,6 +481,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Configuration
             }
 
             ListenAddress = listenAddress;
+            DirectoryEndpointIdentity = directoryEndpointIdentity;
             InstanceId = instanceId;
             LastPeerKeyEpoch = lastPeerKeyEpoch;
             LogRetentionDays = logRetentionDays;
@@ -471,6 +489,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Configuration
         }
 
         public string ListenAddress { get; }
+
+        public DirectoryEndpointIdentity DirectoryEndpointIdentity { get; }
+
+        public string DirectoryHostName =>
+            DirectoryEndpointIdentity.DirectoryHostName;
+
+        public string DirectoryIpv4Address =>
+            DirectoryEndpointIdentity.DirectoryIpv4Address;
 
         public Guid InstanceId { get; }
 
@@ -481,11 +507,18 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Configuration
         public SynchronizationConfiguration Synchronization { get; }
 
         public static ServiceDirectoryConfiguration CreateInitial(
-            string listenAddress,
+            DirectoryEndpointIdentity directoryEndpointIdentity,
             Guid instanceId)
         {
+            if (directoryEndpointIdentity == null)
+            {
+                throw new ArgumentNullException(
+                    nameof(directoryEndpointIdentity));
+            }
+
             return new ServiceDirectoryConfiguration(
-                listenAddress,
+                directoryEndpointIdentity.DirectoryIpv4Address,
+                directoryEndpointIdentity,
                 instanceId,
                 0UL,
                 DefaultLogRetentionDays,
@@ -499,6 +532,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Configuration
         {
             return new ServiceDirectoryConfiguration(
                 ListenAddress,
+                DirectoryEndpointIdentity,
                 InstanceId,
                 LastPeerKeyEpoch,
                 logRetentionDays,
@@ -518,17 +552,25 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Configuration
 
             return new ServiceDirectoryConfiguration(
                 ListenAddress,
+                DirectoryEndpointIdentity,
                 InstanceId,
                 lastPeerKeyEpoch,
                 LogRetentionDays,
                 synchronization);
         }
 
-        internal ServiceDirectoryConfiguration WithListenAddressForRepair(
-            string listenAddress)
+        internal ServiceDirectoryConfiguration WithDirectoryIdentityForRepair(
+            DirectoryEndpointIdentity directoryEndpointIdentity)
         {
+            if (directoryEndpointIdentity == null)
+            {
+                throw new ArgumentNullException(
+                    nameof(directoryEndpointIdentity));
+            }
+
             return new ServiceDirectoryConfiguration(
-                listenAddress,
+                directoryEndpointIdentity.DirectoryIpv4Address,
+                directoryEndpointIdentity,
                 InstanceId,
                 LastPeerKeyEpoch,
                 LogRetentionDays,
@@ -545,55 +587,42 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Configuration
             canonicalEndpoint = null;
             if (string.IsNullOrEmpty(value)
                 || value.Length > 80
-                || !value.StartsWith("http://", StringComparison.Ordinal))
+                || !value.StartsWith("https://", StringComparison.Ordinal))
             {
                 return false;
             }
 
             const string portSuffix = ":21000";
-            string authority = value.Substring("http://".Length);
+            string authority = value.Substring("https://".Length);
             string addressLiteral;
-            if (authority.StartsWith("[", StringComparison.Ordinal))
-            {
-                int closingBracket = authority.IndexOf(']');
-                if (closingBracket <= 1
-                    || !StringComparer.Ordinal.Equals(
-                        authority.Substring(closingBracket + 1),
-                        portSuffix))
-                {
-                    return false;
-                }
-
-                addressLiteral = authority.Substring(
-                    1,
-                    closingBracket - 1);
-            }
-            else
-            {
-                int portSeparator = authority.LastIndexOf(':');
-                if (portSeparator <= 0
-                    || authority.IndexOf(':') != portSeparator
-                    || !StringComparer.Ordinal.Equals(
-                        authority.Substring(portSeparator),
-                        portSuffix))
-                {
-                    return false;
-                }
-
-                addressLiteral = authority.Substring(0, portSeparator);
-            }
-
-            ServiceDirectoryListenerAddress address;
-            if (!ServiceDirectoryListenerAddress.TryCreate(
-                    addressLiteral,
-                    out address))
+            int portSeparator = authority.LastIndexOf(':');
+            if (portSeparator <= 0
+                || authority.IndexOf(':') != portSeparator
+                || !StringComparer.Ordinal.Equals(
+                    authority.Substring(portSeparator),
+                    portSuffix))
             {
                 return false;
             }
 
-            canonicalEndpoint = address.HttpPrefix.Substring(
-                0,
-                address.HttpPrefix.Length - 1);
+            addressLiteral = authority.Substring(0, portSeparator);
+            ServiceEndpointIdentity validatedAddress;
+            EndpointIdentityValidationError validationError;
+            if (!ServiceEndpointIdentity.TryCreate(
+                    "peer.invalid",
+                    addressLiteral,
+                    out validatedAddress,
+                    out validationError)
+                || !StringComparer.Ordinal.Equals(
+                    addressLiteral,
+                    validatedAddress.ServiceIpv4Address))
+            {
+                return false;
+            }
+
+            canonicalEndpoint = "https://"
+                + validatedAddress.ServiceIpv4Address
+                + portSuffix;
             return StringComparer.Ordinal.Equals(value, canonicalEndpoint);
         }
     }

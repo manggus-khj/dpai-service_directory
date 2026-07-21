@@ -98,89 +98,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             }
         }
 
-        public AdminHandlerResult<AdminServerPendingResponse> GetPending(
-            AdminPendingQuery query)
-        {
-            ThrowIfDisposed();
-            if (query == null)
-            {
-                return Failure<AdminServerPendingResponse>(
-                    AdminServerErrorCode.BadRequest);
-            }
-
-            DirectorySnapshot snapshot;
-            if (!_stateCoordinator.TryGetReadySnapshot(out snapshot))
-            {
-                return Failure<AdminServerPendingResponse>(
-                    AdminServerErrorCode.Internal);
-            }
-
-            List<PendingRegistration> pendingItems = snapshot.PendingById.Values
-                .OrderBy(item => item.RequestedUtc)
-                .ThenBy(
-                    item => item.Id.ToString("D"),
-                    StringComparer.Ordinal)
-                .ToList();
-            byte[] fingerprint = ComputePendingFingerprint(
-                snapshot,
-                pendingItems);
-            try
-            {
-                int offset;
-                if (!TryResolveOffset(
-                        query.Cursor,
-                        AdminCursorKind.Pending,
-                        false,
-                        fingerprint,
-                        pendingItems.Count,
-                        out offset))
-                {
-                    return Failure<AdminServerPendingResponse>(
-                        AdminServerErrorCode.Conflict);
-                }
-
-                int maximumCount = Math.Min(
-                    query.PageSize,
-                    pendingItems.Count - offset);
-                var items = new List<AdminServerPendingItem>(maximumCount);
-                for (int index = 0; index < maximumCount; index++)
-                {
-                    items.Add(ToPendingItem(pendingItems[offset + index]));
-                }
-
-                AdminServerPendingResponse response;
-                if (!TryCreateCanonicalPage(
-                        items,
-                        pendingItems.Count,
-                        count => CreateNextCursor(
-                            AdminCursorKind.Pending,
-                            false,
-                            offset,
-                            count,
-                            pendingItems.Count,
-                            fingerprint),
-                        (pageItems, totalCount, nextCursor) =>
-                            new AdminServerPendingResponse(
-                                pageItems,
-                                totalCount,
-                                nextCursor),
-                        AdminServerResponseXmlCodec
-                            .SerializePendingResponse,
-                        out response))
-                {
-                    return Failure<AdminServerPendingResponse>(
-                        AdminServerErrorCode.Internal);
-                }
-
-                return AdminHandlerResult<AdminServerPendingResponse>
-                    .Success(response);
-            }
-            finally
-            {
-                Array.Clear(fingerprint, 0, fingerprint.Length);
-            }
-        }
-
         private bool TryResolveOffset(
             string cursor,
             AdminCursorKind kind,
@@ -370,47 +287,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 record.DeletedUtc);
         }
 
-        private static AdminServerPendingItem ToPendingItem(
-            PendingRegistration pending)
-        {
-            if (pending == null)
-            {
-                throw new ArgumentNullException(nameof(pending));
-            }
-
-            AdminPendingRequestType type;
-            AdminServerServiceDefinition current = null;
-            switch (pending.Type)
-            {
-                case PendingRequestType.New:
-                    type = AdminPendingRequestType.New;
-                    break;
-                case PendingRequestType.Modify:
-                    type = AdminPendingRequestType.Modify;
-                    if (pending.BaseRevision.Kind != BaseRevisionKind.Active
-                        || pending.BaseRevision.Record == null)
-                    {
-                        throw new InvalidOperationException(
-                            "A Modify pending item has no active base revision.");
-                    }
-
-                    current = ToServiceDefinition(
-                        pending.BaseRevision.Record.Definition);
-                    break;
-                default:
-                    throw new InvalidOperationException(
-                        "The pending request type is not supported.");
-            }
-
-            return new AdminServerPendingItem(
-                pending.Id,
-                type,
-                pending.RequestedUtc,
-                pending.SourceIp,
-                ToServiceDefinition(pending.Requested),
-                current);
-        }
-
         private static AdminServerServiceDefinition ToServiceDefinition(
             ServiceDefinition definition)
         {
@@ -422,7 +298,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             return new AdminServerServiceDefinition(
                 definition.Name,
                 definition.ProductCode.Value,
-                definition.ServerAddress,
+                definition.ServiceHostName,
+                definition.ServiceIpv4Address,
                 definition.Port);
         }
 
@@ -440,37 +317,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 for (int index = 0; index < records.Count; index++)
                 {
                     writer.WriteServiceRecord(records[index]);
-                }
-
-                return writer.ComputeHash();
-            }
-        }
-
-        private static byte[] ComputePendingFingerprint(
-            DirectorySnapshot snapshot,
-            IReadOnlyList<PendingRegistration> pendingItems)
-        {
-            using (var writer = new AdminFingerprintWriter())
-            {
-                writer.WriteString("admin-pending-cursor-v1");
-                writer.WriteUInt64(snapshot.LogicalClock);
-                writer.WriteInt32(pendingItems.Count);
-                for (int index = 0; index < pendingItems.Count; index++)
-                {
-                    PendingRegistration pending = pendingItems[index];
-                    writer.WriteGuid(pending.Id);
-                    writer.WriteInt32((int)pending.Type);
-                    writer.WriteDateTime(pending.RequestedUtc);
-                    writer.WriteString(pending.SourceIp);
-                    writer.WriteServiceDefinition(pending.Requested);
-                    writer.WriteInt32((int)pending.BaseRevision.Kind);
-                    writer.WriteBoolean(
-                        pending.BaseRevision.Record != null);
-                    if (pending.BaseRevision.Record != null)
-                    {
-                        writer.WriteServiceRecord(
-                            pending.BaseRevision.Record);
-                    }
                 }
 
                 return writer.ComputeHash();
@@ -510,7 +356,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
 
                 WriteString(definition.Name);
                 WriteString(definition.ProductCode.Value);
-                WriteString(definition.ServerAddress);
+                WriteString(definition.ServiceHostName);
+                WriteString(definition.ServiceIpv4Address);
                 WriteInt32(definition.Port);
             }
 

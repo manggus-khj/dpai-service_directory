@@ -11,6 +11,14 @@ namespace DEEPAi.ServiceDirectory.Service
             "--repair-pki-provision";
         internal const string RestoreArgument =
             "--repair-pki-restore";
+        internal const string ConfigureStandbyArgument =
+            "--repair-pki-standby-configure";
+        internal const string PromoteStandbyArgument =
+            "--repair-pki-standby-promote";
+        internal const string InstallDirectoryCertificateArgument =
+            "--repair-directory-certificate-install";
+        internal const string RemoveDirectoryCertificateArgument =
+            "--repair-directory-certificate-remove";
 
         private const string WatchdogServiceName =
             "DEEPAi.ServiceDirectory.Watchdog";
@@ -25,7 +33,19 @@ namespace DEEPAi.ServiceDirectory.Service
                         ProvisionArgument)
                     || StringComparer.Ordinal.Equals(
                         arguments[0],
-                        RestoreArgument));
+                        RestoreArgument)
+                    || StringComparer.Ordinal.Equals(
+                        arguments[0],
+                        ConfigureStandbyArgument)
+                    || StringComparer.Ordinal.Equals(
+                        arguments[0],
+                        PromoteStandbyArgument)
+                    || StringComparer.Ordinal.Equals(
+                        arguments[0],
+                        InstallDirectoryCertificateArgument)
+                    || StringComparer.Ordinal.Equals(
+                        arguments[0],
+                        RemoveDirectoryCertificateArgument));
         }
 
         internal static int Execute(string[] arguments)
@@ -36,14 +56,47 @@ namespace DEEPAi.ServiceDirectory.Service
                 EnsureServiceStopped(
                     ServiceDirectoryWindowsService.MainServiceName);
                 EnsureServiceStopped(WatchdogServiceName);
+                string dataRoot = ServiceDirectoryRuntimeComposition
+                    .GetInstalledDataRootPath();
+                if (StringComparer.Ordinal.Equals(
+                    arguments[0],
+                    InstallDirectoryCertificateArgument))
+                {
+                    DirectoryCertificateInstallationResult result =
+                        CertificateAuthorityRepair
+                            .InstallDirectoryCertificate(
+                                dataRoot,
+                                DateTime.UtcNow);
+                    Console.Out.WriteLine(
+                        "DIRECTORY_CERTIFICATE_INSTALLED {0} {1} {2}",
+                        result.Thumbprint,
+                        result.SerialNumber,
+                        result.NotAfterUtc.ToString(
+                            "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
+                            CultureInfo.InvariantCulture));
+                    return 0;
+                }
+
+                if (StringComparer.Ordinal.Equals(
+                    arguments[0],
+                    RemoveDirectoryCertificateArgument))
+                {
+                    CertificateAuthorityRepair.RemoveDirectoryCertificate(
+                        dataRoot,
+                        arguments[1],
+                        DateTime.UtcNow);
+                    Console.Out.WriteLine(
+                        "DIRECTORY_CERTIFICATE_REMOVED {0}",
+                        arguments[1]);
+                    return 0;
+                }
+
                 if (!Console.IsInputRedirected)
                 {
                     throw new InvalidOperationException(
                         "The repair password must be supplied through standard input.");
                 }
 
-                string dataRoot = ServiceDirectoryRuntimeComposition
-                    .GetInstalledDataRootPath();
                 Guid installedInstanceId = CertificateAuthorityRepair
                     .ReadInstalledInstanceId(dataRoot);
                 string password = ReadPasswordFromStandardInput();
@@ -75,7 +128,9 @@ namespace DEEPAi.ServiceDirectory.Service
                         Array.Clear(hash, 0, hash.Length);
                     }
                 }
-                else
+                else if (StringComparer.Ordinal.Equals(
+                    arguments[0],
+                    RestoreArgument))
                 {
                     CertificateAuthorityRepair.RestoreFromEncryptedBackup(
                         dataRoot,
@@ -84,6 +139,29 @@ namespace DEEPAi.ServiceDirectory.Service
                         password,
                         DateTime.UtcNow);
                     Console.Out.WriteLine("PKI_RESTORED");
+                }
+                else
+                {
+                    bool promote = StringComparer.Ordinal.Equals(
+                        arguments[0],
+                        PromoteStandbyArgument);
+                    CertificateAuthorityStandbyRepairResult result =
+                        promote
+                            ? CertificateAuthorityRepair
+                                .PromoteStandbyFromEncryptedBackup(
+                                    dataRoot,
+                                    installedInstanceId,
+                                    arguments[1],
+                                    password,
+                                    DateTime.UtcNow)
+                            : CertificateAuthorityRepair
+                                .ConfigureStandbyFromEncryptedBackup(
+                                    dataRoot,
+                                    installedInstanceId,
+                                    arguments[1],
+                                    password,
+                                    DateTime.UtcNow);
+                    WriteStandbyResult(result);
                 }
 
                 return 0;
@@ -109,11 +187,64 @@ namespace DEEPAi.ServiceDirectory.Service
                 && StringComparer.Ordinal.Equals(
                     arguments[0],
                     RestoreArgument);
-            if (!provision && !restore)
+            bool configureStandby = arguments != null
+                && arguments.Length == 2
+                && StringComparer.Ordinal.Equals(
+                    arguments[0],
+                    ConfigureStandbyArgument);
+            bool promoteStandby = arguments != null
+                && arguments.Length == 2
+                && StringComparer.Ordinal.Equals(
+                    arguments[0],
+                    PromoteStandbyArgument);
+            bool installDirectoryCertificate = arguments != null
+                && arguments.Length == 1
+                && StringComparer.Ordinal.Equals(
+                    arguments[0],
+                    InstallDirectoryCertificateArgument);
+            bool removeDirectoryCertificate = arguments != null
+                && arguments.Length == 2
+                && StringComparer.Ordinal.Equals(
+                    arguments[0],
+                    RemoveDirectoryCertificateArgument);
+            if (!provision
+                && !restore
+                && !configureStandby
+                && !promoteStandby
+                && !installDirectoryCertificate
+                && !removeDirectoryCertificate)
             {
                 throw new ArgumentException(
                     "The PKI repair command is invalid.",
                     nameof(arguments));
+            }
+        }
+
+        private static void WriteStandbyResult(
+            CertificateAuthorityStandbyRepairResult result)
+        {
+            byte[] hash = result.Backup.GetSha256();
+            try
+            {
+                Console.Out.WriteLine(
+                    "{0} {1} {2} {3} {4} {5} {6}",
+                    result.Promoted
+                        ? "PKI_STANDBY_PROMOTED"
+                        : "PKI_STANDBY_CONFIGURED",
+                    result.DirectoryCertificate.Thumbprint,
+                    result.DirectoryCertificate.SerialNumber,
+                    result.DirectoryCertificate.NotAfterUtc.ToString(
+                        "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
+                        CultureInfo.InvariantCulture),
+                    result.Backup.FileName,
+                    result.Backup.CreatedUtc.ToString(
+                        "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'",
+                        CultureInfo.InvariantCulture),
+                    BitConverter.ToString(hash).Replace("-", string.Empty));
+            }
+            finally
+            {
+                Array.Clear(hash, 0, hash.Length);
             }
         }
 

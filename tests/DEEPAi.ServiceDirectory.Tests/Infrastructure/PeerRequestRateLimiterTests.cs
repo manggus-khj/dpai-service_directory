@@ -78,6 +78,24 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void PkiStateSharesTheExchangeRateBucket()
+        {
+            var limiter = CreateLimiter(() => 0);
+            for (int index = 0;
+                index < PeerRequestRateLimiter.ExchangeRequestsPerMinute - 1;
+                index++)
+            {
+                Assert.IsTrue(limiter.TryAcquire(
+                    PeerInboundOperation.Exchange).IsAllowed);
+            }
+
+            Assert.IsTrue(limiter.TryAcquire(
+                PeerInboundOperation.PkiState).IsAllowed);
+            Assert.IsFalse(limiter.TryAcquire(
+                PeerInboundOperation.PkiState).IsAllowed);
+        }
+
+        [TestMethod]
         public void ReleaseAndRevokeRemainExplicitlyUnconfigured()
         {
             var limiter = CreateLimiter(() => 0);
@@ -102,7 +120,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     1));
             Assert.ThrowsExactly<ArgumentException>(
                 () => new PeerRequestRateLimiter(
-                    "http://10.0.0.2:21000",
+                    "https://10.0.0.2:21000",
                     Guid.Empty,
                     () => 0,
                     1));
@@ -112,7 +130,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             Func<long> timestampProvider)
         {
             return new PeerRequestRateLimiter(
-                "http://10.0.0.2:21000",
+                "https://10.0.0.2:21000",
                 PeerInstanceId,
                 timestampProvider,
                 1);

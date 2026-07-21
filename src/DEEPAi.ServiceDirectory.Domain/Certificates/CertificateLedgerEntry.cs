@@ -1,4 +1,5 @@
 using System;
+using System.Security.Cryptography;
 
 namespace DEEPAi.ServiceDirectory.Domain.Certificates
 {
@@ -30,22 +31,22 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
     public sealed class CertificateLedgerEntry
     {
         public const int Sha256Length = 32;
+        public const int MaximumLeafCertificateBytes = 16 * 1024;
 
         private readonly byte[] _csrSha256;
         private readonly byte[] _requestPayloadSha256;
         private readonly byte[] _subjectPublicKeyInfoSha256;
-        private readonly byte[] _leafCertificateSha256;
+        private readonly byte[] _leafCertificate;
 
         private CertificateLedgerEntry(
             CertificateSerialNumber serialNumber,
-            ProductCode productCode,
+            ServiceDefinition serviceDefinition,
             Guid issuanceRequestId,
             CertificateIssuanceKind issuanceKind,
-            ServiceEndpointIdentity serviceIdentity,
             byte[] csrSha256,
             byte[] requestPayloadSha256,
             byte[] subjectPublicKeyInfoSha256,
-            byte[] leafCertificateSha256,
+            byte[] leafCertificate,
             DateTime issuedUtc,
             DateTime notBeforeUtc,
             DateTime notAfterUtc,
@@ -55,10 +56,9 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
             CertificateRevocationReason? revocationReason)
         {
             SerialNumber = serialNumber;
-            ProductCode = productCode;
+            ServiceDefinition = serviceDefinition;
             IssuanceRequestId = issuanceRequestId;
             IssuanceKind = issuanceKind;
-            ServiceIdentity = serviceIdentity;
             _csrSha256 = CloneSha256(csrSha256, nameof(csrSha256));
             _requestPayloadSha256 = CloneSha256(
                 requestPayloadSha256,
@@ -66,9 +66,7 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
             _subjectPublicKeyInfoSha256 = CloneSha256(
                 subjectPublicKeyInfoSha256,
                 nameof(subjectPublicKeyInfoSha256));
-            _leafCertificateSha256 = CloneSha256(
-                leafCertificateSha256,
-                nameof(leafCertificateSha256));
+            _leafCertificate = CloneLeafCertificate(leafCertificate);
             IssuedUtc = issuedUtc;
             NotBeforeUtc = notBeforeUtc;
             NotAfterUtc = notAfterUtc;
@@ -80,13 +78,16 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
 
         public CertificateSerialNumber SerialNumber { get; }
 
-        public ProductCode ProductCode { get; }
+        public ServiceDefinition ServiceDefinition { get; }
+
+        public ProductCode ProductCode => ServiceDefinition.ProductCode;
 
         public Guid IssuanceRequestId { get; }
 
         public CertificateIssuanceKind IssuanceKind { get; }
 
-        public ServiceEndpointIdentity ServiceIdentity { get; }
+        public ServiceEndpointIdentity ServiceIdentity =>
+            ServiceDefinition.ServiceEndpointIdentity;
 
         public DateTime IssuedUtc { get; }
 
@@ -104,14 +105,13 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
 
         public static CertificateLedgerEntry CreateIssued(
             CertificateSerialNumber serialNumber,
-            ProductCode productCode,
+            ServiceDefinition serviceDefinition,
             Guid issuanceRequestId,
             CertificateIssuanceKind issuanceKind,
-            ServiceEndpointIdentity serviceIdentity,
             byte[] csrSha256,
             byte[] requestPayloadSha256,
             byte[] subjectPublicKeyInfoSha256,
-            byte[] leafCertificateSha256,
+            byte[] leafCertificate,
             DateTime issuedUtc,
             DateTime notBeforeUtc,
             DateTime notAfterUtc)
@@ -123,11 +123,9 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
                     nameof(serialNumber));
             }
 
-            if (!productCode.IsValid)
+            if (serviceDefinition == null)
             {
-                throw new ArgumentException(
-                    "Product code must be valid.",
-                    nameof(productCode));
+                throw new ArgumentNullException(nameof(serviceDefinition));
             }
 
             if (issuanceRequestId == Guid.Empty)
@@ -142,11 +140,6 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
                 throw new ArgumentOutOfRangeException(nameof(issuanceKind));
             }
 
-            if (serviceIdentity == null)
-            {
-                throw new ArgumentNullException(nameof(serviceIdentity));
-            }
-
             EnsureUtc(issuedUtc, nameof(issuedUtc));
             EnsureUtc(notBeforeUtc, nameof(notBeforeUtc));
             EnsureUtc(notAfterUtc, nameof(notAfterUtc));
@@ -159,14 +152,13 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
 
             return new CertificateLedgerEntry(
                 serialNumber,
-                productCode,
+                serviceDefinition,
                 issuanceRequestId,
                 issuanceKind,
-                serviceIdentity,
                 csrSha256,
                 requestPayloadSha256,
                 subjectPublicKeyInfoSha256,
-                leafCertificateSha256,
+                leafCertificate,
                 issuedUtc,
                 notBeforeUtc,
                 notAfterUtc,
@@ -178,14 +170,13 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
 
         public static CertificateLedgerEntry Restore(
             CertificateSerialNumber serialNumber,
-            ProductCode productCode,
+            ServiceDefinition serviceDefinition,
             Guid issuanceRequestId,
             CertificateIssuanceKind issuanceKind,
-            ServiceEndpointIdentity serviceIdentity,
             byte[] csrSha256,
             byte[] requestPayloadSha256,
             byte[] subjectPublicKeyInfoSha256,
-            byte[] leafCertificateSha256,
+            byte[] leafCertificate,
             DateTime issuedUtc,
             DateTime notBeforeUtc,
             DateTime notAfterUtc,
@@ -196,14 +187,13 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
         {
             CertificateLedgerEntry entry = CreateIssued(
                 serialNumber,
-                productCode,
+                serviceDefinition,
                 issuanceRequestId,
                 issuanceKind,
-                serviceIdentity,
                 csrSha256,
                 requestPayloadSha256,
                 subjectPublicKeyInfoSha256,
-                leafCertificateSha256,
+                leafCertificate,
                 issuedUtc,
                 notBeforeUtc,
                 notAfterUtc);
@@ -276,14 +266,13 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
 
             return new CertificateLedgerEntry(
                 SerialNumber,
-                ProductCode,
+                ServiceDefinition,
                 IssuanceRequestId,
                 IssuanceKind,
-                ServiceIdentity,
                 _csrSha256,
                 _requestPayloadSha256,
                 _subjectPublicKeyInfoSha256,
-                _leafCertificateSha256,
+                _leafCertificate,
                 IssuedUtc,
                 NotBeforeUtc,
                 NotAfterUtc,
@@ -319,14 +308,13 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
 
             return new CertificateLedgerEntry(
                 SerialNumber,
-                ProductCode,
+                ServiceDefinition,
                 IssuanceRequestId,
                 IssuanceKind,
-                ServiceIdentity,
                 _csrSha256,
                 _requestPayloadSha256,
                 _subjectPublicKeyInfoSha256,
-                _leafCertificateSha256,
+                _leafCertificate,
                 IssuedUtc,
                 NotBeforeUtc,
                 NotAfterUtc,
@@ -337,11 +325,13 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
         }
 
         public bool MatchesIssuanceRequest(
+            CertificateIssuanceKind issuanceKind,
             Guid issuanceRequestId,
             byte[] csrSha256,
             byte[] requestPayloadSha256)
         {
-            return issuanceRequestId == IssuanceRequestId
+            return issuanceKind == IssuanceKind
+                && issuanceRequestId == IssuanceRequestId
                 && AreEqual(_csrSha256, csrSha256)
                 && AreEqual(_requestPayloadSha256, requestPayloadSha256);
         }
@@ -363,7 +353,15 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
 
         public byte[] GetLeafCertificateSha256()
         {
-            return (byte[])_leafCertificateSha256.Clone();
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                return sha256.ComputeHash(_leafCertificate);
+            }
+        }
+
+        public byte[] GetLeafCertificate()
+        {
+            return (byte[])_leafCertificate.Clone();
         }
 
         private static byte[] CloneSha256(byte[] value, string parameterName)
@@ -373,6 +371,20 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
                 throw new ArgumentException(
                     "SHA-256 values must be exactly 32 bytes.",
                     parameterName);
+            }
+
+            return (byte[])value.Clone();
+        }
+
+        private static byte[] CloneLeafCertificate(byte[] value)
+        {
+            if (value == null
+                || value.Length == 0
+                || value.Length > MaximumLeafCertificateBytes)
+            {
+                throw new ArgumentException(
+                    "Leaf certificate DER must contain 1 to 16384 bytes.",
+                    nameof(value));
             }
 
             return (byte[])value.Clone();

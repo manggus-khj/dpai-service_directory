@@ -7,11 +7,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
     internal enum StateFileTarget
     {
         Directory = 0,
-        Pending = 1,
-        Config = 2,
-        PeerSecret = 3,
-        PkiMetadata = 4,
-        CertificateLedger = 5,
+        Config = 1,
+        PeerSecret = 2,
+        PkiMetadata = 3,
+        CertificateLedger = 4,
+        PeerPkiCache = 5,
         CertificateRevocationList = 6,
         CaCertificate = 7,
         CaPrivateKey = 8
@@ -67,14 +67,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                         "directory.primary.discard.bin",
                         "directory.backup.discard.bin"),
                     new StateFileTargetDescriptor(
-                        StateFileTarget.Pending,
-                        "Pending",
-                        "pending.xml",
-                        "pending.before.bin",
-                        "pending.after.bin",
-                        "pending.primary.discard.bin",
-                        "pending.backup.discard.bin"),
-                    new StateFileTargetDescriptor(
                         StateFileTarget.Config,
                         "Config",
                         "config.xml",
@@ -106,6 +98,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                         "ledger.after.bin",
                         "ledger.primary.discard.bin",
                         "ledger.backup.discard.bin"),
+                    new StateFileTargetDescriptor(
+                        StateFileTarget.PeerPkiCache,
+                        "PeerPkiCache",
+                        @"pki\peer-cache.xml",
+                        "peer-pki.before.bin",
+                        "peer-pki.after.bin",
+                        "peer-pki.primary.discard.bin",
+                        "peer-pki.backup.discard.bin"),
                     new StateFileTargetDescriptor(
                         StateFileTarget.CertificateRevocationList,
                         "CertificateRevocationList",

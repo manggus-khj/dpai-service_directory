@@ -36,8 +36,8 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 PairingId,
                 InitiatorId,
                 ResponderId,
-                "http://10.0.0.1:21000",
-                "http://[2001:db8::2]:21000",
+                "https://10.0.0.1:21000",
+                "https://10.0.0.2:21000",
                 initiatorNonce,
                 responderNonce,
                 initiatorKey,
@@ -48,7 +48,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
 
             CollectionAssert.AreEqual(
                 Convert.FromBase64String(
-                    "+kpz8KqJYTQNq00SozRaJJpZspngGt7AcFDKi6Ce9oI="),
+                    "oKMjYfp2Y5rwo/qAupzLoUDVWoulB0uJfmTtLZDF818="),
                 hash);
             CollectionAssert.AreEqual(
                 SequentialBytes(0, 32),
@@ -76,7 +76,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 () => CreateTranscript(
                     InitiatorId,
                     InitiatorId,
-                    "http://10.0.0.1:21000",
+                    "https://10.0.0.1:21000",
                     7,
                     41,
                     42,
@@ -96,7 +96,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 () => CreateTranscript(
                     InitiatorId,
                     ResponderId,
-                    "http://10.0.0.1:21000",
+                    "https://10.0.0.1:21000",
                     7,
                     41,
                     41,
@@ -106,7 +106,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 () => CreateTranscript(
                     InitiatorId,
                     ResponderId,
-                    "http://10.0.0.1:21000",
+                    "https://10.0.0.1:21000",
                     ulong.MaxValue,
                     41,
                     ulong.MaxValue,
@@ -119,7 +119,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 () => CreateTranscript(
                     InitiatorId,
                     ResponderId,
-                    "http://10.0.0.1:21000",
+                    "https://10.0.0.1:21000",
                     7,
                     41,
                     42,
@@ -530,7 +530,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 initiatorId,
                 responderId,
                 initiatorEndpoint,
-                "http://[2001:db8::2]:21000",
+                "https://[2001:db8::2]:21000",
                 SequentialBytes(0, 32),
                 SequentialBytes(32, 32),
                 initiatorKey,

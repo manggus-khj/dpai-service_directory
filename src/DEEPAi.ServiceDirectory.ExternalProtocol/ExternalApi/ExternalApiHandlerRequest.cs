@@ -57,7 +57,8 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                 throw new ArgumentNullException(nameof(body));
             }
 
-            if (body.Length > ExternalApiContract.MaximumBodyBytes)
+            if (body.Length >
+                ExternalApiContract.MaximumCertificateRequestBodyBytes)
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(body),

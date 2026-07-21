@@ -20,7 +20,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             using (var entry = new PairingDecisionReplayEntry(
                 Guid.Parse("11111111-1111-1111-1111-111111111111"),
                 Guid.Parse("22222222-2222-2222-2222-222222222222"),
-                "http://10.0.0.2:21000",
+                "https://10.0.0.2:21000",
                 PeerPairingDecisionValue.Confirmed,
                 PairingDecisionReplayEntry.CreateDeadline(
                     TimeSpan.FromMinutes(1)),
@@ -62,7 +62,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             using (var entry = new PairingDecisionReplayEntry(
                 Guid.Parse("11111111-1111-1111-1111-111111111111"),
                 Guid.Parse("22222222-2222-2222-2222-222222222222"),
-                "http://10.0.0.2:21000",
+                "https://10.0.0.2:21000",
                 PeerPairingDecisionValue.Cancelled,
                 PairingDecisionReplayEntry.CreateDeadline(
                     TimeSpan.FromMinutes(1)),

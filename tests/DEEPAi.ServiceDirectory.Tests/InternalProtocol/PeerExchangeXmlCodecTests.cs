@@ -164,6 +164,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                     " App ",
                     "ABCD",
                     "service.internal",
+                    "10.0.0.5",
                     21000,
                     utc,
                     false,
@@ -175,6 +176,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                     "App",
                     "ABCD",
                     " service.internal ",
+                    "10.0.0.5",
                     21000,
                     utc,
                     false,
@@ -194,8 +196,8 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                     "<Name> App ABCD </Name>"));
             AssertPushRejected(
                 valid.Replace(
-                    "<ServerAddress>service.internal</ServerAddress>",
-                    "<ServerAddress> service.internal </ServerAddress>"));
+                    "<ServiceHostName>service.internal</ServiceHostName>",
+                    "<ServiceHostName> service.internal </ServiceHostName>"));
         }
 
         [TestMethod]
@@ -298,16 +300,15 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
         }
 
         [TestMethod]
-        public void ErrorResponseParsesExtensionsAndSerializesWithoutReflection()
+        public void ErrorResponseRejectsExtensionsAndSerializesWithoutReflection()
         {
             string remoteMessage = "remote detail must not be reflected";
             string xml = "<Response xmlns=\""
                 + XmlNamespace
-                + "\" xmlns:ext=\"urn:future\"><Result>ERROR</Result>"
+                + "\"><Result>ERROR</Result>"
                 + "<Code>2005</Code><Message>"
                 + remoteMessage
-                + "</Message><Extensions><ext:Future ext:value=\"1\" />"
-                + "</Extensions></Response>";
+                + "</Message></Response>";
 
             PeerExchangeResponse parsed = PeerSyncXmlCodec
                 .ParseAuthenticatedExchangeResponse(Encode(xml));
@@ -318,6 +319,12 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 PeerSyncResponseCode.RevisionCollision,
                 parsed.Code);
             Assert.AreEqual(remoteMessage, parsed.Message);
+
+            AssertResponseFailure(
+                xml.Replace(
+                    "</Response>",
+                    "<Extensions><Future /></Extensions></Response>"),
+                PeerSyncProtocolFailure.InvalidRequest);
 
             string xsiTypedPayload = CreatePushAcknowledgementResponse(
                 SnapshotId,
@@ -433,6 +440,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 "App & " + productCode,
                 productCode,
                 "service.internal",
+                "10.0.0.5",
                 21000,
                 lastModifiedUtc,
                 deleted,
@@ -536,8 +544,9 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 + productCode
                 + "</Name><ProductCode>"
                 + productCode
-                + "</ProductCode><ServerAddress>service.internal"
-                + "</ServerAddress><Port>21000</Port>"
+                + "</ProductCode><ServiceHostName>service.internal"
+                + "</ServiceHostName><ServiceIpv4Address>10.0.0.5"
+                + "</ServiceIpv4Address><Port>21000</Port>"
                 + "<LastModifiedUtc>2026-07-18T00:00:00Z"
                 + "</LastModifiedUtc><Deleted>"
                 + (deleted ? "true" : "false")

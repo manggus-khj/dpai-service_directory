@@ -376,7 +376,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
 
         private void ValidateAllRecoveredState()
         {
-            ValidateDirectoryAndPending();
+            ValidateDirectory();
             using (PersistedPeerConfiguration current = ReadCurrent(true))
             {
             }
@@ -397,7 +397,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 NoOpRecoveryJournalFaultInjector.Instance);
             try
             {
-                store.ValidateDirectoryAndPending();
+                store.ValidateDirectory();
                 using (PersistedPeerConfiguration current =
                     store.ReadCurrent(true))
                 {
@@ -414,25 +414,17 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             }
         }
 
-        private void ValidateDirectoryAndPending()
+        private void ValidateDirectory()
         {
+            _pathPolicy.EnsureForbiddenLegacyStateIsAbsent();
             bool directoryExists = _fileWriter.Exists(
                 StateFileTarget.Directory);
-            bool pendingExists = _fileWriter.Exists(
-                StateFileTarget.Pending);
-            if (directoryExists != pendingExists)
-            {
-                throw new InvalidDataException(
-                    "directory.xml and pending.xml must both exist or both be absent.");
-            }
-
             if (!directoryExists)
             {
-                if (_fileWriter.BackupExists(StateFileTarget.Directory)
-                    || _fileWriter.BackupExists(StateFileTarget.Pending))
+                if (_fileWriter.BackupExists(StateFileTarget.Directory))
                 {
                     throw new RecoveryJournalException(
-                        "Directory state backup exists without primary state documents.",
+                        "Directory state backup exists without its primary document.",
                         null);
                 }
 
@@ -440,23 +432,17 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             }
 
             byte[] directoryBytes = null;
-            byte[] pendingBytes = null;
             try
             {
                 directoryBytes = _fileWriter.Read(
                     StateFileTarget.Directory,
                     MaximumStateDocumentBytes);
-                pendingBytes = _fileWriter.Read(
-                    StateFileTarget.Pending,
-                    MaximumStateDocumentBytes);
                 _stateCodec.DeserializeSnapshot(
-                    directoryBytes,
-                    pendingBytes);
+                    directoryBytes);
             }
             finally
             {
                 Clear(directoryBytes);
-                Clear(pendingBytes);
             }
         }
 
@@ -511,10 +497,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         {
             if (!StringComparer.Ordinal.Equals(
                     expected.ListenAddress,
-                    next.ListenAddress))
+                    next.ListenAddress)
+                || !expected.DirectoryEndpointIdentity.Equals(
+                    next.DirectoryEndpointIdentity))
             {
                 throw new ArgumentException(
-                    "ListenAddress can only be changed by installer repair.",
+                    "Directory identity can only be changed by installer repair.",
                     nameof(next));
             }
 

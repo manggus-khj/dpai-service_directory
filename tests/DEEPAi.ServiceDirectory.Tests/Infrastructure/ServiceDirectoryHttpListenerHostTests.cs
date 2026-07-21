@@ -6,6 +6,7 @@ using System.Net;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
+using DEEPAi.ServiceDirectory.Domain;
 using DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi;
 using DEEPAi.ServiceDirectory.Infrastructure.Http;
 using DEEPAi.ServiceDirectory.Infrastructure.Networking;
@@ -35,7 +36,8 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 CollectionAssert.AreEqual(
                     new[]
                     {
-                        "http://10.20.30.40:21000/",
+                        "https://10.20.30.40:21000/",
+                        "https://management.example.local:21000/",
                         "http://127.0.0.1:21000/"
                     },
                     listener.Prefixes);
@@ -101,6 +103,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             using (var host = new ServiceDirectoryHttpListenerHost(
                 listener,
                 ConfiguredAddress(),
+                ConfiguredIdentity(),
                 request =>
                 {
                     capturedExternal = request;
@@ -221,6 +224,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             using (var host = new ServiceDirectoryHttpListenerHost(
                 listener,
                 ConfiguredAddress(),
+                ConfiguredIdentity(),
                 request =>
                 {
                     externalCalls++;
@@ -309,6 +313,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             using (var host = new ServiceDirectoryHttpListenerHost(
                 listener,
                 ConfiguredAddress(),
+                ConfiguredIdentity(),
                 request => expected,
                 request => AdminHttpResponseData.Bodyless(404),
                 request => ExternalHttpResponseData.Bodyless(404),
@@ -343,7 +348,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     "GET",
                     "/api/services"));
             Assert.AreEqual(
-                TimeSpan.FromSeconds(10),
+                TimeSpan.FromSeconds(15),
                 HttpListenerDeadlinePolicy.GetDeadline(
                     ServiceDirectoryHttpRoute.External,
                     "POST",
@@ -368,6 +373,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             using (var host = new ServiceDirectoryHttpListenerHost(
                 listener,
                 ConfiguredAddress(),
+                ConfiguredIdentity(),
                 request =>
                 {
                     processorEntered.Set();
@@ -395,10 +401,10 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 Assert.IsTrue(processorEntered.Wait(TimeSpan.FromSeconds(2)));
                 Assert.IsTrue(deadline.Called.Wait(TimeSpan.FromSeconds(2)));
                 Assert.AreEqual(
-                    TimeSpan.FromSeconds(10),
+                    TimeSpan.FromSeconds(15),
                     deadline.LastTimeout);
                 Assert.AreEqual(
-                    TimeSpan.FromSeconds(10),
+                    TimeSpan.FromSeconds(15),
                     context.RequestData.LastBodyReadTimeout);
 
                 deadline.Trigger();
@@ -419,6 +425,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             using (var host = new ServiceDirectoryHttpListenerHost(
                 listener,
                 ConfiguredAddress(),
+                ConfiguredIdentity(),
                 request => ExternalHttpResponseData.Bodyless(404),
                 request => AdminHttpResponseData.Bodyless(404),
                 request => ExternalHttpResponseData.Bodyless(404),
@@ -483,6 +490,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             return new ServiceDirectoryHttpListenerHost(
                 listener,
                 ConfiguredAddress(),
+                ConfiguredIdentity(),
                 request => ExternalHttpResponseData.Bodyless(404),
                 request => AdminHttpResponseData.Bodyless(404),
                 request => ExternalHttpResponseData.Bodyless(404),
@@ -497,6 +505,20 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     "10.20.30.40",
                     out address));
             return address;
+        }
+
+        private static DirectoryEndpointIdentity ConfiguredIdentity()
+        {
+            DirectoryEndpointIdentity identity;
+            EndpointIdentityValidationError error;
+            Assert.IsTrue(
+                DirectoryEndpointIdentity.TryCreate(
+                    "management.example.local",
+                    "10.20.30.40",
+                    out identity,
+                    out error),
+                error.ToString());
+            return identity;
         }
 
         private static FakeHttpServerContext Context(

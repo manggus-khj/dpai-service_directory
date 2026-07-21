@@ -7,7 +7,7 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
 {
     public static class AdminPeerEndpoint
     {
-        private const string SchemePrefix = "http://";
+        private const string SchemePrefix = "https://";
         private const string PortSuffix = ":21000";
 
         public static bool TryNormalize(
@@ -42,39 +42,17 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
             }
 
             IPAddress address;
-            if (authority[0] == '[')
+            int portSeparator = authority.LastIndexOf(':');
+            if (portSeparator <= 0
+                || authority.IndexOf(':') != portSeparator
+                || !StringComparer.Ordinal.Equals(
+                    authority.Substring(portSeparator),
+                    PortSuffix)
+                || !TryParseCanonicalIpv4(
+                    authority.Substring(0, portSeparator),
+                    out address))
             {
-                int closingBracket = authority.IndexOf(']');
-                if (closingBracket <= 1
-                    || !StringComparer.Ordinal.Equals(
-                        authority.Substring(closingBracket + 1),
-                        PortSuffix))
-                {
-                    return false;
-                }
-
-                string host = authority.Substring(1, closingBracket - 1);
-                if (host.IndexOf('%') >= 0
-                    || !IPAddress.TryParse(host, out address)
-                    || address.AddressFamily != AddressFamily.InterNetworkV6)
-                {
-                    return false;
-                }
-            }
-            else
-            {
-                int portSeparator = authority.LastIndexOf(':');
-                if (portSeparator <= 0
-                    || authority.IndexOf(':') != portSeparator
-                    || !StringComparer.Ordinal.Equals(
-                        authority.Substring(portSeparator),
-                        PortSuffix)
-                    || !TryParseCanonicalIpv4(
-                        authority.Substring(0, portSeparator),
-                        out address))
-                {
-                    return false;
-                }
+                return false;
             }
 
             if (IsUnsupportedPeerAddress(address))
@@ -82,10 +60,7 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
                 return false;
             }
 
-            canonicalEndpoint = address.AddressFamily == AddressFamily.InterNetworkV6
-                ? SchemePrefix + "[" + address.ToString().ToLowerInvariant() + "]"
-                    + PortSuffix
-                : SchemePrefix + address + PortSuffix;
+            canonicalEndpoint = SchemePrefix + address + PortSuffix;
             return canonicalEndpoint.Length <= 80;
         }
 
@@ -95,7 +70,7 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
             if (!TryNormalize(value, out canonicalEndpoint))
             {
                 throw new ArgumentException(
-                    "Peer endpoint must be a canonical HTTP IP literal on port 21000.",
+                    "Peer endpoint must be a canonical HTTPS IPv4 literal on port 21000.",
                     nameof(value));
             }
 
@@ -154,22 +129,9 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
 
         private static bool IsUnsupportedPeerAddress(IPAddress address)
         {
-            if (address.Equals(IPAddress.Any)
-                || address.Equals(IPAddress.IPv6Any)
+            if (address.AddressFamily != AddressFamily.InterNetwork
+                || address.Equals(IPAddress.Any)
                 || IPAddress.IsLoopback(address))
-            {
-                return true;
-            }
-
-            if (address.AddressFamily == AddressFamily.InterNetworkV6)
-            {
-                return address.ScopeId != 0
-                    || address.IsIPv6LinkLocal
-                    || address.IsIPv6Multicast
-                    || address.IsIPv4MappedToIPv6;
-            }
-
-            if (address.AddressFamily != AddressFamily.InterNetwork)
             {
                 return true;
             }

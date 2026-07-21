@@ -32,7 +32,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
             var request = new PeerPairingHelloRequest(
                 new Guid(PairingId),
                 new Guid(InitiatorId),
-                "http://10.0.0.1:21000",
+                "https://10.0.0.1:21000",
                 nonce,
                 publicKey,
                 0);
@@ -50,7 +50,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
             Assert.AreEqual(new Guid(PairingId), parsed.PairingId);
             Assert.AreEqual(new Guid(InitiatorId),
                 parsed.InitiatorInstanceId);
-            Assert.AreEqual("http://10.0.0.1:21000",
+            Assert.AreEqual("https://10.0.0.1:21000",
                 parsed.InitiatorEndpoint);
             Assert.AreEqual((ulong)0,
                 parsed.InitiatorLastPeerKeyEpoch);
@@ -90,8 +90,8 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                     "DPAI-SD-ECDH-P256-HMAC-SHA256-v2"),
                 valid.Replace(PairingId, PairingId.ToUpperInvariant()),
                 valid.Replace(
-                    "http://10.0.0.1:21000",
-                    "HTTP://10.0.0.1:21000"),
+                    "https://10.0.0.1:21000",
+                    "HTTPS://10.0.0.1:21000"),
                 valid.Replace(
                     nonceBase64,
                     nonceBase64.Substring(0, 4) + " "
@@ -393,7 +393,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
             var helloResult = new PeerPairingHelloResult(
                 new Guid(PairingId),
                 new Guid(ResponderId),
-                "http://10.0.0.2:21000",
+                "https://10.0.0.2:21000",
                 CreateBytes(0x40, 32),
                 Convert.FromBase64String(PublicKeyBase64),
                 7,
@@ -407,7 +407,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 helloResponse.Kind);
             Assert.AreEqual((ulong)8,
                 helloResponse.PairingHello.KeyEpoch);
-            Assert.AreEqual("http://10.0.0.2:21000",
+            Assert.AreEqual("https://10.0.0.2:21000",
                 helloResponse.PairingHello.ResponderEndpoint);
 
             var confirmation = new PeerPairingKeyConfirmation(
@@ -443,11 +443,10 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
             string remoteMessage = "remote detail must not be reflected";
             string errorXml = "<Response xmlns=\""
                 + XmlNamespace
-                + "\" xmlns:ext=\"urn:future\"><Result>ERROR</Result>"
+                + "\"><Result>ERROR</Result>"
                 + "<Code>2004</Code><Message>"
                 + remoteMessage
-                + "</Message><Extensions><ext:Future ext:value=\"1\" />"
-                + "</Extensions></Response>";
+                + "</Message></Response>";
             PeerControlResponse remote = PeerSyncXmlCodec
                 .ParseAuthenticatedReleaseResponse(Encode(errorXml));
             Assert.AreEqual(PeerSyncResponseCode.SyncDisabled,
@@ -498,6 +497,9 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
 
             string[] invalidResponses =
             {
+                errorXml.Replace(
+                    "</Response>",
+                    "<Extensions><Future /></Extensions></Response>"),
                 errorXml.Replace("<Code>2004</Code>", "<Code>0</Code>"),
                 errorXml.Replace("<Result>ERROR</Result>",
                     "<Result>OK</Result>"),
@@ -593,7 +595,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
             return new PeerPairingHelloRequest(
                 new Guid(PairingId),
                 new Guid(InitiatorId),
-                "http://10.0.0.1:21000",
+                "https://10.0.0.1:21000",
                 CreateBytes(0x20, 32),
                 Convert.FromBase64String(PublicKeyBase64),
                 0);

@@ -14,7 +14,7 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
         private static readonly TimeSpan SyncPollingInterval =
             TimeSpan.FromSeconds(5);
         private static readonly TimeSpan ListPollingInterval =
-            TimeSpan.FromSeconds(10);
+            TimeSpan.FromSeconds(5);
         private static readonly TimeSpan WatchdogPollingInterval =
             TimeSpan.FromSeconds(10);
 
@@ -99,12 +99,12 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
         private async Task RefreshCurrentPageAsync()
         {
             CancellationToken cancellationToken = _lifetimeCancellation.Token;
-            if (SelectedPageIndex == 3 || SelectedPageIndex == 0)
+            if (SelectedPageIndex == 2 || SelectedPageIndex == 0)
             {
                 await RefreshSyncAsync(cancellationToken, true);
                 await RefreshWatchdogAsync(cancellationToken);
             }
-            else if (SelectedPageIndex == 4)
+            else if (SelectedPageIndex == 3)
             {
                 await RefreshLoggingAsync(cancellationToken, true);
                 await RefreshCertificateAdministrationAsync(
@@ -196,7 +196,7 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             bool manualProbe)
         {
             int page = SelectedPageIndex;
-            if (page != 1 && page != 2)
+            if (page != 1)
             {
                 return;
             }
@@ -208,18 +208,12 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
 
             try
             {
-                if (page == 1)
-                {
-                    await RefreshPendingPageCoreAsync(
-                        cancellationToken,
-                        manualProbe);
-                }
-                else
-                {
-                    await RefreshServicePageCoreAsync(
-                        cancellationToken,
-                        manualProbe);
-                }
+                await RefreshRegistrationModeCoreAsync(
+                    cancellationToken,
+                    manualProbe);
+                await RefreshServicePageCoreAsync(
+                    cancellationToken,
+                    manualProbe);
             }
             finally
             {
@@ -227,34 +221,16 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             }
         }
 
-        private async Task RefreshPendingPageCoreAsync(
+        private async Task RefreshRegistrationModeCoreAsync(
             CancellationToken cancellationToken,
             bool manualProbe)
         {
             try
             {
-                AdminPage<AdminPendingItem> page = await _adminClient.GetPendingAsync(
-                    _pendingCursor,
-                    cancellationToken);
-                ApplyPendingPage(page, manualProbe);
-            }
-            catch (AdminApiException exception) when (
-                exception.IsConflict && _pendingCursor != null)
-            {
-                ResetPendingPaging();
-                try
-                {
-                    AdminPage<AdminPendingItem> page =
-                        await _adminClient.GetPendingAsync(null, cancellationToken);
-                    ApplyPendingPage(page, manualProbe);
-                    SetStatus(
-                        "승인 대기 목록이 변경되어 첫 페이지부터 다시 표시합니다.",
-                        false);
-                }
-                catch (AdminApiException retryException)
-                {
-                    HandleAdminFailure(retryException);
-                }
+                AdminServerRegistrationModeResponse response =
+                    await _adminClient.GetRegistrationModeAsync(
+                        cancellationToken);
+                ApplyRegistrationMode(response, manualProbe);
             }
             catch (AdminApiException exception)
             {
@@ -403,23 +379,24 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
                     + " | HEALTH=" + health;
         }
 
-        private void ApplyPendingPage(
-            AdminPage<AdminPendingItem> page,
+        private void ApplyRegistrationMode(
+            AdminServerRegistrationModeResponse response,
             bool manualProbe)
         {
-            PendingItems.Clear();
-            foreach (AdminPendingItem item in page.Items)
+            if (response == null)
             {
-                PendingItems.Add(item);
+                throw new ArgumentNullException(nameof(response));
             }
 
-            SelectedPending = null;
-            _pendingTotalCount = page.TotalCount;
-            _pendingNextCursor = page.NextCursor;
-            OnPropertyChanged(nameof(PendingCountText));
-            OnPropertyChanged(nameof(HasPendingCapacityWarning));
-            OnPropertyChanged(nameof(PendingCapacityWarningText));
-            OnPropertyChanged(nameof(PendingPageText));
+            _registrationModeResponse = response;
+            OnPropertyChanged(nameof(RegistrationModeSummaryText));
+            OnPropertyChanged(nameof(RegistrationModeStateText));
+            OnPropertyChanged(nameof(RegistrationModeCountdownText));
+            OnPropertyChanged(nameof(RegistrationModeWindowText));
+            OnPropertyChanged(nameof(LastRegistrationOutcomeText));
+            OnPropertyChanged(nameof(LastRegistrationCompletedText));
+            OnPropertyChanged(nameof(LastRegistrationServiceText));
+            OnPropertyChanged(nameof(LastRegistrationCertificateText));
             MarkAdminSuccess(manualProbe);
             RaiseCommandStates();
         }
@@ -440,16 +417,6 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             OnPropertyChanged(nameof(ServiceCountText));
             OnPropertyChanged(nameof(ServicePageText));
             MarkAdminSuccess(manualProbe);
-            RaiseCommandStates();
-        }
-
-        private void ResetPendingPaging()
-        {
-            _pendingCursor = null;
-            _pendingNextCursor = null;
-            _pendingPreviousCursors.Clear();
-            _pendingPageNumber = 1;
-            OnPropertyChanged(nameof(PendingPageText));
             RaiseCommandStates();
         }
 
@@ -525,11 +492,11 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
         {
             try
             {
-                if (SelectedPageIndex == 1 || SelectedPageIndex == 2)
+                if (SelectedPageIndex == 1)
                 {
                     await RefreshVisibleListAsync(cancellationToken, true);
                 }
-                else if (SelectedPageIndex == 4)
+                else if (SelectedPageIndex == 3)
                 {
                     await RefreshLoggingAsync(cancellationToken, true);
                 }

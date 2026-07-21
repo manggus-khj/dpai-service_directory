@@ -2,18 +2,18 @@
 
 ```text
 최초 작성일: 2026-07-17
-최종 변경일: 2026-07-20
-revision: 2
+최종 변경일: 2026-07-21
+revision: 10
 ```
 
 > 문서 상태: 인증서 기반 목표 wire 계약 확정
-> 구현 상태: PKI core 1차 소스만 부분 구현. 현재 wire·XSD·listener는 평문 HTTP·CSR 없는 승인 대기 계약이며 이 명세와 일치하지 않음
+> 구현 상태: 목표 `external.xsd`·공개 DTO·strict codec과 registration/renewal stable payload·exact replay/충돌·16 MiB ledger preflight를 구현했다. Directory IPv4·hostname 두 exact remote HTTPS listener prefix에 공개 `/pki/ca`·`/pki/crl`, 목표 조회와 CSR/SAN 검증·등록 모드 원자 claim·즉시 등록·재등록 transaction, current RSA/ECDSA leaf proof·identity hash·timestamp·nonce 검증 기반 renewal과 exact replay를 연결하고 legacy 승인 대기 경계를 제거했다. 신규 등록·재등록 시스템 이벤트는 발급 transaction의 durable commit 이후 기록한다. 두 prefix 보완까지 포함한 2026-07-21 `Debug|x64`·`Release|x64` 자동 테스트 663개가 모두 통과했으며 외부 앱 TOFU/pin 구현과 실제 HTTPS wire 검증은 남아 있다.
 > 대상 독자: Milestone Management Server에 연결한 뒤 Directory에서 서비스를 조회하거나 자기 서비스를 등록하는 애플리케이션 개발자
 > 배포 범위: 사내 연동 개발자와 승인된 운영 담당자
 
 이 문서는 외부 애플리케이션이 Directory의 위치와 인증서를 신뢰하고, 서비스를 조회하고, 자기 서버 인증서를 발급·갱신하고, 조회한 대상 서비스의 인증서를 검증하는 전체 연동 계약이다. endpoint 형식만 구현하고 이 문서의 최초 신뢰·pin·CSR·CRL 절차를 생략하면 호환 구현이 아니다.
 
-현재 저장소의 `DEEPAi.ServiceDirectory.ExternalProtocol`은 서버 내부 구현체이며 재배포 가능한 client SDK가 아니다. 외부 앱은 이 문서와 향후 갱신할 [`xsd/external.xsd`](./04-api/external.xsd)를 단일 원본으로 사용한다. 현재 XSD와 코드는 이 목표 계약으로 아직 변경하지 않았다.
+현재 저장소의 `DEEPAi.ServiceDirectory.ExternalProtocol`은 서버 내부 구현체이며 재배포 가능한 client SDK가 아니다. 외부 앱은 이 문서와 [`external.xsd`](./04-api/external.xsd)를 단일 원본으로 사용한다. 목표 XSD·DTO·codec과 공개 PKI·조회·즉시 등록·renewal route는 HTTPS runtime source에 연결됐지만 호출 측 TOFU/pin은 별도 단계이며, 이번 변경 뒤 실제 wire 실행 검증 전에는 현재 바이너리 전체가 이 계약을 제공한다고 간주하지 않는다.
 
 ## 1. 역할과 계약 범위
 
@@ -64,6 +64,7 @@ Directory base by IPv4: https://10.0.0.10:21000
 - DNS 역조회, Directory 요청의 출발지 주소, redirect의 다른 host와 별도 자동 검색 결과로 두 값을 만들거나 교체하지 않는다.
 - 두 값은 반드시 같은 Management Server를 가리켜야 한다. hostname의 정상 이름 해석 결과에 저장 IPv4가 없으면 Directory 연결을 시작하지 않고 Milestone 연결 설정 오류로 처리한다.
 - Directory installer는 로컬 Management Server hostname/FQDN 한 개와 선택한 `ListenAddress` IPv4 한 개를 Directory leaf SAN에 각각 `dNSName`, `iPAddress`로 반드시 포함한다.
+- Directory installer와 runtime은 위 두 base에 해당하는 hostname·IPv4 exact HTTPS URL prefix를 모두 등록한다. 한 binding의 부재를 다른 base로 자동 대체하거나 wildcard host prefix를 사용하지 않는다.
 - 외부 앱은 현장 설정에 따라 DNS base 또는 IPv4 base를 선택할 수 있다. 인증서 검증 실패 뒤 다른 base로 자동 fallback하지 않는다.
 - Directory installer는 ProductCode, Directory 주소, CA 파일, CA pin 또는 외부 앱 인증서를 입력받지 않는다.
 - Directory leaf에 저장한 hostname과 IPv4 SAN이 둘 다 없거나 어느 하나라도 값이 다르면 연결은 실패한다.
@@ -622,4 +623,4 @@ CN fallback, name mismatch 무시, OS trust store의 다른 root fallback과 `ac
 - `PendingId` 기반 승인 대기 의미
 - 등록 결과를 service polling으로만 추정하는 절차
 
-PKI core 1차 소스와 단위 테스트 소스는 추가됐지만 `external.xsd`·DTO·handler·listener는 아직 위 목표 계약으로 변경되지 않았다. 후속 구현은 [인증서 전환 변경계획](./02-certificate-transition.md)에 따라 XSD·DTO·listener·installer·저장·복구·테스트를 함께 변경해야 한다. 실제 wire 연결과 검증 전까지 현재 바이너리가 이 명세를 제공한다고 표시하지 않는다.
+목표 `external.xsd`, 공개 request/response DTO, strict UTF-8·XSD codec과 입력 거부 경계, 공개 PKI·조회·즉시 등록·재등록·renewal·exact replay·overlap 폐기를 구현했다. 기존 `LegacyExternal*` codec·모델·schema 경계는 제거했고 등록 시스템 이벤트는 durable commit 뒤에만 기록한다. 두 exact remote prefix를 포함한 2026-07-21 최신 작업 트리를 양 구성 자동 테스트 663개와 installer PowerShell 회귀로 검증했다. 외부 앱 TOFU/pin·CRL cache 통합과 실제 HTTPS wire 실행은 후속 검증이다.

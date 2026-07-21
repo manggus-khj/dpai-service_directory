@@ -503,7 +503,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             ServiceRecord existing = TestData.ActiveRecord(
                 TestData.Definition(
                     name: "Unchanged",
-                    serverAddress: "service.internal"),
+                    serviceHostName: "service.internal"),
                 3UL,
                 TestData.OriginB);
             var initial = new DirectorySnapshot(
@@ -548,7 +548,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             ServiceRecord existing = TestData.ActiveRecord(
                 TestData.Definition(
                     name: "Unchanged",
-                    serverAddress: "service.internal"),
+                    serviceHostName: "service.internal"),
                 3UL,
                 TestData.OriginB);
             var initial = new DirectorySnapshot(
@@ -650,6 +650,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 name,
                 productCode,
                 "service.internal",
+                "10.20.30.40",
                 21000,
                 TestData.Utc(0),
                 deleted,
@@ -681,7 +682,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     TestData.Definition(
                         name: "Local " + productCode,
                         productCode: productCode,
-                        serverAddress: "service.internal"),
+                        serviceHostName: "service.internal"),
                     1UL,
                     TestData.OriginA));
             }

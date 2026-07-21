@@ -7,6 +7,7 @@ using DEEPAi.ServiceDirectory.Infrastructure.Http;
 using DEEPAi.ServiceDirectory.Infrastructure.Logging;
 using DEEPAi.ServiceDirectory.Infrastructure.Networking;
 using DEEPAi.ServiceDirectory.Infrastructure.Persistence;
+using DEEPAi.ServiceDirectory.Infrastructure.Pki;
 using DEEPAi.ServiceDirectory.InternalProtocol.Admin;
 using DEEPAi.ServiceDirectory.InternalProtocol.Peer;
 
@@ -29,6 +30,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
         private readonly SystemFileLogger _systemLog;
         private readonly SecurityAuditEventLogger _securityAuditLogger;
         private readonly IPeerHttpTransport _transport;
+        private readonly ICertificateAuthorityPeerSynchronization _peerPki;
         private readonly Func<DateTimeOffset> _utcNowProvider;
         private readonly Timer _periodicTimer;
 
@@ -59,7 +61,26 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                 systemFileLogger,
                 securityAuditLogger,
                 new SystemPeerHttpTransport(),
-                () => DateTimeOffset.UtcNow)
+                () => DateTimeOffset.UtcNow,
+                null)
+        {
+        }
+
+        public PeerSynchronizationController(
+            ServiceDirectoryRuntimeConfigurationState configurationState,
+            StateMutationCoordinator stateCoordinator,
+            SystemFileLogger systemFileLogger,
+            SecurityAuditEventLogger securityAuditLogger,
+            ICertificateAuthorityPeerSynchronization peerPki)
+            : this(
+                configurationState,
+                stateCoordinator,
+                systemFileLogger,
+                securityAuditLogger,
+                new SystemPeerHttpTransport(
+                    RequireTlsTrustProvider(peerPki)),
+                () => DateTimeOffset.UtcNow,
+                peerPki)
         {
         }
 
@@ -70,6 +91,25 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
             SecurityAuditEventLogger securityAuditLogger,
             IPeerHttpTransport transport,
             Func<DateTimeOffset> utcNowProvider)
+            : this(
+                configurationState,
+                stateCoordinator,
+                systemFileLogger,
+                securityAuditLogger,
+                transport,
+                utcNowProvider,
+                null)
+        {
+        }
+
+        internal PeerSynchronizationController(
+            ServiceDirectoryRuntimeConfigurationState configurationState,
+            StateMutationCoordinator stateCoordinator,
+            SystemFileLogger systemFileLogger,
+            SecurityAuditEventLogger securityAuditLogger,
+            IPeerHttpTransport transport,
+            Func<DateTimeOffset> utcNowProvider,
+            ICertificateAuthorityPeerSynchronization peerPki)
         {
             _configurationState = configurationState
                 ?? throw new ArgumentNullException(
@@ -85,6 +125,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                     nameof(securityAuditLogger));
             _transport = transport ?? throw new ArgumentNullException(
                 nameof(transport));
+            _peerPki = peerPki;
             _utcNowProvider = utcNowProvider
                 ?? throw new ArgumentNullException(
                     nameof(utcNowProvider));
@@ -406,7 +447,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                 configuration.ListenAddress);
             _pairing = new PairingNegotiationStateMachine(
                 configuration.InstanceId,
-                listenerAddress.HttpPrefix.TrimEnd('/'),
+                listenerAddress.HttpsPrefix.TrimEnd('/'),
                 configuration.LastPeerKeyEpoch);
             _pairing.OpenWindow(peerEndpoint);
             DateTime now = GetUtcNow();
@@ -811,6 +852,25 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
             {
                 Array.Clear(value, 0, value.Length);
             }
+        }
+
+        private static IPeerTlsTrustProvider RequireTlsTrustProvider(
+            ICertificateAuthorityPeerSynchronization peerPki)
+        {
+            if (peerPki == null)
+            {
+                throw new ArgumentNullException(nameof(peerPki));
+            }
+
+            var provider = peerPki as IPeerTlsTrustProvider;
+            if (provider == null)
+            {
+                throw new ArgumentException(
+                    "Peer PKI synchronization must also provide pinned TLS trust.",
+                    nameof(peerPki));
+            }
+
+            return provider;
         }
     }
 }

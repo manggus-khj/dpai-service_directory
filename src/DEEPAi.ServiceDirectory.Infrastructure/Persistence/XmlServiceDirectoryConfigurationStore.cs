@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Security;
+using DEEPAi.ServiceDirectory.Domain;
 using DEEPAi.ServiceDirectory.Infrastructure.Configuration;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
@@ -96,7 +97,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
 
             ServiceDirectoryConfiguration requiredInitial =
                 ServiceDirectoryConfiguration.CreateInitial(
-                    initialConfiguration.ListenAddress,
+                    initialConfiguration.DirectoryEndpointIdentity,
                     initialConfiguration.InstanceId);
             if (!ConfigurationValueComparer.Equals(
                     requiredInitial,
@@ -142,10 +143,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
 
             if (!StringComparer.Ordinal.Equals(
                     expectedConfiguration.ListenAddress,
-                    nextConfiguration.ListenAddress))
+                    nextConfiguration.ListenAddress)
+                || !expectedConfiguration.DirectoryEndpointIdentity.Equals(
+                    nextConfiguration.DirectoryEndpointIdentity))
             {
                 throw new ArgumentException(
-                    "ListenAddress can only be changed by installer repair.",
+                    "Directory identity can only be changed by installer repair.",
                     nameof(nextConfiguration));
             }
 
@@ -180,19 +183,41 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             }
         }
 
-        public ConfigurationCommitResult CommitListenAddressForRepair(
+        public ConfigurationCommitResult CommitDirectoryIdentityForRepair(
             ServiceDirectoryConfiguration expectedConfiguration,
-            string nextListenAddress)
+            string nextDirectoryHostName,
+            string nextDirectoryIpv4Address)
         {
             if (expectedConfiguration == null)
             {
                 throw new ArgumentNullException(nameof(expectedConfiguration));
             }
 
+            DirectoryEndpointIdentity nextIdentity;
+            EndpointIdentityValidationError identityError;
+            if (!DirectoryEndpointIdentity.TryCreate(
+                    nextDirectoryHostName,
+                    nextDirectoryIpv4Address,
+                    out nextIdentity,
+                    out identityError)
+                || !StringComparer.Ordinal.Equals(
+                    nextDirectoryHostName,
+                    nextIdentity.DirectoryHostName)
+                || !StringComparer.Ordinal.Equals(
+                    nextDirectoryIpv4Address,
+                    nextIdentity.DirectoryIpv4Address))
+            {
+                throw new ArgumentException(
+                    "The repair Directory identity is invalid: "
+                    + identityError
+                    + ".",
+                    nameof(nextDirectoryHostName));
+            }
+
             ServiceDirectoryConfiguration nextConfiguration =
-                expectedConfiguration.WithListenAddressForRepair(
-                    nextListenAddress);
-            if (!ConfigurationValueComparer.EqualsExceptListenAddress(
+                expectedConfiguration.WithDirectoryIdentityForRepair(
+                    nextIdentity);
+            if (!ConfigurationValueComparer.EqualsExceptDirectoryIdentity(
                     expectedConfiguration,
                     nextConfiguration))
             {

@@ -40,7 +40,9 @@ namespace DEEPAi.ServiceDirectory.Tests.ExternalProtocol
                     "/api/registration",
                     null,
                     new[] { "not-used" },
-                    new byte[ExternalApiContract.MaximumBodyBytes + 1],
+                    new byte[
+                        ExternalApiContract
+                            .MaximumCertificateRequestBodyBytes + 1],
                     IPAddress.Parse("192.0.2.10")));
 
             byte[] body = { 1, 2, 3 };
@@ -228,7 +230,7 @@ namespace DEEPAi.ServiceDirectory.Tests.ExternalProtocol
             ServiceDefinition approved = TestData.Definition(
                 name: "Approved service",
                 productCode: "AB12",
-                serverAddress: "10.20.30.40",
+                serviceIpv4Address: "10.20.30.40",
                 port: 21000);
             ServiceRecord record = TestData.ActiveRecord(
                 approved,
@@ -237,7 +239,7 @@ namespace DEEPAi.ServiceDirectory.Tests.ExternalProtocol
             ServiceDefinition requested = TestData.Definition(
                 name: "Pending replacement",
                 productCode: "AB12",
-                serverAddress: "10.20.30.41",
+                serviceIpv4Address: "10.20.30.41",
                 port: 22000);
             var pending = new PendingRegistration(
                 PendingId,
@@ -259,7 +261,12 @@ namespace DEEPAi.ServiceDirectory.Tests.ExternalProtocol
             string body = BodyText(response);
             StringAssert.Contains(body, "<Name>Approved service</Name>");
             StringAssert.Contains(body, "<ProductCode>AB12</ProductCode>");
-            StringAssert.Contains(body, "<ServerAddress>10.20.30.40</ServerAddress>");
+            StringAssert.Contains(
+                body,
+                "<ServiceHostName>service.internal</ServiceHostName>");
+            StringAssert.Contains(
+                body,
+                "<ServiceIpv4Address>10.20.30.40</ServiceIpv4Address>");
             StringAssert.Contains(body, "<Port>21000</Port>");
             Assert.IsTrue(body.IndexOf("Pending replacement", StringComparison.Ordinal) < 0);
             Assert.IsTrue(body.IndexOf("PendingId", StringComparison.Ordinal) < 0);
@@ -304,7 +311,7 @@ namespace DEEPAi.ServiceDirectory.Tests.ExternalProtocol
         }
 
         [TestMethod]
-        public void RegistrationCreatesPendingAndIdenticalRetryReusesPendingId()
+        public void RegistrationReturnsConflictWhenCertificateServiceUnavailable()
         {
             var store = new FakeStateStore(
                 StateLoadResult.Success(DirectorySnapshot.Empty()));
@@ -320,33 +327,19 @@ namespace DEEPAi.ServiceDirectory.Tests.ExternalProtocol
             ExternalApiHandlerResponse first = handler.Handle(request);
             ExternalApiHandlerResponse repeated = handler.Handle(request);
 
-            AssertXmlResponse(first, 200, 0);
-            AssertXmlResponse(repeated, 200, 0);
-            StringAssert.Contains(BodyText(first), "<Status>PENDING_NEW</Status>");
-            StringAssert.Contains(
-                BodyText(first),
-                "<PendingId>55555555-5555-5555-5555-555555555555</PendingId>");
-            StringAssert.Contains(
-                BodyText(repeated),
-                "<Status>PENDING_EXISTS</Status>");
-            StringAssert.Contains(
-                BodyText(repeated),
-                "<PendingId>55555555-5555-5555-5555-555555555555</PendingId>");
-            Assert.AreEqual(1, store.CommitCallCount);
-            Assert.AreEqual(1, coordinator.CurrentSnapshot.PendingCount);
-            PendingRegistration pending;
-            Assert.IsTrue(
-                coordinator.CurrentSnapshot.TryGetPending(PendingId, out pending));
-            Assert.AreEqual("192.0.2.55", pending.SourceIp);
+            AssertXmlResponse(first, 409, 1002);
+            AssertXmlResponse(repeated, 409, 1002);
+            Assert.AreEqual(0, store.CommitCallCount);
+            Assert.AreEqual(0, coordinator.CurrentSnapshot.PendingCount);
         }
 
         [TestMethod]
-        public void RegistrationMapsConflictAlreadyRegisteredAndPendingModify()
+        public void UnavailableRegistrationDoesNotUseExistingDomainState()
         {
             ServiceDefinition active = TestData.Definition(
                 name: "Current",
                 productCode: "AB12",
-                serverAddress: "service.internal",
+                serviceHostName: "service.internal",
                 port: 21000);
             ServiceRecord record = TestData.ActiveRecord(
                 active,
@@ -380,20 +373,10 @@ namespace DEEPAi.ServiceDirectory.Tests.ExternalProtocol
                     "service.internal",
                     21000));
 
-            AssertXmlResponse(alreadyRegistered, 200, 0);
-            StringAssert.Contains(
-                BodyText(alreadyRegistered),
-                "<Status>ALREADY_REGISTERED</Status>");
-            Assert.IsTrue(
-                BodyText(alreadyRegistered).IndexOf(
-                    "PendingId",
-                    StringComparison.Ordinal) < 0);
-            AssertXmlResponse(pendingModify, 200, 0);
-            StringAssert.Contains(
-                BodyText(pendingModify),
-                "<Status>PENDING_MODIFY</Status>");
+            AssertXmlResponse(alreadyRegistered, 409, 1002);
+            AssertXmlResponse(pendingModify, 409, 1002);
             AssertXmlResponse(conflict, 409, 1002);
-            Assert.AreEqual(1, store.CommitCallCount);
+            Assert.AreEqual(0, store.CommitCallCount);
         }
 
         [TestMethod]
@@ -421,63 +404,23 @@ namespace DEEPAi.ServiceDirectory.Tests.ExternalProtocol
         }
 
         [TestMethod]
-        public void PendingCapacityReturns429WithoutRetryAfter()
+        public void RenewalRouteUsesTargetRequestAndFailsClosedWhenUnavailable()
         {
-            var pending = new List<PendingRegistration>(
-                DirectorySnapshot.PendingRegistrationLimit);
-            for (int index = 0;
-                index < DirectorySnapshot.PendingRegistrationLimit;
-                index++)
-            {
-                ServiceDefinition definition = TestData.Definition(
-                    name: "Pending " + index,
-                    productCode: ProductCodeFor(index));
-                pending.Add(
-                    new PendingRegistration(
-                        GuidFor(index + 1),
-                        PendingRequestType.New,
-                        TestData.Utc(index % 60),
-                        "192.0.2.10",
-                        definition,
-                        DirectoryBaseRevision.Capture(null)));
-            }
-
             ExternalApiHandler handler = CreateHandler(
-                new DirectorySnapshot(
-                    new ServiceRecord[0],
-                    pending,
-                    0UL));
+                DirectorySnapshot.Empty());
 
-            ExternalApiHandlerResponse response = handler.Handle(
-                RegistrationRequest(
-                    "ZZZZ",
-                    "Over capacity",
-                    "service.internal",
-                    21000));
-            ExternalApiHandlerResponse existing = handler.Handle(
-                RegistrationRequest(
-                    "0000",
-                    "Pending 0",
-                    "10.20.30.40",
-                    21000));
-            ExternalApiHandlerResponse conflict = handler.Handle(
-                RegistrationRequest(
-                    "0000",
-                    "Different pending request",
-                    "10.20.30.40",
-                    21000));
+            ExternalApiHandlerResponse unavailable = handler.Handle(
+                RenewalRequest("AB12"));
+            ExternalApiHandlerResponse mismatch = handler.Handle(
+                RenewalRequest("AB12", "CD34"));
 
-            AssertXmlResponse(response, 429, 1004);
-            Assert.IsFalse(response.RetryAfterSeconds.HasValue);
-            AssertXmlResponse(existing, 200, 0);
-            StringAssert.Contains(
-                BodyText(existing),
-                "<Status>PENDING_EXISTS</Status>");
-            AssertXmlResponse(conflict, 409, 1002);
+            AssertXmlResponse(unavailable, 409, 1007);
+            AssertXmlResponse(mismatch, 401, 1003);
+            Assert.IsTrue(mismatch.RequiresInvalidApiKeyAudit);
         }
 
         [TestMethod]
-        public void PersistenceAndRecoveryFailuresReturnOnlySafe500Envelope()
+        public void UnavailableRegistrationDoesNotStartDirectoryPersistence()
         {
             var store = new FakeStateStore(
                 StateLoadResult.Success(DirectorySnapshot.Empty()))
@@ -495,8 +438,8 @@ namespace DEEPAi.ServiceDirectory.Tests.ExternalProtocol
                     "service.internal",
                     21000));
 
-            AssertXmlResponse(persistenceFailure, 500, 3000);
-            AssertSafeInternalBody(persistenceFailure);
+            AssertXmlResponse(persistenceFailure, 409, 1002);
+            Assert.AreEqual(0, store.CommitCallCount);
 
             store.CommitResult = StateCommitResult.Failure(
                 StateCommitFailureCode.RecoveryRequired);
@@ -506,13 +449,8 @@ namespace DEEPAi.ServiceDirectory.Tests.ExternalProtocol
                     "Directory 2",
                     "service2.internal",
                     21001));
-            ExternalApiHandlerResponse unavailableLookup = handler.Handle(
-                Request("GET", "/api/services", "CD34"));
-
-            AssertXmlResponse(recoveryFailure, 500, 3000);
-            AssertXmlResponse(unavailableLookup, 500, 3000);
-            AssertSafeInternalBody(recoveryFailure);
-            AssertSafeInternalBody(unavailableLookup);
+            AssertXmlResponse(recoveryFailure, 409, 1002);
+            Assert.AreEqual(0, store.CommitCallCount);
         }
 
         [TestMethod]
@@ -524,8 +462,7 @@ namespace DEEPAi.ServiceDirectory.Tests.ExternalProtocol
             var handler = new ExternalApiHandler(
                 coordinator,
                 () => throw new InvalidOperationException(
-                    "C:\\sensitive\\state.xml key=do-not-expose"),
-                () => PendingId);
+                    "C:\\sensitive\\state.xml key=do-not-expose"));
 
             ExternalApiHandlerResponse response = handler.Handle(
                 Request("GET", "/api/health", "AB12"));
@@ -548,8 +485,7 @@ namespace DEEPAi.ServiceDirectory.Tests.ExternalProtocol
         {
             return new ExternalApiHandler(
                 coordinator,
-                () => LocalNow,
-                () => PendingId);
+                () => LocalNow);
         }
 
         private static StateMutationCoordinator Open(FakeStateStore store)
@@ -593,7 +529,7 @@ namespace DEEPAi.ServiceDirectory.Tests.ExternalProtocol
         private static ExternalApiHandlerRequest RegistrationRequest(
             string productCode,
             string name,
-            string serverAddress,
+            string serviceHostName,
             int port,
             IPAddress remoteAddress = null,
             string apiKeyProductCode = null)
@@ -601,21 +537,62 @@ namespace DEEPAi.ServiceDirectory.Tests.ExternalProtocol
             string xml =
                 "<RegistrationRequest xmlns=\""
                 + ExternalApiContract.XmlNamespace
-                + "\"><Name>"
+                + "\"><RegistrationRequestId>"
+                + PendingId.ToString("D")
+                + "</RegistrationRequestId><Name>"
                 + name
                 + "</Name><ProductCode>"
                 + productCode
-                + "</ProductCode><ServerAddress>"
-                + serverAddress
-                + "</ServerAddress><Port>"
+                + "</ProductCode><ServiceHostName>"
+                + serviceHostName
+                + "</ServiceHostName><ServiceIpv4Address>10.20.30.40"
+                + "</ServiceIpv4Address><Port>"
                 + port
-                + "</Port></RegistrationRequest>";
+                + "</Port><CertificateSigningRequest>AQID"
+                + "</CertificateSigningRequest></RegistrationRequest>";
             return Request(
                 "POST",
                 "/api/registration",
                 apiKeyProductCode ?? productCode,
                 body: StrictUtf8.GetBytes(xml),
                 remoteAddress: remoteAddress);
+        }
+
+        private static ExternalApiHandlerRequest RenewalRequest(
+            string productCode,
+            string apiKeyProductCode = null)
+        {
+            string xml =
+                "<CertificateRenewalRequest xmlns=\""
+                + ExternalApiContract.XmlNamespace
+                + "\"><RenewalRequestId>"
+                + PendingId.ToString("D")
+                + "</RenewalRequestId><ProductCode>"
+                + productCode
+                + "</ProductCode>"
+                + "<CurrentSerialNumber>"
+                + "1234567890ABCDEF1234567890ABCDEF"
+                + "</CurrentSerialNumber>"
+                + "<TimestampUtc>2026-07-18T01:20:30.000Z"
+                + "</TimestampUtc><Nonce>"
+                + Convert.ToBase64String(new byte[16])
+                + "</Nonce><Name>Directory</Name>"
+                + "<ServiceHostName>service.internal"
+                + "</ServiceHostName>"
+                + "<ServiceIpv4Address>10.20.30.40"
+                + "</ServiceIpv4Address><Port>21000</Port>"
+                + "<CertificateSigningRequest>AQID"
+                + "</CertificateSigningRequest>"
+                + "<ServiceIdentitySha256>"
+                + Convert.ToBase64String(new byte[32])
+                + "</ServiceIdentitySha256>"
+                + "<ProofSignature>AQID</ProofSignature>"
+                + "</CertificateRenewalRequest>";
+            return Request(
+                "POST",
+                "/api/certificates/renew",
+                apiKeyProductCode ?? productCode,
+                body: StrictUtf8.GetBytes(xml));
         }
 
         private static ExternalApiQueryParameter[] ProductCodeQuery(

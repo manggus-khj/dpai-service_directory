@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Net;
 using System.Text;
 using System.Xml;
 using DEEPAi.ServiceDirectory.Domain;
@@ -12,36 +11,44 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
         public AdminServerServiceDefinition(
             string name,
             string productCode,
-            string serverAddress,
+            string serviceHostName,
+            string serviceIpv4Address,
             int port)
         {
-            ServiceDefinition definition;
-            ServiceDefinitionValidationError validationError;
-            if (!ServiceDefinition.TryCreate(
+            ServiceEndpointIdentity endpointIdentity;
+            EndpointIdentityValidationError identityError;
+            if (!ServiceEndpointIdentity.TryCreate(
+                    serviceHostName,
+                    serviceIpv4Address,
+                    out endpointIdentity,
+                    out identityError)
+                || !StringComparer.Ordinal.Equals(
+                    serviceHostName,
+                    endpointIdentity.ServiceHostName)
+                || !StringComparer.Ordinal.Equals(
+                    serviceIpv4Address,
+                    endpointIdentity.ServiceIpv4Address)
+                || !ServiceDefinition.TryCreate(
                     name,
                     productCode,
-                    serverAddress,
+                    endpointIdentity,
                     port,
-                    out definition,
-                    out validationError)
+                    out ServiceDefinition definition,
+                    out ServiceDefinitionValidationError definitionError)
                 || !StringComparer.Ordinal.Equals(name, definition.Name)
                 || !StringComparer.Ordinal.Equals(
                     productCode,
-                    definition.ProductCode.Value)
-                || !StringComparer.Ordinal.Equals(
-                    serverAddress,
-                    definition.ServerAddress))
+                    definition.ProductCode.Value))
             {
                 throw new ArgumentException(
-                    "The Admin service definition is invalid or non-canonical: "
-                    + validationError
-                    + ".",
+                    "The Admin service definition is invalid or non-canonical.",
                     nameof(name));
             }
 
             Name = definition.Name;
             ProductCode = definition.ProductCode.Value;
-            ServerAddress = definition.ServerAddress;
+            ServiceHostName = endpointIdentity.ServiceHostName;
+            ServiceIpv4Address = endpointIdentity.ServiceIpv4Address;
             Port = definition.Port;
         }
 
@@ -49,7 +56,9 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
 
         public string ProductCode { get; }
 
-        public string ServerAddress { get; }
+        public string ServiceHostName { get; }
+
+        public string ServiceIpv4Address { get; }
 
         public int Port { get; }
     }
@@ -129,116 +138,6 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
             return string.CompareOrdinal(
                 left.Definition.ProductCode,
                 right.Definition.ProductCode);
-        }
-    }
-
-    public sealed class AdminServerPendingItem
-    {
-        public AdminServerPendingItem(
-            Guid id,
-            AdminPendingRequestType type,
-            DateTime requestedUtc,
-            string sourceIp,
-            AdminServerServiceDefinition requested,
-            AdminServerServiceDefinition current)
-        {
-            if (id == Guid.Empty)
-            {
-                throw new ArgumentException(
-                    "Pending ID cannot be empty.",
-                    nameof(id));
-            }
-
-            if (!Enum.IsDefined(typeof(AdminPendingRequestType), type))
-            {
-                throw new ArgumentOutOfRangeException(nameof(type));
-            }
-
-            AdminServerResponseValidation.EnsureUtc(
-                requestedUtc,
-                nameof(requestedUtc));
-            string canonicalSourceIp =
-                AdminServerResponseValidation.ValidateCanonicalIp(sourceIp);
-            if (requested == null)
-            {
-                throw new ArgumentNullException(nameof(requested));
-            }
-
-            if ((type == AdminPendingRequestType.New && current != null)
-                || (type == AdminPendingRequestType.Modify
-                    && current == null))
-            {
-                throw new ArgumentException(
-                    "Current service shape does not match the pending request type.",
-                    nameof(current));
-            }
-
-            if (current != null
-                && !StringComparer.Ordinal.Equals(
-                    requested.ProductCode,
-                    current.ProductCode))
-            {
-                throw new ArgumentException(
-                    "Requested and current ProductCode values must match.",
-                    nameof(current));
-            }
-
-            Id = id;
-            Type = type;
-            RequestedUtc = requestedUtc;
-            SourceIp = canonicalSourceIp;
-            Requested = requested;
-            Current = current;
-        }
-
-        public Guid Id { get; }
-
-        public AdminPendingRequestType Type { get; }
-
-        public DateTime RequestedUtc { get; }
-
-        public string SourceIp { get; }
-
-        public AdminServerServiceDefinition Requested { get; }
-
-        public AdminServerServiceDefinition Current { get; }
-    }
-
-    public sealed class AdminServerPendingResponse
-    {
-        public AdminServerPendingResponse(
-            IReadOnlyList<AdminServerPendingItem> items,
-            int totalCount,
-            string nextCursor)
-        {
-            Items = AdminServerResponseValidation.CopyAndValidatePage(
-                items,
-                totalCount,
-                nextCursor,
-                ComparePendingItems,
-                out string validatedCursor);
-            TotalCount = totalCount;
-            NextCursor = validatedCursor;
-        }
-
-        public IReadOnlyList<AdminServerPendingItem> Items { get; }
-
-        public int TotalCount { get; }
-
-        public string NextCursor { get; }
-
-        private static int ComparePendingItems(
-            AdminServerPendingItem left,
-            AdminServerPendingItem right)
-        {
-            int timeComparison = DateTime.Compare(
-                left.RequestedUtc,
-                right.RequestedUtc);
-            return timeComparison != 0
-                ? timeComparison
-                : string.CompareOrdinal(
-                    left.Id.ToString("D"),
-                    right.Id.ToString("D"));
         }
     }
 
@@ -642,32 +541,6 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
                     "NOT_REQUIRED is valid only for an unnecessary release.",
                     parameterName);
             }
-        }
-
-        internal static string ValidateCanonicalIp(string sourceIp)
-        {
-            if (string.IsNullOrEmpty(sourceIp)
-                || sourceIp.IndexOf('%') >= 0)
-            {
-                throw new ArgumentException(
-                    "SourceIP must be a canonical IP literal.",
-                    nameof(sourceIp));
-            }
-
-            IPAddress parsed;
-            if (!IPAddress.TryParse(sourceIp, out parsed)
-                || !StringComparer.Ordinal.Equals(
-                    sourceIp,
-                    parsed.ToString())
-                || sourceIp.Length < 2
-                || sourceIp.Length > 45)
-            {
-                throw new ArgumentException(
-                    "SourceIP must be a canonical IP literal.",
-                    nameof(sourceIp));
-            }
-
-            return sourceIp;
         }
 
         internal static void ValidateStatusName(

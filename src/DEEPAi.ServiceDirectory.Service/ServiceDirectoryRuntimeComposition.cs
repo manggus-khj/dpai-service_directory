@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using DEEPAi.ServiceDirectory.Application.Registration;
 using DEEPAi.ServiceDirectory.Application.State;
 using DEEPAi.ServiceDirectory.ExternalProtocol.RateLimiting;
 using DEEPAi.ServiceDirectory.Infrastructure.Configuration;
@@ -50,7 +51,7 @@ namespace DEEPAi.ServiceDirectory.Service
                 var mutationGate = new StateMutationGate();
                 // This owner recovers the one shared fixed-target journal and
                 // atomically validates config.xml, peer.dat, directory.xml,
-                // and pending.xml before publishing configuration.
+                // and the installed PKI files before publishing configuration.
                 configurationState =
                     new ServiceDirectoryRuntimeConfigurationState(
                         fullDataRootPath,
@@ -61,11 +62,16 @@ namespace DEEPAi.ServiceDirectory.Service
                     fullDataRootPath);
                 StateMutationCoordinator stateCoordinator =
                     OpenStateCoordinator(stateStore, mutationGate);
+                var registrationModeOwner =
+                    new RegistrationModeOwner(mutationGate);
                 certificateAuthorityAdministration =
                     new CertificateAuthorityRuntimeAdministration(
                         fullDataRootPath,
                         mutationGate,
-                        configuration.InstanceId);
+                        configuration.InstanceId,
+                        stateCoordinator,
+                        registrationModeOwner,
+                        configuration.DirectoryEndpointIdentity);
 
                 ServiceDirectoryListenerAddress listenerAddress;
                 if (!ServiceDirectoryListenerAddress.TryCreate(
@@ -80,6 +86,20 @@ namespace DEEPAi.ServiceDirectory.Service
                 }
 
                 listenerAddressValidator.Validate(listenerAddress);
+                CertificateAuthorityStatus certificateAuthorityStatus =
+                    certificateAuthorityAdministration.GetStatus();
+                if (certificateAuthorityStatus.State
+                    != CertificateAuthorityOperationalState.Ready)
+                {
+                    throw new InvalidDataException(
+                        "The site CA and its encrypted backup must be ready before the HTTPS listener starts.");
+                }
+
+                DirectoryHttpsEndpointValidator.Validate(
+                    fullDataRootPath,
+                    configuration,
+                    listenerAddress,
+                    DateTime.UtcNow);
 
                 // Construction performs the required read-only exact
                 // registry-key check. No listener is started before this
@@ -95,7 +115,8 @@ namespace DEEPAi.ServiceDirectory.Service
                         configuration,
                         systemFileLogger,
                         securityAuditLogger,
-                        certificateAuthorityAdministration);
+                        certificateAuthorityAdministration,
+                        registrationModeOwner);
                 IAdminHttpRequestHandler adminHandler =
                     applicationFactory.CreateAdminHandler(
                         applicationContext);
@@ -125,6 +146,9 @@ namespace DEEPAi.ServiceDirectory.Service
                         adminHandler,
                         peerHandler,
                         certificateAuthorityAdministration);
+                CertificateAuthorityRuntimeAdministration
+                    externalCertificateAuthorityAdministration =
+                        certificateAuthorityAdministration;
                 applicationLifetime = runtimeApplicationLifetime;
                 certificateAuthorityAdministration = null;
 
@@ -134,7 +158,10 @@ namespace DEEPAi.ServiceDirectory.Service
                     stateCoordinator,
                     listenerAddress,
                     sharedExternalConcurrencyLimiter,
-                    securityAuditLogger);
+                    securityAuditLogger,
+                    externalCertificateAuthorityAdministration,
+                    systemFileLogger,
+                    configurationState);
                 var adminAdapter = new AdminHttpAdapter(
                     adminHandler,
                     securityAuditLogger);
@@ -149,6 +176,7 @@ namespace DEEPAi.ServiceDirectory.Service
                         securityAuditLogger);
                 listenerHost = new ServiceDirectoryHttpListenerHost(
                     listenerAddress,
+                    configuration.DirectoryEndpointIdentity,
                     externalAdapter,
                     adminAdapter,
                     watchdogAdapter,

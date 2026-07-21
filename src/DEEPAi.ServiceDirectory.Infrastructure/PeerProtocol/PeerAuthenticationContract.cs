@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using DEEPAi.ServiceDirectory.InternalProtocol.Peer;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
 {
@@ -14,6 +15,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
         internal const string SignatureHeaderName = "X-DPAI-Signature";
         internal const string HandshakePath = "/api/sync/handshake";
         internal const string ExchangePath = "/api/sync/exchange";
+        internal const string PkiStatePath = PeerSyncContract.PkiStatePath;
         internal const string ReleasePath = "/api/sync/release";
         internal const string RevokePath = "/api/sync/revoke";
 

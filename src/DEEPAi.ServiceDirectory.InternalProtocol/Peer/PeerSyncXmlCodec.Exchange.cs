@@ -328,9 +328,13 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Peer
                 PeerSyncContract.XmlNamespace,
                 item.ProductCode);
             writer.WriteElementString(
-                "ServerAddress",
+                "ServiceHostName",
                 PeerSyncContract.XmlNamespace,
-                item.ServerAddress);
+                item.ServiceHostName);
+            writer.WriteElementString(
+                "ServiceIpv4Address",
+                PeerSyncContract.XmlNamespace,
+                item.ServiceIpv4Address);
             writer.WriteElementString(
                 "Port",
                 PeerSyncContract.XmlNamespace,

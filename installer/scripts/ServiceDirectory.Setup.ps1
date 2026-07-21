@@ -16,6 +16,9 @@ param(
 
     [string]$CaRestorePath,
 
+    [ValidateSet('None', 'Restore', 'ConfigureStandby', 'PromoteStandby')]
+    [string]$CaOperation = 'None',
+
     [switch]$PurgeData
 )
 
@@ -34,6 +37,8 @@ $productRegistryPath = 'HKLM:\SOFTWARE\DEEPAi\ServiceDirectory'
 $servicePort = 21000
 . (Join-Path $PSScriptRoot 'ServiceDirectory.InstallState.ps1')
 . (Join-Path $PSScriptRoot 'ServiceDirectory.FileSystemSecurity.ps1')
+. (Join-Path $PSScriptRoot 'ServiceDirectory.HttpsBinding.ps1')
+. (Join-Path $PSScriptRoot 'ServiceDirectory.PkiRepair.ps1')
 
 function Assert-ExactInstallationPaths {
     param(
@@ -314,7 +319,7 @@ function Grant-WatchdogMainServiceControl {
         -Arguments @('sdset', $mainServiceName, $nextSddl))
 }
 
-function Read-ConfigurationAddress {
+function Read-ConfigurationIdentity {
     param([Parameter(Mandatory = $true)][string]$ConfigPath)
 
     if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
@@ -342,12 +347,45 @@ function Read-ConfigurationAddress {
         throw 'Existing config.xml does not use the supported canonical schema.'
     }
 
-    $nodes = $document.SelectNodes('/Config/ListenAddress')
-    if ($nodes.Count -ne 1) {
-        throw 'Existing config.xml must contain exactly one ListenAddress.'
+    $addressNodes = $document.SelectNodes('/Config/ListenAddress')
+    $hostNameNodes = $document.SelectNodes('/Config/DirectoryHostName')
+    $identityAddressNodes =
+        $document.SelectNodes('/Config/DirectoryIpv4Address')
+    if ($addressNodes.Count -ne 1 `
+        -or $hostNameNodes.Count -ne 1 `
+        -or $identityAddressNodes.Count -ne 1) {
+        throw 'Existing config.xml must contain exactly one canonical Directory identity.'
     }
 
-    return ConvertTo-CanonicalAddress -Value $nodes[0].InnerText
+    $address = ConvertTo-CanonicalAddress -Value $addressNodes[0].InnerText
+    $identityAddress = ConvertTo-CanonicalAddress `
+        -Value $identityAddressNodes[0].InnerText
+    if (-not [StringComparer]::Ordinal.Equals($address, $identityAddress)) {
+        throw 'Existing config.xml ListenAddress and DirectoryIpv4Address disagree.'
+    }
+
+    $hostName = ConvertTo-CanonicalDirectoryHostName `
+        -Value $hostNameNodes[0].InnerText
+    if (-not [StringComparer]::Ordinal.Equals(
+            $hostNameNodes[0].InnerText,
+            $hostName)) {
+        throw 'Existing config.xml DirectoryHostName is not canonical.'
+    }
+
+    return [pscustomobject]@{
+        Address = $address
+        HostName = $hostName
+    }
+}
+
+function Read-ConfigurationAddress {
+    param([Parameter(Mandatory = $true)][string]$ConfigPath)
+
+    $identity = Read-ConfigurationIdentity -ConfigPath $ConfigPath
+    if ($null -eq $identity) {
+        return $null
+    }
+    return [string]$identity.Address
 }
 
 function Assert-NoActiveJournal {
@@ -422,6 +460,25 @@ function Replace-FileDurably {
     }
 }
 
+function Get-LocalDirectoryHostName {
+    $properties = [System.Net.NetworkInformation.IPGlobalProperties]::
+        GetIPGlobalProperties()
+    $hostName = [string]$properties.HostName
+    $domainName = [string]$properties.DomainName
+    if ([string]::IsNullOrWhiteSpace($hostName)) {
+        throw 'The local Management Server hostname could not be determined.'
+    }
+
+    $value = if ($hostName.Contains('.') `
+        -or [string]::IsNullOrWhiteSpace($domainName)) {
+        $hostName
+    }
+    else {
+        $hostName + '.' + $domainName
+    }
+    return ConvertTo-CanonicalDirectoryHostName -Value $value
+}
+
 function Set-InitialOrRepairedConfiguration {
     param(
         [Parameter(Mandatory = $true)]
@@ -429,6 +486,9 @@ function Set-InitialOrRepairedConfiguration {
 
         [Parameter(Mandatory = $true)]
         [string]$NewAddress,
+
+        [Parameter(Mandatory = $true)]
+        [string]$NewHostName,
 
         [Parameter(Mandatory = $true)]
         [bool]$FreshInstallation
@@ -441,6 +501,8 @@ function Set-InitialOrRepairedConfiguration {
     $directoryBackupPath = $directoryPath + '.bak'
     $pendingPath = Join-Path $RequestedDataRoot 'pending.xml'
     $pendingBackupPath = $pendingPath + '.bak'
+    $directoryHostName = ConvertTo-CanonicalDirectoryHostName `
+        -Value $NewHostName
 
     foreach ($statePath in @(
             $configPath,
@@ -467,6 +529,10 @@ function Set-InitialOrRepairedConfiguration {
     $pendingBackupExists = Test-Path -LiteralPath $pendingBackupPath `
         -PathType Leaf
 
+    if ($pendingExists -or $pendingBackupExists) {
+        throw 'The target storage schema does not accept pending.xml artifacts; reset unshipped development state explicitly.'
+    }
+
     if (-not $configExists -and $configBackupExists) {
         throw 'config.xml backup exists without its primary file.'
     }
@@ -475,9 +541,7 @@ function Set-InitialOrRepairedConfiguration {
         if ($configExists `
             -or $configBackupExists `
             -or $directoryExists `
-            -or $directoryBackupExists `
-            -or $pendingExists `
-            -or $pendingBackupExists) {
+            -or $directoryBackupExists) {
             throw 'Fresh installation state initialization requires every primary and backup state file to be absent.'
         }
     }
@@ -485,34 +549,59 @@ function Set-InitialOrRepairedConfiguration {
         if (-not $configExists) {
             throw 'Existing installation config.xml is missing; setup will not initialize over preserved or damaged state.'
         }
-        if (-not $directoryExists -or -not $pendingExists) {
-            throw 'Existing installation directory.xml and pending.xml must both exist; setup will not reset the logical high-water state.'
+        if (-not $directoryExists) {
+            throw 'Existing installation directory.xml is missing; setup will not reset the logical high-water state.'
         }
     }
 
     if ($configExists) {
         $oldAddress = Read-ConfigurationAddress -ConfigPath $configPath
-        if ([StringComparer]::Ordinal.Equals($oldAddress, $NewAddress)) {
-            return $oldAddress
-        }
-
         $text = [System.IO.File]::ReadAllText(
             $configPath,
             [System.Text.Encoding]::UTF8)
-        $matches = [regex]::Matches(
+        $listenMatches = [regex]::Matches(
             $text,
             '<ListenAddress>([^<]+)</ListenAddress>',
             [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
-        if ($matches.Count -ne 1 `
+        $hostMatches = [regex]::Matches(
+            $text,
+            '<DirectoryHostName>([^<]+)</DirectoryHostName>',
+            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
+        $identityAddressMatches = [regex]::Matches(
+            $text,
+            '<DirectoryIpv4Address>([^<]+)</DirectoryIpv4Address>',
+            [System.Text.RegularExpressions.RegexOptions]::CultureInvariant)
+        if ($listenMatches.Count -ne 1 `
+            -or $hostMatches.Count -ne 1 `
+            -or $identityAddressMatches.Count -ne 1 `
             -or -not [StringComparer]::Ordinal.Equals(
-                $matches[0].Groups[1].Value,
+                $listenMatches[0].Groups[1].Value,
+                $oldAddress) `
+            -or -not [StringComparer]::Ordinal.Equals(
+                $identityAddressMatches[0].Groups[1].Value,
                 $oldAddress)) {
             throw 'Existing config.xml is not in the canonical storage form.'
         }
 
-        $replacement = '<ListenAddress>' + $NewAddress + '</ListenAddress>'
-        $nextText = $text.Substring(0, $matches[0].Index) + $replacement `
-            + $text.Substring($matches[0].Index + $matches[0].Length)
+        $oldHostName = $hostMatches[0].Groups[1].Value
+        if ([StringComparer]::Ordinal.Equals($oldAddress, $NewAddress) `
+            -and [StringComparer]::Ordinal.Equals(
+                $oldHostName,
+                $directoryHostName)) {
+            return $oldAddress
+        }
+
+        $nextText = $text.Replace(
+            '<ListenAddress>' + $oldAddress + '</ListenAddress>',
+            '<ListenAddress>' + $NewAddress + '</ListenAddress>')
+        $nextText = $nextText.Replace(
+            '<DirectoryHostName>' + $oldHostName + '</DirectoryHostName>',
+            '<DirectoryHostName>' + $directoryHostName + '</DirectoryHostName>')
+        $nextText = $nextText.Replace(
+            '<DirectoryIpv4Address>' + $oldAddress `
+                + '</DirectoryIpv4Address>',
+            '<DirectoryIpv4Address>' + $NewAddress `
+                + '</DirectoryIpv4Address>')
         $nextBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($nextText)
         Replace-FileDurably -Path $configPath -Bytes $nextBytes `
             -BackupPath $backupPath
@@ -523,21 +612,17 @@ function Set-InitialOrRepairedConfiguration {
         + '<Directory SchemaVersion="1">' + "`r`n" `
         + '  <LogicalClock>0</LogicalClock>' + "`r`n" `
         + '  <Records />' + "`r`n" `
-        + '</Directory>'
-    $pendingXml = '<?xml version="1.0" encoding="utf-8"?>' + "`r`n" `
-        + '<PendingRegistrations SchemaVersion="1">' + "`r`n" `
-        + '  <Items />' + "`r`n" `
-        + '</PendingRegistrations>'
+        + '</Directory>' + "`r`n"
     $strictUtf8 = [System.Text.UTF8Encoding]::new($false)
     Replace-FileDurably -Path $directoryPath `
         -Bytes $strictUtf8.GetBytes($directoryXml)
-    Replace-FileDurably -Path $pendingPath `
-        -Bytes $strictUtf8.GetBytes($pendingXml)
 
     $instanceId = [Guid]::NewGuid().ToString('D')
     $xml = '<?xml version="1.0" encoding="utf-8"?>' + "`r`n" `
         + '<Config SchemaVersion="1">' + "`r`n" `
         + "  <ListenAddress>$NewAddress</ListenAddress>" + "`r`n" `
+        + "  <DirectoryHostName>$directoryHostName</DirectoryHostName>" + "`r`n" `
+        + "  <DirectoryIpv4Address>$NewAddress</DirectoryIpv4Address>" + "`r`n" `
         + "  <InstanceId>$instanceId</InstanceId>" + "`r`n" `
         + '  <LastPeerKeyEpoch>0</LastPeerKeyEpoch>' + "`r`n" `
         + '  <LogRetentionDays>30</LogRetentionDays>' + "`r`n" `
@@ -547,7 +632,7 @@ function Set-InitialOrRepairedConfiguration {
         + '    <LastPeerNotificationOperation>NONE</LastPeerNotificationOperation>' + "`r`n" `
         + '    <LastPeerNotificationResult>NOT_RUN</LastPeerNotificationResult>' + "`r`n" `
         + '  </Sync>' + "`r`n" `
-        + '</Config>'
+        + '</Config>' + "`r`n"
     $bytes = $strictUtf8.GetBytes($xml)
     Replace-FileDurably -Path $configPath -Bytes $bytes
     return $null
@@ -556,13 +641,8 @@ function Set-InitialOrRepairedConfiguration {
 function Get-HttpPrefix {
     param([Parameter(Mandatory = $true)][string]$Value)
 
-    $parsed = [System.Net.IPAddress]::Parse($Value)
-    if ($parsed.AddressFamily `
-        -eq [System.Net.Sockets.AddressFamily]::InterNetworkV6) {
-        return "http://[$Value]:$servicePort/"
-    }
-
-    return "http://$Value`:$servicePort/"
+    $canonical = ConvertTo-CanonicalAddress -Value $Value
+    return "http://$canonical`:$servicePort/"
 }
 
 function Restore-FileSnapshot {
@@ -652,70 +732,16 @@ function Remove-ServiceDefinition {
     }
 }
 
-function Invoke-CaRestore {
-    param(
-        [Parameter(Mandatory = $true)][string]$ExecutablePath,
-        [Parameter(Mandatory = $true)][string]$BackupPath
-    )
-
-    if ($BackupPath.IndexOf('"') -ge 0) {
-        throw 'The CA restore path contains an unsupported quote character.'
-    }
-
-    $securePassword = Read-Host `
-        -Prompt 'CA backup password' `
-        -AsSecureString
-    $passwordPointer = [IntPtr]::Zero
-    $password = $null
-    $process = $null
-    try {
-        $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR(
-            $securePassword)
-        $password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR(
-            $passwordPointer)
-        $startInfo = [Diagnostics.ProcessStartInfo]::new()
-        $startInfo.FileName = $ExecutablePath
-        $startInfo.Arguments = '--repair-pki-restore "' + $BackupPath + '"'
-        $startInfo.UseShellExecute = $false
-        $startInfo.CreateNoWindow = $true
-        $startInfo.RedirectStandardInput = $true
-        $startInfo.RedirectStandardOutput = $true
-        $startInfo.RedirectStandardError = $true
-        $process = [Diagnostics.Process]::Start($startInfo)
-        $process.StandardInput.WriteLine($password)
-        $process.StandardInput.Close()
-        $standardOutput = $process.StandardOutput.ReadToEnd()
-        $standardError = $process.StandardError.ReadToEnd()
-        $process.WaitForExit()
-        if ($process.ExitCode -ne 0) {
-            throw "CA restore failed. $standardError"
-        }
-
-        if (-not [StringComparer]::Ordinal.Equals(
-                $standardOutput.Trim(),
-                'PKI_RESTORED')) {
-            throw 'CA restore returned an unexpected result.'
-        }
-    }
-    finally {
-        if ($null -ne $process) {
-            $process.Dispose()
-        }
-        if ($passwordPointer -ne [IntPtr]::Zero) {
-            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPointer)
-        }
-        $password = $null
-        $securePassword.Dispose()
-    }
-}
-
 function Invoke-Install {
     param(
         [Parameter(Mandatory = $true)][string]$RequestedInstallRoot,
         [Parameter(Mandatory = $true)][string]$RequestedDataRoot,
         [Parameter(Mandatory = $true)][string]$NewAddress,
         [Parameter(Mandatory = $true)][string]$StatePath,
-        [string]$RequestedCaRestorePath
+        [string]$RequestedCaRestorePath,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('None', 'Restore', 'ConfigureStandby', 'PromoteStandby')]
+        [string]$RequestedCaOperation
     )
 
     $paths = Assert-ExactInstallationPaths `
@@ -724,6 +750,7 @@ function Invoke-Install {
     $RequestedInstallRoot = $paths[0]
     $RequestedDataRoot = $paths[1]
     $NewAddress = Assert-AddressIsEligible -Value $NewAddress
+    $newHostName = Get-LocalDirectoryHostName
     Assert-NoReparsePoint -Path $RequestedInstallRoot
     Assert-NoReparsePoint -Path $RequestedDataRoot -AllowMissing
     $setupState = Read-SetupState -Path $StatePath `
@@ -753,18 +780,22 @@ function Invoke-Install {
     $configBackupPath = $configPath + '.bak'
     $directoryStatePath = Join-Path $RequestedDataRoot 'directory.xml'
     $directoryStateBackupPath = $directoryStatePath + '.bak'
-    $pendingStatePath = Join-Path $RequestedDataRoot 'pending.xml'
-    $pendingStateBackupPath = $pendingStatePath + '.bak'
     $configSnapshot = Get-FileSnapshot -Path $configPath
     $configBackupSnapshot = Get-FileSnapshot -Path $configBackupPath
     $directorySnapshot = Get-FileSnapshot -Path $directoryStatePath
     $directoryBackupSnapshot = Get-FileSnapshot `
         -Path $directoryStateBackupPath
-    $pendingSnapshot = Get-FileSnapshot -Path $pendingStatePath
-    $pendingBackupSnapshot = Get-FileSnapshot -Path $pendingStateBackupPath
+    $certificateAuthoritySnapshots =
+        Get-CertificateAuthorityStateSnapshots `
+            -DataRoot $RequestedDataRoot
     $configExisted = [bool]$configSnapshot.Existed
-    $oldAddress = if ($configExisted) {
-        Read-ConfigurationAddress -ConfigPath $configPath
+    $oldIdentity = if ($configExisted) {
+        Read-ConfigurationIdentity -ConfigPath $configPath
+    } else {
+        $null
+    }
+    $oldAddress = if ($null -ne $oldIdentity) {
+        [string]$oldIdentity.Address
     } else {
         $null
     }
@@ -796,23 +827,39 @@ function Invoke-Install {
     }
     $groupSnapshot = Get-OperatorsGroupSnapshot
     Assert-OperatorsGroupCanBeManaged -Snapshot $groupSnapshot
-    $prefixes = New-Object 'System.Collections.Generic.List[string]'
+    $addresses = New-Object 'System.Collections.Generic.HashSet[string]' `
+        ([StringComparer]::Ordinal)
     if ($null -ne $oldAddress) {
-        [void]$prefixes.Add((Get-HttpPrefix -Value $oldAddress))
+        [void]$addresses.Add($oldAddress)
     }
-    $newPrefix = Get-HttpPrefix -Value $NewAddress
-    if (-not ($prefixes -contains $newPrefix)) {
-        [void]$prefixes.Add($newPrefix)
+    [void]$addresses.Add($NewAddress)
+    $prefixes = New-Object 'System.Collections.Generic.HashSet[string]' `
+        ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($address in $addresses) {
+        [void]$prefixes.Add((Get-HttpPrefix -Value $address))
+        [void]$prefixes.Add((Get-RemoteHttpsPrefix -Address $address))
     }
+    $newRemotePrefix = Get-RemoteHttpsPrefix -Address $NewAddress
+    $newHostNamePrefix = Get-RemoteHttpsHostNamePrefix `
+        -HostName $newHostName
+    if ($null -ne $oldIdentity) {
+        [void]$prefixes.Add((Get-RemoteHttpsHostNamePrefix `
+                -HostName ([string]$oldIdentity.HostName)))
+    }
+    [void]$prefixes.Add($newHostNamePrefix)
     $loopbackPrefix = "http://127.0.0.1:$servicePort/"
-    if (-not ($prefixes -contains $loopbackPrefix)) {
-        [void]$prefixes.Add($loopbackPrefix)
-    }
+    [void]$prefixes.Add($loopbackPrefix)
     $urlAclSnapshots = @($prefixes | ForEach-Object {
             Get-UrlAclSnapshot -Prefix $_
         })
     foreach ($snapshot in $urlAclSnapshots) {
         Assert-UrlAclCanBeManaged -Snapshot $snapshot
+    }
+    $httpsBindingSnapshots = @($addresses | ForEach-Object {
+            Get-HttpsBindingSnapshot -Address $_
+        })
+    foreach ($snapshot in $httpsBindingSnapshots) {
+        Assert-HttpsBindingCanBeManaged -Snapshot $snapshot
     }
 
     $dataRootPresent = Test-Path -LiteralPath $RequestedDataRoot
@@ -826,12 +873,25 @@ function Invoke-Install {
         -and -not [bool]$setupState.WatchdogService.Exists `
         -and (-not [bool]$productSnapshot.Exists `
             -or [bool]$productSnapshot.Recoverable)
+    $backupOperation = -not [StringComparer]::Ordinal.Equals(
+        $RequestedCaOperation,
+        'None')
+    if ($backupOperation -ne (-not [string]::IsNullOrWhiteSpace(
+                $RequestedCaRestorePath))) {
+        throw 'A CA role operation and an encrypted backup path must be selected together.'
+    }
+    if ($freshInstallation `
+        -and ($RequestedCaOperation -eq 'Restore' `
+            -or $RequestedCaOperation -eq 'PromoteStandby')) {
+        throw 'A fresh installation can create an active issuer or configure a standby only.'
+    }
     $aclRoots = @($RequestedInstallRoot)
     if ($dataRootExisted) {
         $aclRoots += $RequestedDataRoot
     }
     $aclSnapshots = @(Get-FileSystemAclSnapshot -Roots $aclRoots)
     $createdDirectories = New-Object 'System.Collections.Generic.List[string]'
+    $installedDirectoryCertificate = $null
 
     try {
         Stop-ServiceAndWait -Name $watchdogServiceName
@@ -856,7 +916,11 @@ function Invoke-Install {
             [void](New-Item -ItemType Directory -Path $RequestedDataRoot)
             [void]$createdDirectories.Add($RequestedDataRoot)
         }
-        foreach ($relativePath in @('logs\system', 'secrets', 'journal')) {
+        foreach ($relativePath in @(
+                'logs\system',
+                'secrets',
+                'journal',
+                'pki')) {
             $directoryPath = Join-Path $RequestedDataRoot $relativePath
             if (-not (Test-Path -LiteralPath $directoryPath -PathType Container)) {
                 [void](New-Item -ItemType Directory -Path $directoryPath -Force)
@@ -870,25 +934,63 @@ function Invoke-Install {
         [void](Set-InitialOrRepairedConfiguration `
             -RequestedDataRoot $RequestedDataRoot `
             -NewAddress $NewAddress `
+            -NewHostName $newHostName `
             -FreshInstallation $freshInstallation)
 
+        if ($freshInstallation `
+            -and [StringComparer]::Ordinal.Equals(
+                $RequestedCaOperation,
+                'None')) {
+            Invoke-CaProvision -ExecutablePath $mainExecutable
+        }
+        elseif ([StringComparer]::Ordinal.Equals(
+                $RequestedCaOperation,
+                'Restore')) {
+            Invoke-CaRestore -ExecutablePath $mainExecutable `
+                -BackupPath $RequestedCaRestorePath
+        }
+
+        if ($RequestedCaOperation -eq 'ConfigureStandby' `
+            -or $RequestedCaOperation -eq 'PromoteStandby') {
+            $installedDirectoryCertificate =
+                Invoke-CaStandbyRoleChange `
+                    -ExecutablePath $mainExecutable `
+                    -BackupPath $RequestedCaRestorePath `
+                    -Operation $RequestedCaOperation
+        } else {
+            $installedDirectoryCertificate =
+                Invoke-DirectoryCertificateInstall `
+                    -ExecutablePath $mainExecutable
+        }
+        foreach ($address in $addresses) {
+            Remove-OwnedUrlAcl -Prefix (Get-HttpPrefix -Value $address)
+        }
         if ($null -ne $oldAddress `
             -and -not [StringComparer]::Ordinal.Equals($oldAddress, $NewAddress)) {
-            Remove-OwnedUrlAcl -Prefix (Get-HttpPrefix -Value $oldAddress)
+            Remove-OwnedUrlAcl `
+                -Prefix (Get-RemoteHttpsPrefix -Address $oldAddress)
+            Remove-OwnedHttpsBinding -Address $oldAddress
         }
-        Ensure-OwnedUrlAcl -Prefix $newPrefix
+        if ($null -ne $oldIdentity `
+            -and -not [StringComparer]::Ordinal.Equals(
+                [string]$oldIdentity.HostName,
+                $newHostName)) {
+            Remove-OwnedUrlAcl `
+                -Prefix (Get-RemoteHttpsHostNamePrefix `
+                    -HostName ([string]$oldIdentity.HostName))
+        }
+        Ensure-OwnedUrlAcl -Prefix $newRemotePrefix
+        Ensure-OwnedUrlAcl -Prefix $newHostNamePrefix
         Ensure-OwnedUrlAcl -Prefix $loopbackPrefix
+        Set-OwnedHttpsBinding `
+            -Address $NewAddress `
+            -Thumbprint $installedDirectoryCertificate.Thumbprint
         Set-OwnedFirewallRule `
             -NewAddress $NewAddress `
             -MainExecutablePath $mainExecutable
         Set-EventSource
         Set-ProductRegistration -NewAddress $NewAddress
         Set-OwnedTrayRunValue -InstallRoot $RequestedInstallRoot
-
-        if (-not [string]::IsNullOrWhiteSpace($RequestedCaRestorePath)) {
-            Invoke-CaRestore -ExecutablePath $mainExecutable `
-                -BackupPath $RequestedCaRestorePath
-        }
 
         Start-ServiceAndWait -Name $watchdogServiceName
         Start-ServiceAndWait -Name $mainServiceName
@@ -902,6 +1004,18 @@ function Invoke-Install {
         try { Stop-ServiceAndWait -Name $mainServiceName } `
             catch { [void]$rollbackFailures.Add($_.Exception) }
 
+        foreach ($snapshot in $httpsBindingSnapshots) {
+            try { Restore-HttpsBindingSnapshot -Snapshot $snapshot } `
+                catch { [void]$rollbackFailures.Add($_.Exception) }
+        }
+        if ($null -ne $installedDirectoryCertificate) {
+            try {
+                Invoke-DirectoryCertificateRemove `
+                    -ExecutablePath $mainExecutable `
+                    -Thumbprint $installedDirectoryCertificate.Thumbprint
+            }
+            catch { [void]$rollbackFailures.Add($_.Exception) }
+        }
         foreach ($snapshot in $urlAclSnapshots) {
             try { Restore-UrlAclSnapshot -Snapshot $snapshot } `
                 catch { [void]$rollbackFailures.Add($_.Exception) }
@@ -926,14 +1040,8 @@ function Invoke-Install {
                 -Path $directoryStateBackupPath `
                 -Existed ([bool]$directoryBackupSnapshot.Existed) `
                 -Bytes $directoryBackupSnapshot.Bytes
-            Restore-FileSnapshot `
-                -Path $pendingStatePath `
-                -Existed ([bool]$pendingSnapshot.Existed) `
-                -Bytes $pendingSnapshot.Bytes
-            Restore-FileSnapshot `
-                -Path $pendingStateBackupPath `
-                -Existed ([bool]$pendingBackupSnapshot.Existed) `
-                -Bytes $pendingBackupSnapshot.Bytes
+            Restore-CertificateAuthorityStateSnapshots `
+                -Snapshots $certificateAuthoritySnapshots
         }
         catch { [void]$rollbackFailures.Add($_.Exception) }
 
@@ -1025,9 +1133,14 @@ function Invoke-Uninstall {
     $RequestedInstallRoot = $paths[0]
     $RequestedDataRoot = $paths[1]
     $configPath = Join-Path $RequestedDataRoot 'config.xml'
+    $installedIdentity = $null
     $installedAddress = $null
     try {
-        $installedAddress = Read-ConfigurationAddress -ConfigPath $configPath
+        $installedIdentity = Read-ConfigurationIdentity `
+            -ConfigPath $configPath
+        if ($null -ne $installedIdentity) {
+            $installedAddress = [string]$installedIdentity.Address
+        }
     }
     catch {
         $installedAddress = Get-RegisteredAddress
@@ -1039,6 +1152,9 @@ function Invoke-Uninstall {
         -and ((Test-ServiceExists -Name $mainServiceName) `
             -or (Test-Path -LiteralPath $configPath))) {
         throw 'The installed ListenAddress is unavailable; exact URL ACL cleanup cannot proceed safely.'
+    }
+    if ($null -ne $installedAddress -and $null -eq $installedIdentity) {
+        throw 'The installed Directory hostname is unavailable; exact URL ACL cleanup cannot proceed safely.'
     }
 
     $mainSnapshot = Get-ServiceSnapshot -Name $mainServiceName
@@ -1073,9 +1189,18 @@ function Invoke-Uninstall {
     $firewallSnapshot = Get-FirewallRuleSnapshot
     Assert-FirewallRuleCanBeManaged -Snapshot $firewallSnapshot
     $urlAclSnapshots = @()
+    $httpsBindingSnapshot = $null
     if ($null -ne $installedAddress) {
         $urlAclSnapshots += Get-UrlAclSnapshot `
             -Prefix (Get-HttpPrefix -Value $installedAddress)
+        $urlAclSnapshots += Get-UrlAclSnapshot `
+            -Prefix (Get-RemoteHttpsPrefix -Address $installedAddress)
+        $urlAclSnapshots += Get-UrlAclSnapshot `
+            -Prefix (Get-RemoteHttpsHostNamePrefix `
+                -HostName ([string]$installedIdentity.HostName))
+        $httpsBindingSnapshot = Get-HttpsBindingSnapshot `
+            -Address $installedAddress
+        Assert-HttpsBindingCanBeManaged -Snapshot $httpsBindingSnapshot
     }
     $urlAclSnapshots += Get-UrlAclSnapshot `
         -Prefix "http://127.0.0.1:$servicePort/"
@@ -1086,7 +1211,19 @@ function Invoke-Uninstall {
     Stop-ServiceAndWait -Name $watchdogServiceName
     Stop-ServiceAndWait -Name $mainServiceName
     if ($null -ne $installedAddress) {
+        Remove-OwnedHttpsBinding -Address $installedAddress
         Remove-OwnedUrlAcl -Prefix (Get-HttpPrefix -Value $installedAddress)
+        Remove-OwnedUrlAcl `
+            -Prefix (Get-RemoteHttpsPrefix -Address $installedAddress)
+        Remove-OwnedUrlAcl `
+            -Prefix (Get-RemoteHttpsHostNamePrefix `
+                -HostName ([string]$installedIdentity.HostName))
+        if ($httpsBindingSnapshot.Exists) {
+            Invoke-DirectoryCertificateRemove `
+                -ExecutablePath (Join-Path $RequestedInstallRoot `
+                    'DEEPAi.ServiceDirectory.Service.exe') `
+                -Thumbprint ([string]$httpsBindingSnapshot.Thumbprint)
+        }
     }
     Remove-OwnedUrlAcl -Prefix "http://127.0.0.1:$servicePort/"
     Remove-OwnedFirewallRule
@@ -1131,7 +1268,8 @@ function Invoke-Prepare {
     Write-SetupState -Path $StatePath -InstallRoot $paths[0] `
         -DataRoot $paths[1]
     Assert-InstallResourceOwnership -RequestedDataRoot $paths[1] `
-        -NewAddress $NewAddress
+        -NewAddress $NewAddress `
+        -NewHostName (Get-LocalDirectoryHostName)
     $state = Read-SetupState -Path $StatePath -InstallRoot $paths[0] `
         -DataRoot $paths[1]
     try {
@@ -1252,7 +1390,8 @@ switch ($Mode) {
             -RequestedDataRoot $DataRoot `
             -NewAddress $Address `
             -StatePath $SetupStatePath `
-            -RequestedCaRestorePath $CaRestorePath
+            -RequestedCaRestorePath $CaRestorePath `
+            -RequestedCaOperation $CaOperation
     }
     'Uninstall' {
         if ([string]::IsNullOrWhiteSpace($InstallRoot) `

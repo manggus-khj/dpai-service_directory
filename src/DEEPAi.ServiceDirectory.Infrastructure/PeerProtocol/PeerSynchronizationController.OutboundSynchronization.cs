@@ -60,7 +60,16 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                     return handshake;
                 }
 
-                return ExchangeFullSnapshots(
+                SyncCycleOutcome exchange = ExchangeFullSnapshots(
+                    credential,
+                    session,
+                    handshake.ClockSkewSeconds);
+                if (!exchange.IsSuccess)
+                {
+                    return exchange;
+                }
+
+                return SynchronizePeerPkiState(
                     credential,
                     session,
                     handshake.ClockSkewSeconds);

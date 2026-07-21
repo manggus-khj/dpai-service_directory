@@ -3,6 +3,10 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Net;
+using System.Security;
+using System.Security.Cryptography;
+using DEEPAi.ServiceDirectory.Infrastructure.Pki;
+using DEEPAi.ServiceDirectory.InternalProtocol.Admin;
 using DEEPAi.ServiceDirectory.InternalProtocol.Peer;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
@@ -19,10 +23,16 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
             IDictionary<string, string> headers,
             TimeSpan timeout)
         {
-            if (string.IsNullOrEmpty(peerEndpoint))
+            string canonicalPeerEndpoint;
+            if (!AdminPeerEndpoint.TryNormalize(
+                    peerEndpoint,
+                    out canonicalPeerEndpoint)
+                || !StringComparer.Ordinal.Equals(
+                    peerEndpoint,
+                    canonicalPeerEndpoint))
             {
                 throw new ArgumentException(
-                    "The Peer endpoint is required.",
+                    "The Peer endpoint must be canonical HTTPS IPv4 on port 21000.",
                     nameof(peerEndpoint));
             }
 
@@ -221,9 +231,22 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
     internal sealed class SystemPeerHttpTransport : IPeerHttpTransport
     {
         private readonly object _gate = new object();
+        private readonly IPeerTlsTrustProvider _tlsTrustProvider;
         private readonly HashSet<HttpWebRequest> _activeRequests =
             new HashSet<HttpWebRequest>();
         private bool _cancellationRequested;
+
+        internal SystemPeerHttpTransport()
+        {
+        }
+
+        internal SystemPeerHttpTransport(
+            IPeerTlsTrustProvider tlsTrustProvider)
+        {
+            _tlsTrustProvider = tlsTrustProvider
+                ?? throw new ArgumentNullException(
+                    nameof(tlsTrustProvider));
+        }
 
         private static readonly string[] ResponseHeaderNames =
         {
@@ -245,12 +268,27 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
 
             HttpWebRequest webRequest = null;
             byte[] body = null;
+            PeerTlsTrustSnapshot tlsTrust = null;
             try
             {
+                if (_tlsTrustProvider == null)
+                {
+                    return PeerHttpTransportResult.Failure(false);
+                }
+
+                tlsTrust = _tlsTrustProvider.CapturePeerTlsTrust(
+                    request.PeerEndpoint,
+                    DateTime.UtcNow);
                 var uri = new Uri(
                     request.PeerEndpoint + request.Path,
                     UriKind.Absolute);
                 webRequest = (HttpWebRequest)WebRequest.Create(uri);
+                webRequest.ServerCertificateValidationCallback =
+                    (sender, certificate, chain, errors) =>
+                        tlsTrust.Validate(
+                            certificate,
+                            errors,
+                            DateTime.UtcNow);
                 lock (_gate)
                 {
                     if (_cancellationRequested)
@@ -322,13 +360,21 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
             catch (Exception exception) when (
                 exception is IOException
                 || exception is InvalidDataException
-                || exception is UriFormatException)
+                || exception is UriFormatException
+                || exception is CryptographicException
+                || exception is UnauthorizedAccessException
+                || exception is SecurityException)
             {
                 return PeerHttpTransportResult.Failure(false);
             }
             finally
             {
                 Clear(body);
+                if (tlsTrust != null)
+                {
+                    tlsTrust.Dispose();
+                }
+
                 if (webRequest != null)
                 {
                     lock (_gate)
@@ -372,6 +418,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
             int maximumBytes = StringComparer.Ordinal.Equals(
                 path,
                 PeerAuthenticationContract.ExchangePath)
+                || StringComparer.Ordinal.Equals(
+                    path,
+                    PeerAuthenticationContract.PkiStatePath)
                 ? PeerSyncContract.MaximumExchangeBodyBytes
                 : PeerSyncContract.MaximumControlBodyBytes;
             if (response.ContentLength > maximumBytes)

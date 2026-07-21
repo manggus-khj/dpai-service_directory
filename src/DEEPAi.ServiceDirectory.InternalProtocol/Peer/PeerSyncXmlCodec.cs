@@ -98,17 +98,34 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Peer
             string rawProductCode = ReadRequiredValue(
                 serviceElement,
                 "ProductCode");
-            string rawServerAddress = ReadRequiredValue(
+            string rawServiceHostName = ReadRequiredValue(
                 serviceElement,
-                "ServerAddress");
+                "ServiceHostName");
+            string rawServiceIpv4Address = ReadRequiredValue(
+                serviceElement,
+                "ServiceIpv4Address");
             int port = ReadCanonicalPort(serviceElement);
+
+            ServiceEndpointIdentity identity;
+            EndpointIdentityValidationError identityError;
+            if (!ServiceEndpointIdentity.TryCreate(
+                    rawServiceHostName,
+                    rawServiceIpv4Address,
+                    out identity,
+                    out identityError))
+            {
+                throw InvalidRequest(
+                    "A Peer sync service identity is invalid: "
+                    + identityError
+                    + ".");
+            }
 
             ServiceDefinition definition;
             ServiceDefinitionValidationError validationError;
             if (!ServiceDefinition.TryCreate(
                     rawName,
                     rawProductCode,
-                    rawServerAddress,
+                    identity,
                     port,
                     out definition,
                     out validationError)
@@ -119,8 +136,11 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Peer
                     rawName,
                     definition.Name)
                 || !StringComparer.Ordinal.Equals(
-                    rawServerAddress,
-                    definition.ServerAddress))
+                    rawServiceHostName,
+                    definition.ServiceHostName)
+                || !StringComparer.Ordinal.Equals(
+                    rawServiceIpv4Address,
+                    definition.ServiceIpv4Address))
             {
                 throw InvalidRequest(
                     "A Peer sync service definition is invalid: "
@@ -157,7 +177,8 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Peer
             return new PeerSyncServiceItem(
                 definition.Name,
                 definition.ProductCode.Value,
-                definition.ServerAddress,
+                definition.ServiceHostName,
+                definition.ServiceIpv4Address,
                 definition.Port,
                 lastModifiedUtc,
                 deleted,

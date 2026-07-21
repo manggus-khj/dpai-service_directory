@@ -408,7 +408,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                         CngKeyBlobFormat.EccPublicBlob);
                     var localAddress = RequireListenerAddress(
                         configuration.ListenAddress);
-                    string localEndpoint = localAddress.HttpPrefix
+                    string localEndpoint = localAddress.HttpsPrefix
                         .TrimEnd('/');
                     var result = new PeerPairingHelloResult(
                         hello.PairingId,

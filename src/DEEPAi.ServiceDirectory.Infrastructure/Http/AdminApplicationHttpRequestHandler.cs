@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Security;
 using System.Threading;
+using DEEPAi.ServiceDirectory.Application.Registration;
 using DEEPAi.ServiceDirectory.Application.State;
 using DEEPAi.ServiceDirectory.Domain;
 using DEEPAi.ServiceDirectory.Domain.Certificates;
@@ -26,6 +27,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         private readonly AdminCursorCodec _cursorCodec;
         private readonly ICertificateAuthorityAdministration
             _certificateAuthorityAdministration;
+        private readonly RegistrationModeOwner _registrationModeOwner;
         private readonly object _loggingGate = new object();
         private int _disposed;
 
@@ -41,7 +43,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 synchronizationController,
                 () => DateTime.UtcNow,
                 new AdminCursorCodec(),
-                new UnavailableCertificateAuthorityAdministration())
+                new UnavailableCertificateAuthorityAdministration(),
+                new RegistrationModeOwner(stateCoordinator))
         {
         }
 
@@ -59,7 +62,28 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 synchronizationController,
                 () => DateTime.UtcNow,
                 new AdminCursorCodec(),
-                certificateAuthorityAdministration)
+                certificateAuthorityAdministration,
+                new RegistrationModeOwner(stateCoordinator))
+        {
+        }
+
+        public AdminApplicationHttpRequestHandler(
+            StateMutationCoordinator stateCoordinator,
+            IAdminConfigurationState configurationState,
+            SystemFileLogger systemFileLogger,
+            IAdminSynchronizationController synchronizationController,
+            ICertificateAuthorityAdministration
+                certificateAuthorityAdministration,
+            RegistrationModeOwner registrationModeOwner)
+            : this(
+                stateCoordinator,
+                configurationState,
+                new AdminSystemFileLogSink(systemFileLogger),
+                synchronizationController,
+                () => DateTime.UtcNow,
+                new AdminCursorCodec(),
+                certificateAuthorityAdministration,
+                registrationModeOwner)
         {
         }
 
@@ -77,7 +101,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 synchronizationController,
                 utcNowProvider,
                 cursorCodec,
-                new UnavailableCertificateAuthorityAdministration())
+                new UnavailableCertificateAuthorityAdministration(),
+                new RegistrationModeOwner(stateCoordinator))
         {
         }
 
@@ -90,6 +115,28 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             AdminCursorCodec cursorCodec,
             ICertificateAuthorityAdministration
                 certificateAuthorityAdministration)
+            : this(
+                stateCoordinator,
+                configurationState,
+                systemLog,
+                synchronizationController,
+                utcNowProvider,
+                cursorCodec,
+                certificateAuthorityAdministration,
+                new RegistrationModeOwner(stateCoordinator))
+        {
+        }
+
+        internal AdminApplicationHttpRequestHandler(
+            StateMutationCoordinator stateCoordinator,
+            IAdminConfigurationState configurationState,
+            IAdminSystemLogSink systemLog,
+            IAdminSynchronizationController synchronizationController,
+            Func<DateTime> utcNowProvider,
+            AdminCursorCodec cursorCodec,
+            ICertificateAuthorityAdministration
+                certificateAuthorityAdministration,
+            RegistrationModeOwner registrationModeOwner)
         {
             _stateCoordinator = stateCoordinator
                 ?? throw new ArgumentNullException(nameof(stateCoordinator));
@@ -108,106 +155,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 certificateAuthorityAdministration
                 ?? throw new ArgumentNullException(
                     nameof(certificateAuthorityAdministration));
-        }
-
-        public AdminHandlerResult<AdminServerUnitResponse> ApprovePending(
-            Guid id)
-        {
-            ThrowIfDisposed();
-            if (id == Guid.Empty)
-            {
-                return Failure<AdminServerUnitResponse>(
-                    AdminServerErrorCode.BadRequest);
-            }
-
-            ServiceDirectoryConfiguration configuration =
-                GetCurrentConfiguration();
-            DateTime utcNow = GetUtcNow();
-            StateMutationResult<ApprovalResult> mutation =
-                _stateCoordinator.Approve(
-                    id,
-                    configuration.InstanceId,
-                    utcNow);
-            if (!TryGetSuccessfulTransition(
-                    mutation,
-                    out ApprovalResult transition,
-                    out AdminServerErrorCode? failure))
-            {
-                return Failure<AdminServerUnitResponse>(failure.Value);
-            }
-
-            if (transition.Status == ApprovalStatus.AlreadySatisfied)
-            {
-                if (!mutation.SnapshotPublished
-                    || mutation.ShouldScheduleSync
-                    || !transition.ProductCode.HasValue
-                    || !transition.ProductCode.Value.IsValid)
-                {
-                    throw new InvalidOperationException(
-                        "An already-satisfied approval returned an inconsistent result.");
-                }
-
-                return UnitSuccess();
-            }
-
-            if (!transition.Status.HasValue
-                || !transition.ProductCode.HasValue
-                || !transition.ProductCode.Value.IsValid
-                || !mutation.SnapshotPublished
-                || !mutation.ShouldScheduleSync)
-            {
-                throw new InvalidOperationException(
-                    "A changed approval returned an inconsistent result.");
-            }
-
-            bool logSucceeded;
-            try
-            {
-                logSucceeded = WriteApprovalLog(
-                    transition.Status.Value,
-                    transition.ProductCode.Value);
-            }
-            finally
-            {
-                _synchronizationController.ScheduleDirectoryChanged();
-            }
-
-            return logSucceeded
-                ? UnitSuccess()
-                : Failure<AdminServerUnitResponse>(
-                    AdminServerErrorCode.Internal);
-        }
-
-        public AdminHandlerResult<AdminServerUnitResponse> RejectPending(
-            Guid id)
-        {
-            ThrowIfDisposed();
-            if (id == Guid.Empty)
-            {
-                return Failure<AdminServerUnitResponse>(
-                    AdminServerErrorCode.BadRequest);
-            }
-
-            StateMutationResult<RejectResult> mutation =
-                _stateCoordinator.Reject(id);
-            if (!TryGetSuccessfulTransition(
-                    mutation,
-                    out RejectResult transition,
-                    out AdminServerErrorCode? failure))
-            {
-                return Failure<AdminServerUnitResponse>(failure.Value);
-            }
-
-            if (!mutation.SnapshotPublished
-                || mutation.ShouldScheduleSync
-                || !transition.ProductCode.HasValue
-                || !transition.ProductCode.Value.IsValid)
-            {
-                throw new InvalidOperationException(
-                    "A successful rejection must remove one persisted pending item.");
-            }
-
-            return UnitSuccess();
+            _registrationModeOwner = registrationModeOwner
+                ?? throw new ArgumentNullException(
+                    nameof(registrationModeOwner));
         }
 
         public AdminHandlerResult<AdminServerUnitResponse> DeleteService(
@@ -226,34 +176,65 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                     AdminServerErrorCode.BadRequest);
             }
 
-            ServiceDirectoryConfiguration configuration =
-                GetCurrentConfiguration();
-            StateMutationResult<DeleteResult> mutation =
-                _stateCoordinator.Delete(
-                    normalizedProductCode,
-                    configuration.InstanceId,
-                    GetUtcNow());
-            if (!TryGetSuccessfulTransition(
-                    mutation,
-                    out DeleteResult transition,
-                    out AdminServerErrorCode? failure))
+            ProductCode deletedProductCode;
+            var certificateServiceAdministration =
+                _certificateAuthorityAdministration
+                    as ICertificateServiceMutationAdministration;
+            if (certificateServiceAdministration != null)
             {
-                return Failure<AdminServerUnitResponse>(failure.Value);
-            }
+                CertificateServiceDeletionResult deletion =
+                    certificateServiceAdministration.DeleteService(
+                        normalizedProductCode,
+                        GetUtcNow());
+                if (deletion == null)
+                {
+                    return Failure<AdminServerUnitResponse>(
+                        AdminServerErrorCode.Internal);
+                }
 
-            if (!mutation.SnapshotPublished
-                || !mutation.ShouldScheduleSync
-                || !transition.ProductCode.HasValue)
+                AdminServerErrorCode? deletionFailure =
+                    MapCertificateServiceDeletionStatus(deletion.Status);
+                if (deletionFailure.HasValue)
+                {
+                    return Failure<AdminServerUnitResponse>(
+                        deletionFailure.Value);
+                }
+
+                deletedProductCode = normalizedProductCode;
+            }
+            else
             {
-                throw new InvalidOperationException(
-                    "A successful deletion returned an inconsistent result.");
+                ServiceDirectoryConfiguration configuration =
+                    GetCurrentConfiguration();
+                StateMutationResult<DeleteResult> mutation =
+                    _stateCoordinator.Delete(
+                        normalizedProductCode,
+                        configuration.InstanceId,
+                        GetUtcNow());
+                if (!TryGetSuccessfulTransition(
+                        mutation,
+                        out DeleteResult transition,
+                        out AdminServerErrorCode? failure))
+                {
+                    return Failure<AdminServerUnitResponse>(failure.Value);
+                }
+
+                if (!mutation.SnapshotPublished
+                    || !mutation.ShouldScheduleSync
+                    || !transition.ProductCode.HasValue)
+                {
+                    throw new InvalidOperationException(
+                        "A successful deletion returned an inconsistent result.");
+                }
+
+                deletedProductCode = transition.ProductCode.Value;
             }
 
             bool logSucceeded;
             try
             {
                 logSucceeded = WriteDeleteLog(
-                    transition.ProductCode.Value);
+                    deletedProductCode);
             }
             finally
             {
@@ -406,47 +387,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             _cursorCodec.Dispose();
         }
 
-        private bool WriteApprovalLog(
-            ApprovalStatus status,
-            ProductCode productCode)
-        {
-            try
-            {
-                lock (_loggingGate)
-                {
-                    int retentionDays = GetCurrentConfiguration()
-                        .LogRetentionDays;
-                    if (status == ApprovalStatus.Created)
-                    {
-                        _systemLog.WriteRegisteredServiceCreated(
-                            productCode,
-                            retentionDays);
-                    }
-                    else if (status == ApprovalStatus.Updated)
-                    {
-                        _systemLog.WriteRegisteredServiceUpdated(
-                            productCode,
-                            retentionDays);
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException(
-                            "Only changed approvals can write a system log event.");
-                    }
-                }
-
-                return true;
-            }
-            catch (SystemLogRetentionAfterWriteException)
-            {
-                return true;
-            }
-            catch (Exception exception) when (IsLogIoFailure(exception))
-            {
-                return false;
-            }
-        }
-
         private bool WriteDeleteLog(ProductCode productCode)
         {
             try
@@ -546,6 +486,25 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 case DomainErrorCode.LogicalClockExhausted:
                     return AdminServerErrorCode.LogicalClockExhausted;
                 case DomainErrorCode.Internal:
+                default:
+                    return AdminServerErrorCode.Internal;
+            }
+        }
+
+        private static AdminServerErrorCode?
+            MapCertificateServiceDeletionStatus(
+                CertificateServiceDeletionStatus status)
+        {
+            switch (status)
+            {
+                case CertificateServiceDeletionStatus.Deleted:
+                    return null;
+                case CertificateServiceDeletionStatus.NotFound:
+                    return AdminServerErrorCode.NotFound;
+                case CertificateServiceDeletionStatus.Conflict:
+                    return AdminServerErrorCode.Conflict;
+                case CertificateServiceDeletionStatus.LimitExceeded:
+                    return AdminServerErrorCode.LimitExceeded;
                 default:
                     return AdminServerErrorCode.Internal;
             }

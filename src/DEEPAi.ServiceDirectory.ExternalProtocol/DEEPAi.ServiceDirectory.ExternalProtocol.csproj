@@ -46,10 +46,13 @@
     <Compile Include="Authentication\DailyApiKeyAuthenticator.cs" />
     <Compile Include="Authentication\DailyApiKeyCodec.cs" />
     <Compile Include="ExternalApi\ExternalApiContract.cs" />
+    <Compile Include="ExternalApi\ExternalCertificateService.cs" />
     <Compile Include="ExternalApi\ExternalApiHandler.cs" />
     <Compile Include="ExternalApi\ExternalApiHandlerRequest.cs" />
     <Compile Include="ExternalApi\ExternalApiHandlerResponse.cs" />
-    <Compile Include="ExternalApi\ExternalApiModels.cs" />
+    <Compile Include="ExternalApi\ExternalApiModelValidation.cs" />
+    <Compile Include="ExternalApi\ExternalApiRequestModels.cs" />
+    <Compile Include="ExternalApi\ExternalApiResponseModels.cs" />
     <Compile Include="ExternalApi\ExternalXmlCodec.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RateLimiting\ExternalRequestConcurrencyLimiter.cs" />

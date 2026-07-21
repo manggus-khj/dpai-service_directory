@@ -47,7 +47,6 @@
                     BorderThickness="0"
                     SelectedIndex="{Binding SelectedPageIndex, Mode=TwoWay}">
                     <ListBoxItem Content="대시보드" Style="{StaticResource NavItemStyle}" />
-                    <ListBoxItem Content="승인 대기" Style="{StaticResource NavItemStyle}" />
                     <ListBoxItem Content="등록 서비스" Style="{StaticResource NavItemStyle}" />
                     <ListBoxItem Content="동기화" Style="{StaticResource NavItemStyle}" />
                     <ListBoxItem Content="설정" Style="{StaticResource NavItemStyle}" />
@@ -146,8 +145,8 @@
                                 </Border>
                                 <Border Style="{StaticResource CardStyle}">
                                     <StackPanel>
-                                        <TextBlock Text="승인 대기" Style="{StaticResource MutedTextStyle}" />
-                                        <TextBlock Margin="0,3,0,0" Text="{Binding PendingCountText}" Style="{StaticResource SummaryNumberTextStyle}" />
+                                        <TextBlock Text="등록 모드" Style="{StaticResource MutedTextStyle}" />
+                                        <TextBlock Margin="0,3,0,0" Text="{Binding RegistrationModeSummaryText}" Style="{StaticResource SummaryNumberTextStyle}" />
                                     </StackPanel>
                                 </Border>
                             </UniformGrid>
@@ -235,160 +234,49 @@
                 <TabItem>
                     <Grid>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="3*" />
-                            <RowDefinition Height="2*" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <Border Margin="0,0,0,5" Padding="0" Style="{StaticResource CardStyle}">
+                        <Border Style="{StaticResource CardStyle}">
                             <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="42" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                    <RowDefinition Height="42" />
-                                </Grid.RowDefinitions>
-                                <Grid Margin="12,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="승인 대기 목록" Style="{StaticResource SectionTitleTextStyle}" />
-                                    <Button
-                                        Grid.Column="1"
-                                        Padding="12,6"
-                                        Content="새로 고침"
-                                        Command="{Binding RefreshCurrentPageCommand}" />
-                                </Grid>
-                                <Border
-                                    Grid.Row="1"
-                                    Margin="12,0,12,8"
-                                    Padding="9,6"
-                                    Background="{StaticResource WarningSoftBrush}"
-                                    BorderBrush="{StaticResource WarningBorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="7"
-                                    Visibility="{Binding HasPendingCapacityWarning, Converter={StaticResource BooleanToVisibilityConverter}}">
-                                    <TextBlock
-                                        Text="{Binding PendingCapacityWarningText}"
-                                        FontFamily="Segoe UI Semibold" />
-                                </Border>
-                                <Grid Grid.Row="2">
-                                    <DataGrid
-                                        ItemsSource="{Binding PendingItems}"
-                                        SelectedItem="{Binding SelectedPending, Mode=TwoWay}"
-                                        AutoGenerateColumns="False">
-                                        <DataGrid.Columns>
-                                            <DataGridTextColumn Width="58" Header="유형" Binding="{Binding TypeText}" />
-                                            <DataGridTextColumn Width="78" Header="제품코드" Binding="{Binding Requested.ProductCode}" />
-                                            <DataGridTextColumn Width="*" Header="이름" Binding="{Binding Requested.Name}" />
-                                            <DataGridTextColumn Width="135" Header="요청 주소" Binding="{Binding Requested.ServerAddress}" />
-                                            <DataGridTextColumn Width="130" Header="요청 시각" Binding="{Binding RequestedUtc, StringFormat={}{0:yyyy-MM-dd HH:mm} UTC}" />
-                                        </DataGrid.Columns>
-                                    </DataGrid>
-                                    <Border Background="#F8FFFFFF" IsHitTestVisible="False">
-                                        <Border.Style>
-                                            <Style TargetType="{x:Type Border}">
-                                                <Setter Property="Visibility" Value="Collapsed" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding PendingItems.Count}" Value="0">
-                                                        <Setter Property="Visibility" Value="Visible" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Border.Style>
-                                        <TextBlock
-                                            HorizontalAlignment="Center"
-                                            VerticalAlignment="Center"
-                                            Text="표시할 승인 대기 항목이 없습니다."
-                                            Style="{StaticResource MutedTextStyle}" />
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1.05*" />
+                                    <ColumnDefinition Width="0.95*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Margin="0,0,12,0">
+                                    <TextBlock Text="등록 모드" Style="{StaticResource SectionTitleTextStyle}" />
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="상태" Style="{StaticResource MutedTextStyle}" />
+                                        <TextBlock Grid.Column="1" Margin="10,0,0,0" Text="{Binding RegistrationModeStateText}" FontFamily="Segoe UI Semibold" />
+                                        <TextBlock Grid.Column="2" Text="{Binding RegistrationModeCountdownText}" FontFamily="Consolas" FontSize="20" FontWeight="SemiBold" />
+                                    </Grid>
+                                    <TextBlock Margin="0,5,0,0" Text="{Binding RegistrationModeWindowText}" Style="{StaticResource SmallMutedTextStyle}" />
+                                    <WrapPanel Margin="0,8,0,0">
+                                        <Button Margin="0,0,6,0" Content="등록 모드 시작" Command="{Binding OpenRegistrationModeCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+                                        <Button Content="등록 모드 종료" Command="{Binding CloseRegistrationModeCommand}" />
+                                    </WrapPanel>
+                                    <Border Margin="0,8,0,0" Padding="8,5" Background="{StaticResource WarningSoftBrush}" BorderBrush="{StaticResource WarningBorderBrush}" BorderThickness="1" CornerRadius="7">
+                                        <TextBlock Text="1시간 안에 도착한 첫 번째 유효 요청 한 건이 등록 권한을 선점합니다." TextWrapping="Wrap" />
                                     </Border>
-                                </Grid>
-                                <Grid Grid.Row="3" Margin="12,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding PendingPageText}" Style="{StaticResource MutedTextStyle}" />
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                        <Button Margin="0,0,6,0" Content="이전" Command="{Binding PreviousPendingPageCommand}" />
-                                        <Button Content="다음" Command="{Binding NextPendingPageCommand}" />
-                                    </StackPanel>
-                                </Grid>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="마지막 등록 결과" Style="{StaticResource SectionTitleTextStyle}" />
+                                    <TextBlock Margin="0,8,0,0" Text="{Binding LastRegistrationOutcomeText}" FontFamily="Segoe UI Semibold" TextWrapping="Wrap" />
+                                    <TextBlock Margin="0,5,0,0" Text="{Binding LastRegistrationCompletedText}" Style="{StaticResource SmallMutedTextStyle}" />
+                                    <TextBlock Margin="0,7,0,0" Text="{Binding LastRegistrationServiceText}" FontFamily="Consolas" TextWrapping="Wrap" />
+                                    <TextBlock Margin="0,5,0,0" Text="{Binding LastRegistrationCertificateText}" FontFamily="Consolas" TextWrapping="Wrap" />
+                                </StackPanel>
                             </Grid>
                         </Border>
 
-                        <Border Grid.Row="1" Margin="0,5,0,0" Style="{StaticResource CardStyle}">
-                            <Grid>
-                                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                    <StackPanel>
-                                        <TextBlock Text="변경 내용 비교" Style="{StaticResource SectionTitleTextStyle}" />
-                                        <TextBlock Margin="0,3,0,8" Text="현재 승인값과 외부 애플리케이션 요청값을 비교합니다." Style="{StaticResource MutedTextStyle}" />
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="76" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="1" Text="현재 값" FontFamily="Segoe UI Semibold" />
-                                            <TextBlock Grid.Column="2" Text="요청 값" FontFamily="Segoe UI Semibold" />
-                                        </Grid>
-                                        <Separator Margin="0,6" />
-                                        <Grid Margin="0,3">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="76" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="이름" Style="{StaticResource MutedTextStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{Binding SelectedPending.Current.Name, TargetNullValue=—}" />
-                                            <TextBlock Grid.Column="2" Text="{Binding SelectedPending.Requested.Name, TargetNullValue=—}" />
-                                        </Grid>
-                                        <Grid Margin="0,3">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="76" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="제품코드" Style="{StaticResource MutedTextStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{Binding SelectedPending.Current.ProductCode, TargetNullValue=—}" FontFamily="Consolas" />
-                                            <TextBlock Grid.Column="2" Text="{Binding SelectedPending.Requested.ProductCode, TargetNullValue=—}" FontFamily="Consolas" />
-                                        </Grid>
-                                        <Grid Margin="0,3">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="76" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="서버 주소" Style="{StaticResource MutedTextStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{Binding SelectedPending.Current.ServerAddress, TargetNullValue=—}" FontFamily="Consolas" />
-                                            <TextBlock Grid.Column="2" Text="{Binding SelectedPending.Requested.ServerAddress, TargetNullValue=—}" FontFamily="Consolas" />
-                                        </Grid>
-                                        <Grid Margin="0,3">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="76" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="포트" Style="{StaticResource MutedTextStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{Binding SelectedPending.Current.Port, TargetNullValue=—}" FontFamily="Consolas" />
-                                            <TextBlock Grid.Column="2" Text="{Binding SelectedPending.Requested.Port, TargetNullValue=—}" FontFamily="Consolas" />
-                                        </Grid>
-                                        <Separator Margin="0,7" />
-                                        <Grid>
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="76" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="요청 IP" Style="{StaticResource MutedTextStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{Binding SelectedPending.SourceIp, TargetNullValue=—}" FontFamily="Consolas" />
-                                        </Grid>
-                                        <StackPanel Margin="0,8,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
-                                            <Button Margin="0,0,6,0" Content="거절" Command="{Binding RejectPendingCommand}" />
-                                            <Button Content="승인" Command="{Binding ApprovePendingCommand}" Style="{StaticResource PrimaryButtonStyle}" />
-                                        </StackPanel>
-                                    </StackPanel>
-                                </ScrollViewer>
-                                <Border Background="White" IsHitTestVisible="False">
-                                    <Border.Style>
-                                        <Style TargetType="{x:Type Border}">
-                                            <Setter Property="Visibility" Value="Collapsed" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding SelectedPending}" Value="{x:Null}">
-                                                    <Setter Property="Visibility" Value="Visible" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
-                                    <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Text="비교할 승인 요청을 선택하십시오." Style="{StaticResource MutedTextStyle}" />
-                                </Border>
-                            </Grid>
-                        </Border>
-                    </Grid>
-                </TabItem>
-
-                <TabItem>
-                    <Border Padding="0" Style="{StaticResource CardStyle}">
+                    <Border Grid.Row="1" Margin="0,10,0,0" Padding="0" Style="{StaticResource CardStyle}">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="42" />
@@ -397,7 +285,7 @@
                             </Grid.RowDefinitions>
                             <Grid Margin="12,0">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <TextBlock Text="승인된 등록 서비스" Style="{StaticResource SectionTitleTextStyle}" />
+                                <TextBlock Text="등록 서비스 목록" Style="{StaticResource SectionTitleTextStyle}" />
                                 <Button Grid.Column="1" Padding="12,6" Content="새로 고침" Command="{Binding RefreshCurrentPageCommand}" />
                             </Grid>
                             <Grid Grid.Row="1">
@@ -405,7 +293,8 @@
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Width="78" Header="제품코드" Binding="{Binding ProductCode}" />
                                         <DataGridTextColumn Width="*" Header="이름" Binding="{Binding Name}" />
-                                        <DataGridTextColumn Width="1.2*" Header="서버 주소" Binding="{Binding ServerAddress}" />
+                                        <DataGridTextColumn Width="1.2*" Header="호스트명" Binding="{Binding ServiceHostName}" />
+                                        <DataGridTextColumn Width="95" Header="IPv4" Binding="{Binding ServiceIpv4Address}" />
                                         <DataGridTextColumn Width="55" Header="포트" Binding="{Binding Port}" />
                                         <DataGridTextColumn Width="135" Header="마지막 변경" Binding="{Binding LastModifiedUtc, StringFormat={}{0:yyyy-MM-dd HH:mm} UTC}" />
                                     </DataGrid.Columns>
@@ -433,6 +322,7 @@
                             </Grid>
                         </Grid>
                     </Border>
+                    </Grid>
                 </TabItem>
 
                 <TabItem>
@@ -463,7 +353,7 @@
                                             Text="{Binding PeerEndpointInput, UpdateSourceTrigger=PropertyChanged}" />
                                         <TextBlock
                                             Margin="0,5,0,0"
-                                            Text="예: http://10.0.0.2:21000"
+                                            Text="예: https://10.0.0.2:21000"
                                             Style="{StaticResource SmallMutedTextStyle}" />
                                         <CheckBox Margin="0,8,0,0" Content="기존 피어를 폐기하고 재페어링" IsChecked="{Binding RePairRequested}" />
                                         <WrapPanel Margin="0,10,0,0">

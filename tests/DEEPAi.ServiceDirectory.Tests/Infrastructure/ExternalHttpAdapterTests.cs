@@ -549,17 +549,21 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         {
             var declaredBody = new TrackingStream(new byte[0]);
             var actualBody = new TrackingStream(
-                new byte[ExternalApiContract.MaximumBodyBytes + 1]);
+                new byte[
+                    ExternalApiContract
+                        .MaximumCertificateRequestBodyBytes + 1]);
             ExternalHttpRequestData[] requests =
             {
                 Request(
                     declaredBody,
                     declaredContentLength:
-                        ExternalApiContract.MaximumBodyBytes + 1L),
+                        ExternalApiContract
+                            .MaximumCertificateRequestBodyBytes + 1L),
                 Request(
                     null,
                     declaredContentLength:
-                        ExternalApiContract.MaximumBodyBytes + 1L),
+                        ExternalApiContract
+                            .MaximumCertificateRequestBodyBytes + 1L),
                 Request(actualBody, declaredContentLength: -1L)
             };
 
@@ -580,7 +584,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void ValidRequestCreatesPendingThroughExistingCoreHandler()
+        public void UnavailableRegistrationFailsClosedAfterTransportValidation()
         {
             FakeStateStore store;
             FakeSecurityAuditWriter audit;
@@ -595,14 +599,8 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     new TrackingStream(body),
                     contentType: " Application/XML ; CHARSET = UTF-8 "));
 
-            AssertXml(response, 200, 0);
-            StringAssert.Contains(
-                BodyText(response),
-                "<Status>PENDING_NEW</Status>");
-            StringAssert.Contains(
-                BodyText(response),
-                "<PendingId>55555555-5555-5555-5555-555555555555</PendingId>");
-            Assert.AreEqual(1, store.CommitCallCount);
+            AssertXml(response, 409, 1002);
+            Assert.AreEqual(0, store.CommitCallCount);
             Assert.AreEqual(0, audit.ApiKeyFailureCount);
             Assert.AreEqual(0, audit.NetworkFailures.Count);
         }
@@ -624,6 +622,49 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             AssertXml(response, 401, 1003);
             Assert.AreEqual(1, audit.ApiKeyFailureCount);
             Assert.AreEqual(0, store.CommitCallCount);
+        }
+
+        [TestMethod]
+        public void PublicPkiEndpointsBypassDailyKeyAndPreserveContentType()
+        {
+            var authenticator = new FakeAuthenticator(
+                false,
+                default(ProductCode));
+            var certificateService =
+                new SuccessfulExternalCertificateService();
+            var admission = new ExternalRequestAdmissionController(
+                new ExternalRequestConcurrencyLimiter(),
+                () => 0L,
+                1L);
+            FakeStateStore store;
+            FakeSecurityAuditWriter audit;
+            ExternalHttpAdapter adapter = CreateAdapter(
+                authenticator,
+                admission,
+                out store,
+                out audit,
+                certificateService: certificateService);
+
+            ExternalHttpResponseData ca = adapter.Process(Request(
+                new TrackingStream(new byte[0]),
+                method: "GET",
+                path: ExternalApiContract.CaPath,
+                apiKeyHeaderValues: new string[0]));
+            ExternalHttpResponseData crl = adapter.Process(Request(
+                new TrackingStream(new byte[0]),
+                method: "GET",
+                path: ExternalApiContract.CrlPath,
+                apiKeyHeaderValues: new string[0]));
+
+            AssertXml(ca, 200, 0);
+            Assert.AreEqual(200, crl.StatusCode);
+            Assert.AreEqual(
+                ExternalApiContract.CrlContentType,
+                crl.ContentType);
+            CollectionAssert.AreEqual(
+                new byte[] { 0x30 },
+                crl.GetBody());
+            Assert.AreEqual(0, authenticator.CallCount);
         }
 
         [TestMethod]
@@ -654,6 +695,8 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 return nextLocalDay;
             };
             var authenticator = new RecordingAuthenticator();
+            var certificateService =
+                new SuccessfulExternalCertificateService();
             var admission = new ExternalRequestAdmissionController(
                 new ExternalRequestConcurrencyLimiter(),
                 () => 0L,
@@ -666,7 +709,8 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 out store,
                 out audit,
                 adapterNowProvider,
-                coreNowProvider);
+                coreNowProvider,
+                certificateService);
             var request = Request(
                 new TrackingStream(RegistrationBody("AB12")),
                 apiKeyHeaderValues: new[]
@@ -681,15 +725,9 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             Assert.AreEqual(0, coreNowCallCount);
             Assert.AreEqual(1, authenticator.CallCount);
             Assert.AreEqual(capturedLocalNow, authenticator.LastLocalNow);
-            Assert.IsNotNull(store.LastCommittedSnapshot);
-            PendingRegistration pending;
-            Assert.IsTrue(
-                store.LastCommittedSnapshot.TryGetPending(
-                    PendingId,
-                    out pending));
             Assert.AreEqual(
                 capturedLocalNow.UtcDateTime,
-                pending.RequestedUtc);
+                certificateService.LastRegistrationUtc);
         }
 
         [TestMethod]
@@ -732,17 +770,22 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             out FakeStateStore store,
             out FakeSecurityAuditWriter audit,
             Func<DateTimeOffset> adapterLocalNowProvider = null,
-            Func<DateTimeOffset> coreLocalNowProvider = null)
+            Func<DateTimeOffset> coreLocalNowProvider = null,
+            IExternalCertificateService certificateService = null)
         {
             store = new FakeStateStore(
                 StateLoadResult.Success(DirectorySnapshot.Empty()));
             StateCoordinatorOpenResult openResult =
                 StateMutationCoordinator.Open(store);
             Assert.IsTrue(openResult.IsSuccess);
-            var coreHandler = new ExternalApiHandler(
-                openResult.Coordinator,
-                coreLocalNowProvider ?? (() => LocalNow),
-                () => PendingId);
+            ExternalApiHandler coreHandler = certificateService == null
+                ? new ExternalApiHandler(
+                    openResult.Coordinator,
+                    coreLocalNowProvider ?? (() => LocalNow))
+                : new ExternalApiHandler(
+                    openResult.Coordinator,
+                    coreLocalNowProvider ?? (() => LocalNow),
+                    certificateService);
             ServiceDirectoryListenerAddress configuredAddress;
             Assert.IsTrue(
                 ServiceDirectoryListenerAddress.TryCreate(
@@ -800,10 +843,17 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             string xml =
                 "<RegistrationRequest xmlns=\""
                 + ExternalApiContract.XmlNamespace
-                + "\"><Name>Directory</Name><ProductCode>"
+                + "\"><RegistrationRequestId>"
+                + PendingId.ToString("D")
+                + "</RegistrationRequestId><Name>Directory</Name>"
+                + "<ProductCode>"
                 + productCode
-                + "</ProductCode><ServerAddress>service.internal"
-                + "</ServerAddress><Port>21000</Port>"
+                + "</ProductCode><ServiceHostName>service.internal"
+                + "</ServiceHostName>"
+                + "<ServiceIpv4Address>10.20.30.40"
+                + "</ServiceIpv4Address><Port>21000</Port>"
+                + "<CertificateSigningRequest>AQID"
+                + "</CertificateSigningRequest>"
                 + "</RegistrationRequest>";
             return StrictUtf8.GetBytes(xml);
         }
@@ -894,6 +944,59 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     ? _productCode
                     : default(ProductCode);
                 return _result;
+            }
+        }
+
+        private sealed class SuccessfulExternalCertificateService
+            : IExternalCertificateService
+        {
+            internal DateTime LastRegistrationUtc { get; private set; }
+
+            public ExternalTrustInfo GetTrustInfo()
+            {
+                return new ExternalTrustInfo(
+                    RequestId,
+                    new byte[] { 0x30 },
+                    new byte[ExternalApiContract.Sha256Bytes],
+                    ExternalApiContract.CrlPath);
+            }
+
+            public byte[] GetCertificateRevocationList()
+            {
+                return new byte[] { 0x30 };
+            }
+
+            public ExternalRegistrationServiceResult Register(
+                ExternalRegistrationRequest request,
+                DateTime utcNow)
+            {
+                LastRegistrationUtc = utcNow;
+                return ExternalRegistrationServiceResult.Success(
+                    ExternalRegistrationServiceStatus.Registered,
+                    new ExternalServiceItem(
+                        request.Name,
+                        request.ProductCode,
+                        request.ServiceHostName,
+                        request.ServiceIpv4Address,
+                        request.Port,
+                        utcNow),
+                    new ExternalIssuedCertificate(
+                        new byte[] { 0x30 },
+                        new byte[] { 0x30 },
+                        "1234567890ABCDEF1234567890ABCDEF",
+                        utcNow.AddMinutes(-5),
+                        utcNow.AddYears(1),
+                        ExternalApiContract.CrlPath));
+            }
+
+            public ExternalRegistrationServiceResult Renew(
+                ExternalCertificateRenewalRequest request,
+                DateTime utcNow)
+            {
+                LastRegistrationUtc = utcNow;
+                return ExternalRegistrationServiceResult.Failure(
+                    ExternalRegistrationServiceStatus
+                        .CertificateNotRenewable);
             }
         }
 

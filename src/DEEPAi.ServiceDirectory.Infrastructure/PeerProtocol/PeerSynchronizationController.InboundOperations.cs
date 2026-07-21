@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using DEEPAi.ServiceDirectory.Infrastructure.Configuration;
 using DEEPAi.ServiceDirectory.Infrastructure.Http;
 using DEEPAi.ServiceDirectory.Infrastructure.Logging;
+using DEEPAi.ServiceDirectory.Infrastructure.Pki;
 using DEEPAi.ServiceDirectory.InternalProtocol.Peer;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
@@ -26,6 +27,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                         body);
                 case PeerInboundOperation.Exchange:
                     return ProcessInboundExchangeLocked(
+                        verifiedRequest,
+                        body);
+                case PeerInboundOperation.PkiState:
+                    return ProcessInboundPkiStateLocked(
                         verifiedRequest,
                         body);
                 case PeerInboundOperation.Release:
@@ -257,6 +262,73 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
             }
 
             return ProcessInboundPushLocked(verifiedRequest, push);
+        }
+
+        private PeerHttpResponseData ProcessInboundPkiStateLocked(
+            PeerRequestAuthenticationData verifiedRequest,
+            byte[] body)
+        {
+            if (_peerPki == null)
+            {
+                return CreateSignedErrorLocked(
+                    PeerInboundOperation.PkiState,
+                    verifiedRequest,
+                    500,
+                    PeerSyncResponseCode.Internal);
+            }
+
+            ServiceDirectoryConfiguration configuration =
+                _configurationState.GetCurrent();
+            if (configuration.Synchronization.State
+                    != DurableSynchronizationState.Enabled)
+            {
+                return CreateSignedErrorLocked(
+                    PeerInboundOperation.PkiState,
+                    verifiedRequest,
+                    409,
+                    PeerSyncResponseCode.SyncDisabled);
+            }
+
+            if (_peerPki.GetPeerPkiRole()
+                != CertificateAuthorityIssuerRole.ActiveIssuer)
+            {
+                return CreateSignedErrorLocked(
+                    PeerInboundOperation.PkiState,
+                    verifiedRequest,
+                    409,
+                    PeerSyncResponseCode.Conflict);
+            }
+
+            PeerPkiStateRequest request = PeerContractXmlCodec
+                .ParseAuthenticatedPkiStateRequest(body);
+            if (request.InstanceId != _activeSession.PeerInstanceId)
+            {
+                return CreateSignedErrorLocked(
+                    PeerInboundOperation.PkiState,
+                    verifiedRequest,
+                    409,
+                    PeerSyncResponseCode.PeerMismatch);
+            }
+
+            PeerPkiState current = _peerPki.GetPeerPkiState();
+            if (request.KnownIssuerInstanceId
+                    != current.IssuerInstanceId
+                || request.KnownPkiRevision > current.PkiRevision
+                || request.KnownCrlNumber > current.CrlNumber)
+            {
+                return CreateSignedErrorLocked(
+                    PeerInboundOperation.PkiState,
+                    verifiedRequest,
+                    409,
+                    PeerSyncResponseCode.Conflict);
+            }
+
+            return PeerAuthenticatedResponseFactory.CreatePkiState(
+                verifiedRequest,
+                _activeSession,
+                200,
+                PeerPkiStateResponse.CreateSuccess(current),
+                new DateTimeOffset(GetUtcNow()));
         }
 
         private PeerHttpResponseData ProcessInboundPushLocked(

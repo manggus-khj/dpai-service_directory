@@ -7,7 +7,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
     public sealed class ServiceDirectoryListenerAddressTests
     {
         [TestMethod]
-        public void CanonicalUnicastIpv4CreatesExactHttpPrefix()
+        public void CanonicalUnicastIpv4CreatesExactHttpsPrefix()
         {
             ServiceDirectoryListenerAddress address;
             Assert.IsTrue(
@@ -18,24 +18,15 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             Assert.IsNotNull(address);
             Assert.AreEqual("10.20.30.40", address.CanonicalAddress);
             Assert.AreEqual(
-                "http://10.20.30.40:21000/",
-                address.HttpPrefix);
+                "https://10.20.30.40:21000/",
+                address.HttpsPrefix);
         }
 
         [TestMethod]
-        public void CanonicalUnicastIpv6CreatesBracketedHttpPrefix()
+        public void Ipv6IsRejectedByTargetV1Listener()
         {
-            ServiceDirectoryListenerAddress address;
-            Assert.IsTrue(
-                ServiceDirectoryListenerAddress.TryCreate(
-                    "2001:db8::10",
-                    out address));
-
-            Assert.IsNotNull(address);
-            Assert.AreEqual("2001:db8::10", address.CanonicalAddress);
-            Assert.AreEqual(
-                "http://[2001:db8::10]:21000/",
-                address.HttpPrefix);
+            AssertRejected("2001:db8::10");
+            AssertRejected("2001:db8::192.0.2.10");
         }
 
         [TestMethod]

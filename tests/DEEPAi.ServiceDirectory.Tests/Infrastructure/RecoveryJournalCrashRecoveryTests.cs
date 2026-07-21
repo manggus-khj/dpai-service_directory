@@ -131,15 +131,18 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     "directory-before");
                 byte[] directoryAfter = StrictUtf8.GetBytes(
                     "directory-after");
-                byte[] pendingBefore = StrictUtf8.GetBytes(
-                    "pending-before");
-                byte[] pendingAfter = StrictUtf8.GetBytes(
-                    "pending-after");
+                byte[] peerCacheBefore = StrictUtf8.GetBytes(
+                    "peer-cache-before");
+                byte[] peerCacheAfter = StrictUtf8.GetBytes(
+                    "peer-cache-after");
+                Directory.CreateDirectory(Path.Combine(
+                    stateDirectory,
+                    "pki"));
                 writer.Write(
                     StateFileTarget.Directory,
                     directoryAfter);
                 writer.Write(
-                    StateFileTarget.Pending,
+                    StateFileTarget.PeerPkiCache,
                     StrictUtf8.GetBytes("unexpected"));
 
                 Guid transactionId = new Guid(
@@ -154,17 +157,17 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                             directoryBefore,
                             directoryAfter),
                         CreateEntry(
-                            StateFileTarget.Pending,
-                            pendingBefore,
-                            pendingAfter)
+                            StateFileTarget.PeerPkiCache,
+                            peerCacheBefore,
+                            peerCacheAfter)
                     });
                 WriteTransaction(
                     pathPolicy,
                     state,
                     directoryBefore,
                     directoryAfter,
-                    pendingBefore,
-                    pendingAfter);
+                    peerCacheBefore,
+                    peerCacheAfter);
                 var manager = new RecoveryJournalManager(
                     pathPolicy,
                     writer,
@@ -185,7 +188,6 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
 
         [TestMethod]
         [DataRow("directory.xml.bak")]
-        [DataRow("pending.xml.bak")]
         public void LoadDoesNotOpenFreshStateWhenOnlyBackupRemains(
             string backupFileName)
         {
@@ -365,8 +367,8 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             RecoveryJournalState state,
             byte[] directoryBefore,
             byte[] directoryAfter,
-            byte[] pendingBefore = null,
-            byte[] pendingAfter = null)
+            byte[] peerCacheBefore = null,
+            byte[] peerCacheAfter = null)
         {
             pathPolicy.EnsureJournalRootExistsAndIsSafe();
             string transactionPath = Path.Combine(
@@ -381,16 +383,16 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 transactionPath,
                 "directory.after.bin",
                 directoryAfter);
-            if (pendingBefore != null)
+            if (peerCacheBefore != null)
             {
                 WriteImage(
                     transactionPath,
-                    "pending.before.bin",
-                    pendingBefore);
+                    "peer-pki.before.bin",
+                    peerCacheBefore);
                 WriteImage(
                     transactionPath,
-                    "pending.after.bin",
-                    pendingAfter);
+                    "peer-pki.after.bin",
+                    peerCacheAfter);
             }
 
             File.WriteAllBytes(

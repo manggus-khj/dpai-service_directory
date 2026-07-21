@@ -252,9 +252,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                         body,
                         headers,
                         isSession
-                            && StringComparer.Ordinal.Equals(
-                                path,
-                                PeerAuthenticationContract.ExchangePath)
+                            && (StringComparer.Ordinal.Equals(
+                                    path,
+                                    PeerAuthenticationContract.ExchangePath)
+                                || StringComparer.Ordinal.Equals(
+                                    path,
+                                    PeerAuthenticationContract.PkiStatePath))
                             ? PeerExchangeTimeout
                             : PeerControlTimeout));
                 if (!transportResult.IsSuccess)
@@ -619,6 +622,13 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
             if (StringComparer.Ordinal.Equals(
                     path,
                     PeerAuthenticationContract.ExchangePath))
+            {
+                return SecurityAuditOperation.PeerExchange;
+            }
+
+            if (StringComparer.Ordinal.Equals(
+                    path,
+                    PeerAuthenticationContract.PkiStatePath))
             {
                 return SecurityAuditOperation.PeerExchange;
             }

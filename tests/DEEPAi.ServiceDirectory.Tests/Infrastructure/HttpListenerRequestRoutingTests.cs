@@ -103,6 +103,16 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             AssertRoute(
                 configuredAddress,
                 ConfiguredEndpoint,
+                ExternalApiContract.CaPath,
+                ServiceDirectoryHttpRoute.External);
+            AssertRoute(
+                configuredAddress,
+                ConfiguredEndpoint,
+                "/pki%2fca",
+                ServiceDirectoryHttpRoute.External);
+            AssertRoute(
+                configuredAddress,
+                ConfiguredEndpoint,
                 "/api/sync",
                 ServiceDirectoryHttpRoute.Peer);
             AssertRoute(
@@ -147,6 +157,11 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 configuredAddress,
                 LoopbackEndpoint,
                 "/api%2fhealth",
+                ServiceDirectoryHttpRoute.WatchdogHealth);
+            AssertRoute(
+                configuredAddress,
+                LoopbackEndpoint,
+                ExternalApiContract.CaPath,
                 ServiceDirectoryHttpRoute.WatchdogHealth);
             AssertRoute(
                 configuredAddress,
@@ -223,11 +238,23 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         public void DeadlinePolicyUsesExactMethodAndRawPath()
         {
             Assert.AreEqual(
-                TimeSpan.FromSeconds(10),
+                TimeSpan.FromSeconds(15),
                 HttpListenerDeadlinePolicy.GetDeadline(
                     ServiceDirectoryHttpRoute.External,
                     "POST",
                     "/api/registration"));
+            Assert.AreEqual(
+                TimeSpan.FromSeconds(15),
+                HttpListenerDeadlinePolicy.GetDeadline(
+                    ServiceDirectoryHttpRoute.External,
+                    "POST",
+                    "/api/certificates/renew"));
+            Assert.AreEqual(
+                TimeSpan.FromSeconds(10),
+                HttpListenerDeadlinePolicy.GetDeadline(
+                    ServiceDirectoryHttpRoute.External,
+                    "GET",
+                    ExternalApiContract.CrlPath));
             Assert.AreEqual(
                 TimeSpan.FromSeconds(5),
                 HttpListenerDeadlinePolicy.GetDeadline(

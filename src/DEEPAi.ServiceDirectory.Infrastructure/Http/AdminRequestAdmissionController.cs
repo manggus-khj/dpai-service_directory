@@ -10,9 +10,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
     {
         Undefined = 0,
         GetServices = 1,
-        GetPending = 2,
-        ApprovePending = 3,
-        RejectPending = 4,
+        GetRegistrationMode = 2,
+        OpenRegistrationMode = 3,
+        CloseRegistrationMode = 4,
         DeleteService = 5,
         GetSyncStatus = 6,
         EnableSync = 7,
@@ -275,7 +275,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         private static bool IsRead(AdminHttpOperation operation)
         {
             return operation == AdminHttpOperation.GetServices
-                || operation == AdminHttpOperation.GetPending
+                || operation == AdminHttpOperation.GetRegistrationMode
                 || operation == AdminHttpOperation.GetSyncStatus
                 || operation == AdminHttpOperation.GetLoggingSettings
                 || operation == AdminHttpOperation.GetCaStatus

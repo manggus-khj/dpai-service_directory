@@ -78,17 +78,6 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
                     nameof(entries));
             }
 
-            foreach (CertificateLedgerEntry entry in bySerial.Values)
-            {
-                if (entry.Status == CertificateLedgerStatus.Retiring
-                    && !currentByProductCode.ContainsKey(entry.ProductCode))
-                {
-                    throw new ArgumentException(
-                        "A retiring certificate requires a current replacement for the same product code.",
-                        nameof(entries));
-                }
-            }
-
             if ((bySerial.Count > 0 || crlNumber > 0) && pkiRevision == 0)
             {
                 throw new ArgumentOutOfRangeException(
@@ -137,6 +126,41 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
             out CertificateLedgerEntry entry)
         {
             return _entriesByRequestId.TryGetValue(requestId, out entry);
+        }
+
+        public CertificateIssuanceReplayStatus ResolveIssuanceRequest(
+            CertificateIssuanceRequestEvidence evidence,
+            out CertificateLedgerEntry entry)
+        {
+            if (evidence == null)
+            {
+                throw new ArgumentNullException(nameof(evidence));
+            }
+
+            if (!_entriesByRequestId.TryGetValue(
+                    evidence.RequestId,
+                    out entry))
+            {
+                return CertificateIssuanceReplayStatus.NewRequest;
+            }
+
+            byte[] csrSha256 = evidence.GetCsrSha256();
+            byte[] payloadSha256 = evidence.GetRequestPayloadSha256();
+            try
+            {
+                return entry.MatchesIssuanceRequest(
+                        evidence.IssuanceKind,
+                        evidence.RequestId,
+                        csrSha256,
+                        payloadSha256)
+                    ? CertificateIssuanceReplayStatus.ExactReplay
+                    : CertificateIssuanceReplayStatus.Conflict;
+            }
+            finally
+            {
+                Array.Clear(csrSha256, 0, csrSha256.Length);
+                Array.Clear(payloadSha256, 0, payloadSha256.Length);
+            }
         }
 
         public bool TryGetBySerial(

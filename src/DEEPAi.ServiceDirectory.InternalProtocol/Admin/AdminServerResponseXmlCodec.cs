@@ -48,39 +48,6 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
                 body => AdminXmlCodec.ParseServicesResponse(body));
         }
 
-        public static byte[] SerializePendingResponse(
-            AdminServerPendingResponse response)
-        {
-            if (response == null)
-            {
-                throw new ArgumentNullException(nameof(response));
-            }
-
-            var pendingItems = new XElement(Namespace + "PendingItems");
-            foreach (AdminServerPendingItem item in response.Items)
-            {
-                pendingItems.Add(CreatePendingItemElement(item));
-            }
-
-            XElement root = CreateSuccessEnvelope();
-            root.Add(pendingItems);
-            root.Add(
-                new XElement(
-                    Namespace + "TotalCount",
-                    FormatInt32(response.TotalCount)));
-            if (response.NextCursor != null)
-            {
-                root.Add(
-                    new XElement(
-                        Namespace + "NextCursor",
-                        response.NextCursor));
-            }
-
-            return SerializeAndValidate(
-                root,
-                body => AdminXmlCodec.ParsePendingResponse(body));
-        }
-
         public static byte[] SerializeSyncStatusResponse(
             AdminServerSyncStatusResponse response)
         {
@@ -286,37 +253,6 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
             return element;
         }
 
-        private static XElement CreatePendingItemElement(
-            AdminServerPendingItem item)
-        {
-            var element = new XElement(
-                Namespace + "PendingItem",
-                new XElement(
-                    Namespace + "Id",
-                    FormatGuid(item.Id)),
-                new XElement(
-                    Namespace + "Type",
-                    item.Type == AdminPendingRequestType.New
-                        ? "New"
-                        : "Modify"),
-                new XElement(
-                    Namespace + "RequestedUtc",
-                    FormatUtc(item.RequestedUtc)),
-                new XElement(Namespace + "SourceIP", item.SourceIp),
-                CreateServiceDefinitionElement(
-                    "Requested",
-                    item.Requested));
-            if (item.Current != null)
-            {
-                element.Add(
-                    CreateServiceDefinitionElement(
-                        "Current",
-                        item.Current));
-            }
-
-            return element;
-        }
-
         private static XElement CreateServiceDefinitionElement(
             string elementName,
             AdminServerServiceDefinition definition)
@@ -328,8 +264,11 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
                     Namespace + "ProductCode",
                     definition.ProductCode),
                 new XElement(
-                    Namespace + "ServerAddress",
-                    definition.ServerAddress),
+                    Namespace + "ServiceHostName",
+                    definition.ServiceHostName),
+                new XElement(
+                    Namespace + "ServiceIpv4Address",
+                    definition.ServiceIpv4Address),
                 new XElement(
                     Namespace + "Port",
                     FormatInt32(definition.Port)));

@@ -5,7 +5,6 @@ using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using System.Xml.Schema;
-using DEEPAi.ServiceDirectory.Domain;
 
 namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
 {
@@ -26,62 +25,114 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
         {
             XElement root = LoadSchemaValidatedRoot(
                 body,
-                "RegistrationRequest");
+                "RegistrationRequest",
+                ExternalApiContract.MaximumCertificateRequestBodyBytes);
             EnsureNoRequestAttributes(root);
 
-            ServiceDefinition definition;
-            ServiceDefinitionValidationError validationError;
-            if (!ServiceDefinition.TryCreate(
+            try
+            {
+                return new ExternalRegistrationRequest(
+                    ReadCanonicalGuid(root, "RegistrationRequestId"),
                     ReadRequiredValue(root, "Name"),
                     ReadRequiredValue(root, "ProductCode"),
-                    ReadRequiredValue(root, "ServerAddress"),
+                    ReadRequiredValue(root, "ServiceHostName"),
+                    ReadRequiredValue(root, "ServiceIpv4Address"),
                     ReadRequiredPort(root),
-                    out definition,
-                    out validationError))
+                    ReadCanonicalBase64(
+                        root,
+                        "CertificateSigningRequest",
+                        0,
+                        ExternalApiContract.MaximumCertificateSigningRequestBytes));
+            }
+            catch (Exception exception)
+                when (exception is ArgumentException
+                    || exception is FormatException
+                    || exception is OverflowException)
             {
                 throw new ExternalProtocolException(
-                    "The external registration request contains an invalid service definition: "
-                    + validationError
-                    + ".");
+                    "The external registration request contains an invalid value.",
+                    exception);
             }
+        }
 
-            return new ExternalRegistrationRequest(definition);
+        public static ExternalCertificateRenewalRequest
+            ParseCertificateRenewalRequest(byte[] body)
+        {
+            XElement root = LoadSchemaValidatedRoot(
+                body,
+                "CertificateRenewalRequest",
+                ExternalApiContract.MaximumCertificateRequestBodyBytes);
+            EnsureNoRequestAttributes(root);
+
+            try
+            {
+                return new ExternalCertificateRenewalRequest(
+                    ReadCanonicalGuid(root, "RenewalRequestId"),
+                    ReadRequiredValue(root, "ProductCode"),
+                    ReadRequiredValue(root, "CurrentSerialNumber"),
+                    ReadProofTimestamp(root, "TimestampUtc"),
+                    ReadCanonicalBase64(
+                        root,
+                        "Nonce",
+                        ExternalApiContract.RenewalNonceBytes,
+                        0),
+                    ReadRequiredValue(root, "Name"),
+                    ReadRequiredValue(root, "ServiceHostName"),
+                    ReadRequiredValue(root, "ServiceIpv4Address"),
+                    ReadRequiredPort(root),
+                    ReadCanonicalBase64(
+                        root,
+                        "CertificateSigningRequest",
+                        0,
+                        ExternalApiContract.MaximumCertificateSigningRequestBytes),
+                    ReadCanonicalBase64(
+                        root,
+                        "ServiceIdentitySha256",
+                        ExternalApiContract.Sha256Bytes,
+                        0),
+                    ReadCanonicalBase64(
+                        root,
+                        "ProofSignature",
+                        0,
+                        ExternalApiContract.MaximumProofSignatureBytes));
+            }
+            catch (Exception exception)
+                when (exception is ArgumentException
+                    || exception is FormatException
+                    || exception is OverflowException)
+            {
+                throw new ExternalProtocolException(
+                    "The external certificate renewal request contains an invalid value.",
+                    exception);
+            }
+        }
+
+        public static byte[] SerializeTrustInfoResponse(
+            ExternalResponse response)
+        {
+            return SerializeExpectedResponse(
+                response,
+                ExternalResponsePayloadKind.TrustInfo,
+                ExternalApiContract.MaximumCaResponseBytes,
+                "A successful CA response requires a trust information payload.");
         }
 
         public static byte[] SerializeHealthResponse(ExternalResponse response)
         {
-            if (response == null)
-            {
-                throw new ArgumentNullException(nameof(response));
-            }
-
-            if (response.IsSuccess
-                && response.PayloadKind != ExternalResponsePayloadKind.Health)
-            {
-                throw new ArgumentException(
-                    "A successful health response requires a health payload.",
-                    nameof(response));
-            }
-
-            return SerializeResponse(response);
+            return SerializeExpectedResponse(
+                response,
+                ExternalResponsePayloadKind.Health,
+                ExternalApiContract.MaximumBodyBytes,
+                "A successful health response requires a health payload.");
         }
 
         public static byte[] SerializeServiceResponse(ExternalResponse response)
         {
-            if (response == null)
-            {
-                throw new ArgumentNullException(nameof(response));
-            }
-
-            if (response.IsSuccess
-                && response.PayloadKind != ExternalResponsePayloadKind.Service)
-            {
-                throw new ArgumentException(
-                    "A successful service lookup response requires a service payload.",
-                    nameof(response));
-            }
-
-            return SerializeResponse(response);
+            return SerializeExpectedResponse(
+                response,
+                ExternalResponsePayloadKind.Service,
+                ExternalApiContract.MaximumBodyBytes,
+                "A successful service lookup response requires a service payload.");
         }
 
         public static byte[] SerializeRegistrationResponse(
@@ -93,14 +144,41 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
             }
 
             if (response.IsSuccess
-                && response.PayloadKind != ExternalResponsePayloadKind.Registration)
+                && (response.PayloadKind !=
+                    ExternalResponsePayloadKind.CertificateIssuance
+                    || !response.RegistrationRequestId.HasValue))
             {
                 throw new ArgumentException(
-                    "A successful registration response requires a registration payload.",
+                    "A successful registration response requires a registration certificate payload.",
                     nameof(response));
             }
 
-            return SerializeResponse(response);
+            return SerializeResponse(
+                response,
+                ExternalApiContract.MaximumBodyBytes);
+        }
+
+        public static byte[] SerializeCertificateRenewalResponse(
+            ExternalResponse response)
+        {
+            if (response == null)
+            {
+                throw new ArgumentNullException(nameof(response));
+            }
+
+            if (response.IsSuccess
+                && (response.PayloadKind !=
+                    ExternalResponsePayloadKind.CertificateIssuance
+                    || !response.RenewalRequestId.HasValue))
+            {
+                throw new ArgumentException(
+                    "A successful renewal response requires a renewal certificate payload.",
+                    nameof(response));
+            }
+
+            return SerializeResponse(
+                response,
+                ExternalApiContract.MaximumBodyBytes);
         }
 
         public static byte[] SerializeErrorResponse(ExternalResponse response)
@@ -118,10 +196,34 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                     nameof(response));
             }
 
-            return SerializeResponse(response);
+            return SerializeResponse(
+                response,
+                ExternalApiContract.MaximumBodyBytes);
         }
 
-        private static byte[] SerializeResponse(ExternalResponse response)
+        private static byte[] SerializeExpectedResponse(
+            ExternalResponse response,
+            ExternalResponsePayloadKind expectedPayloadKind,
+            int maximumBodyBytes,
+            string errorMessage)
+        {
+            if (response == null)
+            {
+                throw new ArgumentNullException(nameof(response));
+            }
+
+            if (response.IsSuccess
+                && response.PayloadKind != expectedPayloadKind)
+            {
+                throw new ArgumentException(errorMessage, nameof(response));
+            }
+
+            return SerializeResponse(response, maximumBodyBytes);
+        }
+
+        private static byte[] SerializeResponse(
+            ExternalResponse response,
+            int maximumBodyBytes)
         {
             var root = new XElement(
                 Namespace + "Response",
@@ -131,46 +233,63 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                     response.NumericCode.ToString(CultureInfo.InvariantCulture)),
                 new XElement(Namespace + "Message", response.Message));
 
-            if (response.PayloadKind == ExternalResponsePayloadKind.Health)
+            switch (response.PayloadKind)
             {
-                root.Add(
-                    new XElement(
-                        Namespace + "UtcNow",
-                        FormatUtc(response.UtcNow.Value)));
-            }
-            else if (response.PayloadKind == ExternalResponsePayloadKind.Service)
-            {
-                root.Add(CreateServiceElement(response.Service));
-            }
-            else if (response.PayloadKind ==
-                ExternalResponsePayloadKind.Registration)
-            {
-                root.Add(
-                    new XElement(
-                        Namespace + "Status",
-                        GetRegistrationStatusText(
-                            response.RegistrationStatus.Value)));
-                if (response.PendingId.HasValue)
-                {
+                case ExternalResponsePayloadKind.None:
+                    break;
+                case ExternalResponsePayloadKind.TrustInfo:
+                    root.Add(CreateTrustInfoElement(response.TrustInfo));
+                    break;
+                case ExternalResponsePayloadKind.Health:
                     root.Add(
                         new XElement(
-                            Namespace + "PendingId",
-                            response.PendingId.Value
-                                .ToString("D")
-                                .ToLowerInvariant()));
-                }
+                            Namespace + "UtcNow",
+                            FormatUtc(response.UtcNow.Value)));
+                    break;
+                case ExternalResponsePayloadKind.Service:
+                    root.Add(CreateServiceElement(response.Service));
+                    break;
+                case ExternalResponsePayloadKind.CertificateIssuance:
+                    AddCertificateIssuancePayload(root, response);
+                    break;
+                default:
+                    throw new ExternalProtocolException(
+                        "The external response payload kind is invalid.");
             }
 
             byte[] body = StrictUtf8.GetBytes(
                 root.ToString(SaveOptions.DisableFormatting));
-            if (body.Length > ExternalApiContract.MaximumBodyBytes)
+            if (body.Length > maximumBodyBytes)
             {
                 throw new ExternalProtocolException(
-                    "The external response exceeds the XML body limit.");
+                    "The external response exceeds its XML body limit.");
             }
 
-            LoadSchemaValidatedRoot(body, "Response");
+            LoadSchemaValidatedRoot(body, "Response", maximumBodyBytes);
             return body;
+        }
+
+        private static XElement CreateTrustInfoElement(
+            ExternalTrustInfo trustInfo)
+        {
+            if (trustInfo == null)
+            {
+                throw new ExternalProtocolException(
+                    "The external CA response payload is missing.");
+            }
+
+            return new XElement(
+                Namespace + "TrustInfo",
+                new XElement(
+                    Namespace + "SiteId",
+                    FormatGuid(trustInfo.SiteId)),
+                new XElement(
+                    Namespace + "CaCertificate",
+                    Convert.ToBase64String(trustInfo.CaCertificate)),
+                new XElement(
+                    Namespace + "CaSpkiSha256",
+                    Convert.ToBase64String(trustInfo.CaSpkiSha256)),
+                new XElement(Namespace + "CrlUri", trustInfo.CrlUri));
         }
 
         private static XElement CreateServiceElement(ExternalServiceItem service)
@@ -186,8 +305,11 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                 new XElement(Namespace + "Name", service.Name),
                 new XElement(Namespace + "ProductCode", service.ProductCode),
                 new XElement(
-                    Namespace + "ServerAddress",
-                    service.ServerAddress),
+                    Namespace + "ServiceHostName",
+                    service.ServiceHostName),
+                new XElement(
+                    Namespace + "ServiceIpv4Address",
+                    service.ServiceIpv4Address),
                 new XElement(
                     Namespace + "Port",
                     service.Port.ToString(CultureInfo.InvariantCulture)),
@@ -196,17 +318,79 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                     FormatUtc(service.LastModifiedUtc)));
         }
 
+        private static XElement CreateCertificateElement(
+            ExternalIssuedCertificate certificate)
+        {
+            if (certificate == null)
+            {
+                throw new ExternalProtocolException(
+                    "The external certificate response payload is missing.");
+            }
+
+            return new XElement(
+                Namespace + "Certificate",
+                new XElement(
+                    Namespace + "LeafCertificate",
+                    Convert.ToBase64String(certificate.LeafCertificate)),
+                new XElement(
+                    Namespace + "IssuerCertificate",
+                    Convert.ToBase64String(certificate.IssuerCertificate)),
+                new XElement(
+                    Namespace + "SerialNumber",
+                    certificate.SerialNumber),
+                new XElement(
+                    Namespace + "NotBeforeUtc",
+                    FormatUtc(certificate.NotBeforeUtc)),
+                new XElement(
+                    Namespace + "NotAfterUtc",
+                    FormatUtc(certificate.NotAfterUtc)),
+                new XElement(Namespace + "CrlUri", certificate.CrlUri));
+        }
+
+        private static void AddCertificateIssuancePayload(
+            XElement root,
+            ExternalResponse response)
+        {
+            root.Add(
+                new XElement(
+                    Namespace + "Status",
+                    GetCertificateIssuanceStatusText(
+                        response.IssuanceStatus.Value)));
+            if (response.RegistrationRequestId.HasValue)
+            {
+                root.Add(
+                    new XElement(
+                        Namespace + "RegistrationRequestId",
+                        FormatGuid(response.RegistrationRequestId.Value)));
+            }
+            else if (response.RenewalRequestId.HasValue)
+            {
+                root.Add(
+                    new XElement(
+                        Namespace + "RenewalRequestId",
+                        FormatGuid(response.RenewalRequestId.Value)));
+            }
+            else
+            {
+                throw new ExternalProtocolException(
+                    "The external certificate response request ID is missing.");
+            }
+
+            root.Add(CreateServiceElement(response.Service));
+            root.Add(CreateCertificateElement(response.Certificate));
+        }
+
         private static XElement LoadSchemaValidatedRoot(
             byte[] body,
-            string expectedRootName)
+            string expectedRootName,
+            int maximumBodyBytes)
         {
             if (body == null)
             {
                 throw new ArgumentNullException(nameof(body));
             }
 
-            if (body.Length == 0
-                || body.Length > ExternalApiContract.MaximumBodyBytes)
+            if (body.Length == 0 || body.Length > maximumBodyBytes)
             {
                 throw new ExternalProtocolException(
                     "The external XML body size is invalid.");
@@ -266,8 +450,7 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
             }
 
             XElement root = document.Root;
-            if (root == null
-                || root.Name != Namespace + expectedRootName)
+            if (root == null || root.Name != Namespace + expectedRootName)
             {
                 throw new ExternalProtocolException(
                     "The external XML root or namespace is invalid.");
@@ -370,6 +553,68 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
             return element.Value;
         }
 
+        private static Guid ReadCanonicalGuid(XElement parent, string name)
+        {
+            string value = ReadRequiredValue(parent, name);
+            Guid parsed;
+            if (!Guid.TryParseExact(value, "D", out parsed)
+                || parsed == Guid.Empty
+                || !StringComparer.Ordinal.Equals(value, FormatGuid(parsed)))
+            {
+                throw new ExternalProtocolException(
+                    "The external request ID is not canonical.");
+            }
+
+            return parsed;
+        }
+
+        private static byte[] ReadCanonicalBase64(
+            XElement parent,
+            string name,
+            int exactLength,
+            int maximumLength)
+        {
+            string value = ReadRequiredValue(parent, name);
+            byte[] decoded = Convert.FromBase64String(value);
+            if (decoded.Length == 0
+                || !StringComparer.Ordinal.Equals(
+                    value,
+                    Convert.ToBase64String(decoded))
+                || (exactLength > 0 && decoded.Length != exactLength)
+                || (maximumLength > 0 && decoded.Length > maximumLength))
+            {
+                throw new ExternalProtocolException(
+                    "The external binary value is not canonical or has an invalid length.");
+            }
+
+            return decoded;
+        }
+
+        private static DateTime ReadProofTimestamp(
+            XElement parent,
+            string name)
+        {
+            string value = ReadRequiredValue(parent, name);
+            DateTime parsed;
+            if (!DateTime.TryParseExact(
+                    value,
+                    "yyyy-MM-dd'T'HH:mm:ss.fff'Z'",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal
+                        | DateTimeStyles.AdjustToUniversal,
+                    out parsed)
+                || parsed.Kind != DateTimeKind.Utc
+                || !StringComparer.Ordinal.Equals(
+                    value,
+                    FormatProofUtc(parsed)))
+            {
+                throw new ExternalProtocolException(
+                    "The external proof timestamp is invalid.");
+            }
+
+            return parsed;
+        }
+
         private static void EnsureNoRequestAttributes(XElement root)
         {
             foreach (XElement element in root.DescendantsAndSelf())
@@ -379,7 +624,7 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                     if (!attribute.IsNamespaceDeclaration)
                     {
                         throw new ExternalProtocolException(
-                            "External registration requests must not contain attributes.");
+                            "External requests must not contain attributes.");
                     }
                 }
             }
@@ -390,37 +635,49 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
             string value = ReadRequiredValue(parent, "Port");
             int port;
             if (!int.TryParse(
-                value,
-                NumberStyles.Integer,
-                CultureInfo.InvariantCulture,
-                out port)
+                    value,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out port)
                 || port < 1
                 || port > 65535)
             {
                 throw new ExternalProtocolException(
-                    "The external registration port is invalid.");
+                    "The external service port is invalid.");
             }
 
             return port;
         }
 
-        private static string GetRegistrationStatusText(
-            ExternalRegistrationStatus status)
+        private static string GetCertificateIssuanceStatusText(
+            ExternalCertificateIssuanceStatus status)
         {
             switch (status)
             {
-                case ExternalRegistrationStatus.PendingNew:
-                    return "PENDING_NEW";
-                case ExternalRegistrationStatus.PendingModify:
-                    return "PENDING_MODIFY";
-                case ExternalRegistrationStatus.PendingExists:
-                    return "PENDING_EXISTS";
-                case ExternalRegistrationStatus.AlreadyRegistered:
-                    return "ALREADY_REGISTERED";
+                case ExternalCertificateIssuanceStatus.Registered:
+                    return "REGISTERED";
+                case ExternalCertificateIssuanceStatus.Reregistered:
+                    return "REREGISTERED";
+                case ExternalCertificateIssuanceStatus.Replayed:
+                    return "REPLAYED";
+                case ExternalCertificateIssuanceStatus.Renewed:
+                    return "RENEWED";
                 default:
                     throw new ExternalProtocolException(
-                        "The external registration status is invalid.");
+                        "The external certificate issuance status is invalid.");
             }
+        }
+
+        private static string FormatGuid(Guid value)
+        {
+            return value.ToString("D").ToLowerInvariant();
+        }
+
+        private static string FormatProofUtc(DateTime value)
+        {
+            return value.ToString(
+                "yyyy-MM-dd'T'HH:mm:ss.fff'Z'",
+                CultureInfo.InvariantCulture);
         }
 
         private static string FormatUtc(DateTime value)

@@ -71,8 +71,10 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Application\InboundSynchronizationStagingTests.cs" />
+    <Compile Include="Application\RegistrationModeOwnerTests.cs" />
     <Compile Include="Application\StateMutationCoordinatorTests.cs" />
     <Compile Include="Domain\CertificateLedgerTests.cs" />
+    <Compile Include="Domain\CertificateIssuanceRequestEvidenceTests.cs" />
     <Compile Include="Domain\LogicalVersionClockTests.cs" />
     <Compile Include="Domain\EndpointIdentityTests.cs" />
     <Compile Include="Domain\ProductCodeTests.cs" />
@@ -89,9 +91,20 @@
     <Compile Include="Infrastructure\AdminHttpAdapterTests.cs" />
     <Compile Include="Infrastructure\AdminRequestAdmissionControllerTests.cs" />
     <Compile Include="Infrastructure\ConfigurationPersistenceTests.cs" />
+    <Compile Include="Infrastructure\ConfigurationPersistenceIdentityTests.cs" />
+    <Compile Include="Infrastructure\CertificateAuthorityStateCodecTests.cs" />
+    <Compile Include="Infrastructure\CertificateAuthorityRoleRepairStoreTests.cs" />
+    <Compile Include="Infrastructure\CertificateLedgerCapacityGuardTests.cs" />
+    <Compile Include="Infrastructure\CertificateServiceMutationTestContext.cs" />
+    <Compile Include="Infrastructure\CertificateServiceMutationTestContext.Issuance.cs" />
+    <Compile Include="Infrastructure\CertificateServiceMutationTransactionTests.cs" />
+    <Compile Include="Infrastructure\CertificateIssuanceFaultBoundaryTests.cs" />
+    <Compile Include="Infrastructure\RecordingCertificateServiceMutationFaultInjector.cs" />
+    <Compile Include="Infrastructure\CertificateRenewalTransactionTests.cs" />
     <Compile Include="Infrastructure\CertificateSigningRequestValidatorTests.cs" />
     <Compile Include="Infrastructure\CaBackupCodecTests.cs" />
     <Compile Include="Infrastructure\ExternalHttpAdapterTests.cs" />
+    <Compile Include="Infrastructure\ExternalCertificateMutationLoggingTests.cs" />
     <Compile Include="Infrastructure\ExternalQueryStringParserTests.cs" />
     <Compile Include="Infrastructure\ExternalRequestAdmissionControllerTests.cs" />
     <Compile Include="Infrastructure\HttpListenerRequestRoutingTests.cs" />
@@ -109,6 +122,9 @@
     <Compile Include="Infrastructure\PeerNonceReplayCacheTests.cs" />
     <Compile Include="Infrastructure\PeerOutboundSnapshotLeaseTests.cs" />
     <Compile Include="Infrastructure\PeerPairAuthenticationContextTests.cs" />
+    <Compile Include="Infrastructure\PeerPkiCacheCodecTests.cs" />
+    <Compile Include="Infrastructure\PeerPkiSynchronizationStoreTests.cs" />
+    <Compile Include="Infrastructure\PeerTlsTrustSnapshotTests.cs" />
     <Compile Include="Infrastructure\PeerPushBatchProcessorTests.cs" />
     <Compile Include="Infrastructure\PeerRequestRateLimiterTests.cs" />
     <Compile Include="Infrastructure\RawHttpRequestTargetParserTests.cs" />
@@ -118,13 +134,16 @@
     <Compile Include="Infrastructure\ServiceDirectoryHttpListenerHostTests.cs" />
     <Compile Include="Infrastructure\ServiceDirectoryListenerAddressTests.cs" />
     <Compile Include="Infrastructure\StatePersistenceTests.cs" />
+    <Compile Include="Infrastructure\StorageV1ConsistencyValidatorTests.cs" />
     <Compile Include="Infrastructure\SystemFileLoggerTests.cs" />
     <Compile Include="Infrastructure\SiteCertificateAuthorityTests.cs" />
     <Compile Include="Infrastructure\WatchdogHealthHttpAdapterTests.cs" />
     <Compile Include="Infrastructure\WatchdogPipeCodecTests.cs" />
     <Compile Include="InternalProtocol\AdminServerResponseXmlCodecTests.cs" />
     <Compile Include="InternalProtocol\AdminServerXmlCodecTests.cs" />
+    <Compile Include="InternalProtocol\AdminRegistrationModeXmlCodecTests.cs" />
     <Compile Include="InternalProtocol\PeerControlXmlCodecTests.cs" />
+    <Compile Include="InternalProtocol\PeerContractXmlCodecTests.cs" />
     <Compile Include="InternalProtocol\PeerExchangeXmlCodecTests.cs" />
     <Compile Include="InternalProtocol\PeerSyncXmlCodecTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

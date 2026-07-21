@@ -159,6 +159,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Configuration
                     if (!StringComparer.Ordinal.Equals(
                             nextConfiguration.ListenAddress,
                             current.ListenAddress)
+                        || !nextConfiguration.DirectoryEndpointIdentity.Equals(
+                            current.DirectoryEndpointIdentity)
                         || nextConfiguration.InstanceId
                             != current.InstanceId)
                     {

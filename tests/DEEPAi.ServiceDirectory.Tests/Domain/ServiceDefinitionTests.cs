@@ -1,5 +1,8 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System;
+using System.Reflection;
 using DEEPAi.ServiceDirectory.Domain;
+using DEEPAi.ServiceDirectory.Domain.Synchronization;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace DEEPAi.ServiceDirectory.Tests.Domain
 {
@@ -7,18 +10,18 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
     public sealed class ServiceDefinitionTests
     {
         [TestMethod]
-        [DataRow("127.0.0.1")]
-        [DataRow("2001:db8::1")]
-        [DataRow("service-01.internal")]
-        public void TryCreateAcceptsSupportedServerAddressForms(string address)
+        public void TryCreateUsesCanonicalServiceEndpointIdentityPair()
         {
+            ServiceEndpointIdentity identity = CreateIdentity(
+                "service-01.internal",
+                "10.20.30.40");
             ServiceDefinition definition;
             ServiceDefinitionValidationError error;
 
             bool created = ServiceDefinition.TryCreate(
                 " Directory ",
                 " ab12 ",
-                " " + address + " ",
+                identity,
                 21000,
                 out definition,
                 out error);
@@ -27,19 +30,17 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
             Assert.AreEqual(ServiceDefinitionValidationError.None, error);
             Assert.AreEqual("Directory", definition.Name);
             Assert.AreEqual("AB12", definition.ProductCode.Value);
-            Assert.AreEqual(address, definition.ServerAddress);
+            Assert.AreSame(identity, definition.ServiceEndpointIdentity);
+            Assert.AreEqual(
+                "service-01.internal",
+                definition.ServiceHostName);
+            Assert.AreEqual(
+                "10.20.30.40",
+                definition.ServiceIpv4Address);
         }
 
         [TestMethod]
-        [DataRow("http://service.internal")]
-        [DataRow("service.internal:21000")]
-        [DataRow("[2001:db8::1]")]
-        [DataRow("fe80::1%12")]
-        [DataRow("010.20.30.40")]
-        [DataRow("12345")]
-        [DataRow("service..internal")]
-        [DataRow("서비스.internal")]
-        public void TryCreateRejectsAmbiguousOrUnsupportedServerAddresses(string address)
+        public void TryCreateRejectsMissingServiceEndpointIdentity()
         {
             ServiceDefinition definition;
             ServiceDefinitionValidationError error;
@@ -47,14 +48,97 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
             bool created = ServiceDefinition.TryCreate(
                 "Directory",
                 "AB12",
-                address,
+                null,
                 21000,
                 out definition,
                 out error);
 
             Assert.IsFalse(created);
             Assert.IsNull(definition);
-            Assert.AreEqual(ServiceDefinitionValidationError.ServerAddressInvalid, error);
+            Assert.AreEqual(
+                ServiceDefinitionValidationError
+                    .ServiceEndpointIdentityRequired,
+                error);
+        }
+
+        [TestMethod]
+        [DataRow("127.0.0.1")]
+        [DataRow("169.254.1.1")]
+        [DataRow("224.0.0.1")]
+        [DataRow("255.255.255.255")]
+        [DataRow("10.020.30.40")]
+        [DataRow("2001:db8::1")]
+        [DataRow("::ffff:10.20.30.40")]
+        public void EndpointIdentityRejectsUnsupportedIpv4AndAllIpv6(
+            string address)
+        {
+            ServiceEndpointIdentity identity;
+            EndpointIdentityValidationError error;
+
+            bool created = ServiceEndpointIdentity.TryCreate(
+                "service.internal",
+                address,
+                out identity,
+                out error);
+
+            Assert.IsFalse(created);
+            Assert.IsNull(identity);
+            Assert.AreEqual(
+                EndpointIdentityValidationError.ServiceIpv4AddressInvalid,
+                error);
+        }
+
+        [TestMethod]
+        public void ServiceDefinitionApiDoesNotAcceptDirectoryIdentity()
+        {
+            MethodInfo factory = typeof(ServiceDefinition).GetMethod(
+                "TryCreate",
+                BindingFlags.Public | BindingFlags.Static);
+
+            Assert.IsNotNull(factory);
+            ParameterInfo[] parameters = factory.GetParameters();
+            Assert.AreEqual(
+                typeof(ServiceEndpointIdentity),
+                parameters[2].ParameterType);
+            Assert.IsFalse(
+                typeof(ServiceEndpointIdentity).IsAssignableFrom(
+                    typeof(DirectoryEndpointIdentity)));
+        }
+
+        [TestMethod]
+        public void ServiceRecordAndSynchronizationSnapshotPreserveWholePair()
+        {
+            ServiceEndpointIdentity identity = CreateIdentity(
+                "service.internal",
+                "10.20.30.40");
+            ServiceDefinition definition;
+            ServiceDefinitionValidationError error;
+            Assert.IsTrue(ServiceDefinition.TryCreate(
+                "Directory",
+                "AB12",
+                identity,
+                21000,
+                out definition,
+                out error));
+            ServiceRecord record = ServiceRecord.CreateActive(
+                definition,
+                new DateTime(2026, 7, 21, 0, 0, 0, DateTimeKind.Utc),
+                1,
+                Guid.Parse("11111111-1111-1111-1111-111111111111"));
+            var snapshot = new SynchronizationSnapshot(
+                new[] { record },
+                1);
+
+            ServiceRecord captured = snapshot.Records[definition.ProductCode];
+            Assert.AreSame(
+                identity,
+                captured.Definition.ServiceEndpointIdentity);
+            Assert.AreEqual(
+                "service.internal",
+                captured.Definition.ServiceHostName);
+            Assert.AreEqual(
+                "10.20.30.40",
+                captured.Definition.ServiceIpv4Address);
         }
 
         [TestMethod]
@@ -68,14 +152,16 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
             bool created = ServiceDefinition.TryCreate(
                 "Directory",
                 "AB12",
-                "service.internal",
+                CreateIdentity("service.internal", "10.20.30.40"),
                 port,
                 out definition,
                 out error);
 
             Assert.IsFalse(created);
             Assert.IsNull(definition);
-            Assert.AreEqual(ServiceDefinitionValidationError.PortOutOfRange, error);
+            Assert.AreEqual(
+                ServiceDefinitionValidationError.PortOutOfRange,
+                error);
         }
 
         [TestMethod]
@@ -87,14 +173,16 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
             bool created = ServiceDefinition.TryCreate(
                 "Directory\u0001Service",
                 "AB12",
-                "service.internal",
+                CreateIdentity("service.internal", "10.20.30.40"),
                 21000,
                 out definition,
                 out error);
 
             Assert.IsFalse(created);
             Assert.IsNull(definition);
-            Assert.AreEqual(ServiceDefinitionValidationError.NameContainsInvalidCharacter, error);
+            Assert.AreEqual(
+                ServiceDefinitionValidationError.NameContainsInvalidCharacter,
+                error);
         }
 
         [TestMethod]
@@ -109,7 +197,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
             bool created = ServiceDefinition.TryCreate(
                 name,
                 "AB12",
-                "service.internal",
+                CreateIdentity("service.internal", "10.20.30.40"),
                 21000,
                 out definition,
                 out error);
@@ -119,6 +207,24 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
             Assert.AreEqual(
                 ServiceDefinitionValidationError.NameContainsInvalidCharacter,
                 error);
+        }
+
+        private static ServiceEndpointIdentity CreateIdentity(
+            string hostName,
+            string ipv4Address)
+        {
+            ServiceEndpointIdentity identity;
+            EndpointIdentityValidationError error;
+            if (!ServiceEndpointIdentity.TryCreate(
+                hostName,
+                ipv4Address,
+                out identity,
+                out error))
+            {
+                Assert.Fail("The test service identity is invalid: " + error);
+            }
+
+            return identity;
         }
     }
 }

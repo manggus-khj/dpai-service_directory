@@ -1,5 +1,5 @@
 using System;
-using System.IO;
+using DEEPAi.ServiceDirectory.Application.State;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
 {
@@ -36,7 +36,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         }
     }
 
-    internal sealed class RecoveryRequiredException : IOException
+    internal sealed class RecoveryRequiredException
+        : StateRecoveryRequiredException
     {
         internal RecoveryRequiredException(
             string message,
@@ -46,7 +47,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         }
     }
 
-    internal sealed class RecoveryJournalException : IOException
+    internal sealed class RecoveryJournalException
+        : StateRecoveryRequiredException
     {
         internal RecoveryJournalException(
             string message,

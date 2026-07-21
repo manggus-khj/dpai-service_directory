@@ -44,12 +44,16 @@
     <Compile Include="Admin\AdminCertificateModels.cs" />
     <Compile Include="Admin\AdminCertificateXmlCodec.cs" />
     <Compile Include="Admin\AdminPeerEndpoint.cs" />
+    <Compile Include="Admin\AdminRegistrationModeModels.cs" />
+    <Compile Include="Admin\AdminRegistrationModeXmlCodec.cs" />
     <Compile Include="Admin\AdminServerRequestModels.cs" />
     <Compile Include="Admin\AdminServerResponseModels.cs" />
     <Compile Include="Admin\AdminServerResponseXmlCodec.cs" />
     <Compile Include="Admin\AdminServerXmlCodec.cs" />
     <Compile Include="Admin\AdminXmlCodec.cs" />
     <Compile Include="Peer\PeerControlModels.cs" />
+    <Compile Include="Peer\PeerContractModels.cs" />
+    <Compile Include="Peer\PeerContractXmlCodec.cs" />
     <Compile Include="Peer\PeerSyncContract.cs" />
     <Compile Include="Peer\PeerSyncModels.cs" />
     <Compile Include="Peer\PeerSyncXmlCodec.Control.cs" />

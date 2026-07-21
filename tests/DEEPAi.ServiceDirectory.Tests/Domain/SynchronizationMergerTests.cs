@@ -689,7 +689,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
             ServiceDefinition requested = TestData.Definition(
                 name: "Pending value",
                 productCode: "AB12",
-                serverAddress: "10.20.30.41");
+                serviceIpv4Address: "10.20.30.41");
             Guid pendingId = new Guid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
             var pending = new PendingRegistration(
                 pendingId,

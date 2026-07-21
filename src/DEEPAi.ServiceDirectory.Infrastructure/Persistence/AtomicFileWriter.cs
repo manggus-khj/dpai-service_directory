@@ -233,12 +233,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             StateFileTarget target,
             string transactionPath)
         {
-            if (!StateFileTargets.IsSecret(target))
-            {
-                Delete(target);
-                return;
-            }
-
             _pathPolicy.EnsureTargetParentIsSafe(target);
             _pathPolicy.EnsureDirectoryIsSafe(transactionPath);
             string targetPath = _pathPolicy.GetTargetPath(target);

@@ -70,6 +70,8 @@ namespace DEEPAi.ServiceDirectory.Application.State
         private DirectorySnapshot _currentSnapshot;
         private int _status;
 
+        internal StateMutationGate MutationGate => _mutationGate;
+
         private StateMutationCoordinator(
             IServiceDirectoryStateStore store,
             DirectorySnapshot initialSnapshot,
@@ -289,6 +291,72 @@ namespace DEEPAi.ServiceDirectory.Application.State
                     return loadResult;
                 });
             }
+        }
+
+        // A transaction owned by another state component can use this method
+        // when directory.xml participates in the same recovery journal. The
+        // durable commit runs while this coordinator's process-wide mutation
+        // gate is held. A successful commit is followed by a store reload so
+        // both the persisted baseline and the published snapshot advance
+        // together.
+        public bool TryCommitExternalMutation(
+            DirectorySnapshot expectedSnapshot,
+            Action durableCommit)
+        {
+            if (expectedSnapshot == null)
+            {
+                throw new ArgumentNullException(nameof(expectedSnapshot));
+            }
+
+            if (durableCommit == null)
+            {
+                throw new ArgumentNullException(nameof(durableCommit));
+            }
+
+            return _mutationGate.Execute(() =>
+            {
+                if (ReadStatus() != StateCoordinatorStatus.Ready
+                    || !ReferenceEquals(
+                        Volatile.Read(ref _currentSnapshot),
+                        expectedSnapshot))
+                {
+                    return false;
+                }
+
+                try
+                {
+                    durableCommit();
+                }
+                catch (StateRecoveryRequiredException)
+                {
+                    // The shared transaction crossed its uncertainty boundary.
+                    // Normal mutations remain closed until Load resolves the
+                    // journal and refreshes the persisted baseline.
+                    WriteStatus(StateCoordinatorStatus.RecoveryRequired);
+                    throw;
+                }
+
+                StateLoadResult loadResult;
+                try
+                {
+                    loadResult = _store.Load();
+                    if (loadResult == null
+                        || !loadResult.IsSuccess
+                        || loadResult.Snapshot == null)
+                    {
+                        WriteStatus(StateCoordinatorStatus.RecoveryRequired);
+                        return false;
+                    }
+                }
+                catch
+                {
+                    WriteStatus(StateCoordinatorStatus.RecoveryRequired);
+                    throw;
+                }
+
+                Volatile.Write(ref _currentSnapshot, loadResult.Snapshot);
+                return true;
+            });
         }
 
         private StateMutationResult<TTransition> ExecuteMutation<TTransition>(

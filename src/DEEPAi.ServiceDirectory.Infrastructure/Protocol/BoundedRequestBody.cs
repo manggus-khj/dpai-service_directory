@@ -113,6 +113,16 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Protocol
             return Read(input, declaredContentLength, XmlInputLimits.SyncExchangeBodyBytes);
         }
 
+        public BoundedBodyReadResult ReadCertificateRequest(
+            Stream input,
+            long declaredContentLength)
+        {
+            return Read(
+                input,
+                declaredContentLength,
+                XmlInputLimits.CertificateRequestBodyBytes);
+        }
+
         private static BoundedBodyReadResult Read(
             Stream input,
             long declaredContentLength,

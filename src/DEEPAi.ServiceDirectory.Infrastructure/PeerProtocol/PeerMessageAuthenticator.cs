@@ -504,6 +504,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                 || IsExpectedTarget(
                     request.Method,
                     request.RequestTarget,
+                    PeerAuthenticationContract.PkiStatePath)
+                || IsExpectedTarget(
+                    request.Method,
+                    request.RequestTarget,
                     PeerAuthenticationContract.ReleasePath);
         }
 
@@ -514,6 +518,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                     response.RequestMethod,
                     response.RequestTarget,
                     PeerAuthenticationContract.ExchangePath)
+                || IsExpectedTarget(
+                    response.RequestMethod,
+                    response.RequestTarget,
+                    PeerAuthenticationContract.PkiStatePath)
                 || IsExpectedTarget(
                     response.RequestMethod,
                     response.RequestTarget,

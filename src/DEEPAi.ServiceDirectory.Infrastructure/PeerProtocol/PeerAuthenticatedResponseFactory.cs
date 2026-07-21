@@ -69,6 +69,31 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol
                 retryAfterSeconds);
         }
 
+        internal static PeerHttpResponseData CreatePkiState(
+            PeerRequestAuthenticationData request,
+            ActivePeerSession session,
+            int statusCode,
+            PeerPkiStateResponse response,
+            DateTimeOffset utcNow,
+            int? retryAfterSeconds = null)
+        {
+            if (response == null)
+            {
+                throw new ArgumentNullException(nameof(response));
+            }
+
+            return Create(
+                request,
+                null,
+                session,
+                PeerResponseKeySource.Session,
+                statusCode,
+                PeerContractXmlCodec.SerializePkiStateResponse(response),
+                session.CopySessionId(),
+                utcNow,
+                retryAfterSeconds);
+        }
+
         private static PeerHttpResponseData Create(
             PeerRequestAuthenticationData request,
             PeerPairAuthenticationContext pairContext,

@@ -4,6 +4,7 @@ using System.Text;
 using DEEPAi.ServiceDirectory.Infrastructure.Configuration;
 using DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol;
 using DEEPAi.ServiceDirectory.Infrastructure.Persistence;
+using DEEPAi.ServiceDirectory.Tests.TestSupport;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
@@ -322,7 +323,9 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 configurationStore.Load().FailureCode);
             Assert.IsTrue(configurationStore.Initialize(
                 ServiceDirectoryConfiguration.CreateInitial(
-                    "10.0.0.1",
+                    TestData.DirectoryIdentity(
+                        "management.internal",
+                        "10.0.0.1"),
                     LocalInstanceId)).IsSuccess);
             return root;
         }
@@ -336,7 +339,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             return current.WithSynchronization(
                 42,
                 SynchronizationConfiguration.PairedPendingCommit(
-                    "http://10.0.0.2:21000",
+                    "https://10.0.0.2:21000",
                     PeerInstanceId,
                     42,
                     PairingId,
@@ -354,7 +357,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             return current.WithSynchronization(
                 42,
                 SynchronizationConfiguration.PairedDisabled(
-                    "http://10.0.0.2:21000",
+                    "https://10.0.0.2:21000",
                     PeerInstanceId,
                     42,
                     current.Synchronization.LastSynchronization,
@@ -391,8 +394,8 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     PairingId,
                     LocalInstanceId,
                     PeerInstanceId,
-                    "http://10.0.0.1:21000",
-                    "http://10.0.0.2:21000",
+                    "https://10.0.0.1:21000",
+                    "https://10.0.0.2:21000",
                     42,
                     Bytes(32, 32),
                     Bytes(64, 32),

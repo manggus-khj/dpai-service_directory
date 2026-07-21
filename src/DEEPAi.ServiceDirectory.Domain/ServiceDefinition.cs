@@ -10,18 +10,21 @@ namespace DEEPAi.ServiceDirectory.Domain
         NameTooLong,
         NameContainsInvalidCharacter,
         ProductCodeInvalid,
-        ServerAddressRequired,
-        ServerAddressInvalid,
+        ServiceEndpointIdentityRequired,
         PortOutOfRange
     }
 
     public sealed class ServiceDefinition : IEquatable<ServiceDefinition>
     {
-        internal ServiceDefinition(string name, ProductCode productCode, string serverAddress, int port)
+        internal ServiceDefinition(
+            string name,
+            ProductCode productCode,
+            ServiceEndpointIdentity serviceEndpointIdentity,
+            int port)
         {
             Name = name;
             ProductCode = productCode;
-            ServerAddress = serverAddress;
+            ServiceEndpointIdentity = serviceEndpointIdentity;
             Port = port;
         }
 
@@ -29,14 +32,20 @@ namespace DEEPAi.ServiceDirectory.Domain
 
         public ProductCode ProductCode { get; }
 
-        public string ServerAddress { get; }
+        public ServiceEndpointIdentity ServiceEndpointIdentity { get; }
+
+        public string ServiceHostName =>
+            ServiceEndpointIdentity.ServiceHostName;
+
+        public string ServiceIpv4Address =>
+            ServiceEndpointIdentity.ServiceIpv4Address;
 
         public int Port { get; }
 
         public static bool TryCreate(
             string name,
             string productCode,
-            string serverAddress,
+            ServiceEndpointIdentity serviceEndpointIdentity,
             int port,
             out ServiceDefinition definition,
             out ServiceDefinitionValidationError error)
@@ -44,7 +53,7 @@ namespace DEEPAi.ServiceDirectory.Domain
             return ServiceDefinitionValidator.TryCreate(
                 name,
                 productCode,
-                serverAddress,
+                serviceEndpointIdentity,
                 port,
                 out definition,
                 out error);
@@ -59,7 +68,8 @@ namespace DEEPAi.ServiceDirectory.Domain
 
             return StringComparer.Ordinal.Equals(Name, other.Name)
                 && ProductCode.Equals(other.ProductCode)
-                && StringComparer.OrdinalIgnoreCase.Equals(ServerAddress, other.ServerAddress)
+                && ServiceEndpointIdentity.Equals(
+                    other.ServiceEndpointIdentity)
                 && Port == other.Port;
         }
 
@@ -74,7 +84,8 @@ namespace DEEPAi.ServiceDirectory.Domain
             {
                 int hashCode = StringComparer.Ordinal.GetHashCode(Name);
                 hashCode = (hashCode * 397) ^ ProductCode.GetHashCode();
-                hashCode = (hashCode * 397) ^ StringComparer.OrdinalIgnoreCase.GetHashCode(ServerAddress);
+                hashCode = (hashCode * 397)
+                    ^ ServiceEndpointIdentity.GetHashCode();
                 hashCode = (hashCode * 397) ^ Port;
                 return hashCode;
             }

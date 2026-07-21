@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Xml;
 using System.Xml.Serialization;
+using DEEPAi.ServiceDirectory.Domain;
 using DEEPAi.ServiceDirectory.Infrastructure.Configuration;
 using DEEPAi.ServiceDirectory.Infrastructure.Persistence.SerializationModel;
 
@@ -26,6 +27,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             {
                 SchemaVersion = CurrentSchemaVersion,
                 ListenAddress = configuration.ListenAddress,
+                DirectoryHostName = configuration.DirectoryHostName,
+                DirectoryIpv4Address =
+                    configuration.DirectoryIpv4Address,
                 InstanceId = configuration.InstanceId.ToString("D"),
                 LastPeerKeyEpoch = FormatUInt64(
                     configuration.LastPeerKeyEpoch),
@@ -148,9 +152,29 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 "Config.LogRetentionDays");
             SynchronizationConfiguration synchronization =
                 ToSynchronizationConfiguration(document.Sync);
+            DirectoryEndpointIdentity directoryEndpointIdentity;
+            EndpointIdentityValidationError identityError;
+            if (!DirectoryEndpointIdentity.TryCreate(
+                    document.DirectoryHostName,
+                    document.DirectoryIpv4Address,
+                    out directoryEndpointIdentity,
+                    out identityError)
+                || !StringComparer.Ordinal.Equals(
+                    document.DirectoryHostName,
+                    directoryEndpointIdentity.DirectoryHostName)
+                || !StringComparer.Ordinal.Equals(
+                    document.DirectoryIpv4Address,
+                    directoryEndpointIdentity.DirectoryIpv4Address))
+            {
+                throw InvalidStateXml(
+                    "config.xml contains an invalid Directory identity: "
+                    + identityError
+                    + ".");
+            }
 
             return new ServiceDirectoryConfiguration(
                 document.ListenAddress,
+                directoryEndpointIdentity,
                 instanceId,
                 lastPeerKeyEpoch,
                 logRetentionDays,

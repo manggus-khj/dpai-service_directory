@@ -93,7 +93,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 Encoding = StrictUtf8,
                 Indent = true,
                 IndentChars = "  ",
-                NewLineChars = "\n",
+                NewLineChars = "\r\n",
                 NewLineHandling = NewLineHandling.None,
                 OmitXmlDeclaration = false,
                 CloseOutput = false
@@ -113,7 +113,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                         "The recovery journal exceeds its size limit.");
                 }
 
-                return stream.ToArray();
+                return EnsureFinalCrLf(stream.ToArray());
             }
         }
 
@@ -197,7 +197,47 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                     exception);
             }
 
-            return ConvertDocument(document, expectedTransactionId);
+            RecoveryJournalState state = ConvertDocument(
+                document,
+                expectedTransactionId);
+            RequireCanonical(contents, Serialize(state));
+            return state;
+        }
+
+        private static byte[] EnsureFinalCrLf(byte[] contents)
+        {
+            if (contents.Length >= 2
+                && contents[contents.Length - 2] == (byte)'\r'
+                && contents[contents.Length - 1] == (byte)'\n')
+            {
+                return contents;
+            }
+
+            var canonical = new byte[contents.Length + 2];
+            Buffer.BlockCopy(contents, 0, canonical, 0, contents.Length);
+            canonical[canonical.Length - 2] = (byte)'\r';
+            canonical[canonical.Length - 1] = (byte)'\n';
+            return canonical;
+        }
+
+        private static void RequireCanonical(
+            byte[] supplied,
+            byte[] canonical)
+        {
+            if (supplied.Length != canonical.Length)
+            {
+                throw new InvalidDataException(
+                    "The recovery journal is not in canonical v1 form.");
+            }
+
+            for (int index = 0; index < supplied.Length; index++)
+            {
+                if (supplied[index] != canonical[index])
+                {
+                    throw new InvalidDataException(
+                        "The recovery journal is not in canonical v1 form.");
+                }
+            }
         }
 
         private static RecoveryJournalState ConvertDocument(
@@ -341,6 +381,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             foreach (RecoveryJournalEntry entry in state.Entries)
             {
                 if (entry == null
+                    || !Enum.IsDefined(
+                        typeof(StateFileTarget),
+                        entry.Target)
                     || (int)entry.Target <= previousOrder)
                 {
                     throw new InvalidDataException(

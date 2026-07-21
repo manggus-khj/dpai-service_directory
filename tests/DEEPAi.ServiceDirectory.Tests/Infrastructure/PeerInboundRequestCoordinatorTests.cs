@@ -21,7 +21,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             new DateTimeOffset(2026, 7, 18, 3, 0, 0, TimeSpan.Zero);
 
         private const ulong KeyEpoch = 7;
-        private const string PeerEndpoint = "http://10.0.0.2:21000";
+        private const string PeerEndpoint = "https://10.0.0.2:21000";
         private const string ContentType =
             "application/xml; charset=utf-8";
 
@@ -329,7 +329,20 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                             SessionRequestKey()),
                         session);
                 Assert.IsTrue(release.IsAdmitted);
-                Assert.AreEqual(2, cache.Count);
+                PeerInboundRequestDecision pkiState = coordinator
+                    .AuthenticateSessionBoundRequest(
+                        CreateSignedInput(
+                            PeerInboundOperation.PkiState,
+                            PeerInstanceId,
+                            KeyEpoch,
+                            sessionId,
+                            Timestamp,
+                            Timestamp,
+                            Bytes(112, 16),
+                            SessionRequestKey()),
+                        session);
+                Assert.IsTrue(pkiState.IsAdmitted);
+                Assert.AreEqual(3, cache.Count);
             }
         }
 
@@ -608,6 +621,9 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     break;
                 case PeerInboundOperation.Exchange:
                     path = PeerAuthenticationContract.ExchangePath;
+                    break;
+                case PeerInboundOperation.PkiState:
+                    path = PeerAuthenticationContract.PkiStatePath;
                     break;
                 case PeerInboundOperation.Release:
                     path = PeerAuthenticationContract.ReleasePath;

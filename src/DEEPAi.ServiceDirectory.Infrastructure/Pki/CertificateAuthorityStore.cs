@@ -129,6 +129,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
         private readonly CertificateAuthorityStateCodec _codec;
         private readonly ICaPrivateKeyProtector _protector;
         private readonly IPeerSecretAccessPolicy _accessPolicy;
+        private readonly RenewalNonceReplayCache _renewalNonceReplayCache;
+        private readonly ICertificateServiceMutationFaultInjector
+            _serviceMutationFaultInjector;
         private CertificateAuthorityStoreSnapshot _current;
         private bool _recoveryRequired;
         private bool _disposed;
@@ -151,6 +154,24 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             ICaPrivateKeyProtector protector,
             IPeerSecretAccessPolicy accessPolicy,
             IRecoveryJournalFaultInjector faultInjector)
+            : this(
+                pathPolicy,
+                mutationGate,
+                protector,
+                accessPolicy,
+                faultInjector,
+                NoOpCertificateServiceMutationFaultInjector.Instance)
+        {
+        }
+
+        internal CertificateAuthorityStore(
+            StateStoragePathPolicy pathPolicy,
+            StateMutationGate mutationGate,
+            ICaPrivateKeyProtector protector,
+            IPeerSecretAccessPolicy accessPolicy,
+            IRecoveryJournalFaultInjector faultInjector,
+            ICertificateServiceMutationFaultInjector
+                serviceMutationFaultInjector)
         {
             _pathPolicy = pathPolicy
                 ?? throw new ArgumentNullException(nameof(pathPolicy));
@@ -171,6 +192,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 _fileWriter,
                 faultInjector ?? NoOpRecoveryJournalFaultInjector.Instance);
             _codec = new CertificateAuthorityStateCodec();
+            _renewalNonceReplayCache = new RenewalNonceReplayCache();
+            _serviceMutationFaultInjector = serviceMutationFaultInjector
+                ?? NoOpCertificateServiceMutationFaultInjector.Instance;
         }
 
         internal bool TryLoad()
@@ -308,6 +332,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             }
 
             _pathPolicy.EnsureDirectoryIsSafe(pkiDirectory);
+            if (_fileWriter.Exists(StateFileTarget.PeerPkiCache)
+                || _fileWriter.BackupExists(
+                    StateFileTarget.PeerPkiCache))
+            {
+                throw new InvalidDataException(
+                    "The active issuer cannot contain a Peer PKI cache.");
+            }
+
             StateFileTarget[] targets = GetPkiTargets();
             bool[] exists = targets.Select(_fileWriter.Exists).ToArray();
             int existingCount = exists.Count(value => value);
@@ -373,12 +405,19 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     _codec.DeserializeState(metadata);
                 CertificateLedgerSnapshot ledger =
                     _codec.DeserializeLedger(ledgerBytes);
+                if (state.Role != CertificateAuthorityRole.ActiveIssuer)
+                {
+                    throw new InvalidDataException(
+                        "The active issuer store cannot load standby PKI state.");
+                }
+
                 ValidateStateAndLedger(state, ledger);
                 ValidateAuthority(
                     state,
                     certificate,
                     privateKey,
                     DateTime.UtcNow);
+                ValidateLedgerCertificates(ledger, certificate);
                 ValidateCrl(state, ledger, certificate, crl);
                 return new CertificateAuthorityStoreSnapshot(
                     state,
@@ -400,7 +439,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             }
         }
 
-        private static void ValidateAuthority(
+        internal static void ValidateAuthority(
             CertificateAuthorityState state,
             byte[] certificateDer,
             byte[] privateKeyPkcs8,
@@ -432,7 +471,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             }
         }
 
-        private static void ValidateCrl(
+        internal static void ValidateCrl(
             CertificateAuthorityState state,
             CertificateLedgerSnapshot ledger,
             byte[] caCertificateDer,
@@ -454,6 +493,20 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 throw new InvalidDataException(
                     "Signed CRL validation failed.",
                     exception);
+            }
+
+            byte[] canonicalCrlDer = crl.GetEncoded();
+            try
+            {
+                if (!FixedTimeEquals(canonicalCrlDer, crlDer))
+                {
+                    throw new InvalidDataException(
+                        "The signed CRL is not canonical DER.");
+                }
+            }
+            finally
+            {
+                Clear(canonicalCrlDer);
             }
 
             if (!crl.IssuerDN.Equivalent(certificate.SubjectDN))
@@ -611,29 +664,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             using (CertificateAuthorityStoreSnapshot state =
                 ReadCurrent(true))
             {
-            }
-        }
-
-        internal static void ValidateInstalledStateFiles(
-            StateStoragePathPolicy pathPolicy,
-            IPeerSecretAccessPolicy accessPolicy)
-        {
-            var store = new CertificateAuthorityStore(
-                pathPolicy,
-                new StateMutationGate(),
-                new DpapiMachineCaPrivateKeyProtector(),
-                accessPolicy,
-                NoOpRecoveryJournalFaultInjector.Instance);
-            try
-            {
-                using (CertificateAuthorityStoreSnapshot state =
-                    store.ReadCurrent(true))
-                {
-                }
-            }
-            finally
-            {
-                store.Dispose();
             }
         }
 

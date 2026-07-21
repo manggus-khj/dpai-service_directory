@@ -18,20 +18,15 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         [TestMethod]
         public void StateXmlCodecRoundTripsSchemaVersionOneState()
         {
-            DirectorySnapshot expected = CreateSnapshotWithPending();
+            DirectorySnapshot expected = CreateActiveSnapshot();
             var codec = new StateXmlCodec();
 
             byte[] directoryContents = codec.SerializeDirectory(expected);
-            byte[] pendingContents = codec.SerializePending(expected);
             DirectorySnapshot actual = codec.DeserializeSnapshot(
-                directoryContents,
-                pendingContents);
+                directoryContents);
 
             StringAssert.Contains(
                 StrictUtf8.GetString(directoryContents),
-                "SchemaVersion=\"1\"");
-            StringAssert.Contains(
-                StrictUtf8.GetString(pendingContents),
                 "SchemaVersion=\"1\"");
             Assert.IsTrue(
                 DirectorySnapshotValueComparer.Equals(expected, actual));
@@ -51,8 +46,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
 
             Assert.ThrowsExactly<InvalidDataException>(
                 () => codec.DeserializeSnapshot(
-                    unsupportedDirectory,
-                    codec.SerializePending(snapshot)));
+                    unsupportedDirectory));
         }
 
         [TestMethod]
@@ -63,21 +57,41 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 + "<Directory SchemaVersion=\"1\">\r\n"
                 + "  <LogicalClock>0</LogicalClock>\r\n"
                 + "  <Records />\r\n"
-                + "</Directory>";
-            const string ExpectedPendingXml =
-                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n"
-                + "<PendingRegistrations SchemaVersion=\"1\">\r\n"
-                + "  <Items />\r\n"
-                + "</PendingRegistrations>";
+                + "</Directory>\r\n";
             var codec = new StateXmlCodec();
             DirectorySnapshot empty = DirectorySnapshot.Empty();
 
             CollectionAssert.AreEqual(
                 StrictUtf8.GetBytes(ExpectedDirectoryXml),
                 codec.SerializeDirectory(empty));
+        }
+
+        [TestMethod]
+        public void StateXmlCodecWritesFlatCanonicalRecordShape()
+        {
+            const string ExpectedDirectoryXml =
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n"
+                + "<Directory SchemaVersion=\"1\">\r\n"
+                + "  <LogicalClock>1</LogicalClock>\r\n"
+                + "  <Records>\r\n"
+                + "    <Record>\r\n"
+                + "      <Name>Directory Service</Name>\r\n"
+                + "      <ProductCode>AB12</ProductCode>\r\n"
+                + "      <ServiceHostName>service.internal</ServiceHostName>\r\n"
+                + "      <ServiceIpv4Address>10.20.30.40</ServiceIpv4Address>\r\n"
+                + "      <Port>21000</Port>\r\n"
+                + "      <LastModifiedUtc>2026-07-18T01:00:00.0000000Z</LastModifiedUtc>\r\n"
+                + "      <Deleted>false</Deleted>\r\n"
+                + "      <LogicalVersion>1</LogicalVersion>\r\n"
+                + "      <OriginInstanceId>11111111-1111-1111-1111-111111111111</OriginInstanceId>\r\n"
+                + "    </Record>\r\n"
+                + "  </Records>\r\n"
+                + "</Directory>\r\n";
+
             CollectionAssert.AreEqual(
-                StrictUtf8.GetBytes(ExpectedPendingXml),
-                codec.SerializePending(empty));
+                StrictUtf8.GetBytes(ExpectedDirectoryXml),
+                new StateXmlCodec().SerializeDirectory(
+                    CreateActiveSnapshot()));
         }
 
         [TestMethod]
@@ -107,7 +121,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                         reloaded.Snapshot));
                 Assert.IsTrue(File.Exists(
                     Path.Combine(stateDirectory, "directory.xml")));
-                Assert.IsTrue(File.Exists(
+                Assert.IsFalse(File.Exists(
                     Path.Combine(stateDirectory, "pending.xml")));
             }
             finally
@@ -147,7 +161,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 Assert.AreEqual(0UL, recovered.Snapshot.LogicalClock);
                 Assert.IsTrue(File.Exists(
                     Path.Combine(stateDirectory, "directory.xml")));
-                Assert.IsTrue(File.Exists(
+                Assert.IsFalse(File.Exists(
                     Path.Combine(stateDirectory, "pending.xml")));
                 Assert.IsTrue(File.Exists(
                     Path.Combine(stateDirectory, "directory.xml.bak")));
@@ -232,7 +246,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 Assert.AreEqual(0UL, reloaded.Snapshot.LogicalClock);
                 Assert.IsTrue(File.Exists(
                     Path.Combine(stateDirectory, "directory.xml")));
-                Assert.IsTrue(File.Exists(
+                Assert.IsFalse(File.Exists(
                     Path.Combine(stateDirectory, "pending.xml")));
                 AssertJournalIsEmpty(stateDirectory);
             }
@@ -387,11 +401,40 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void LoadFailsClosedWhenBothPrimaryStateDocumentsAreMissing()
+        public void LoadFailsClosedWhenDirectoryDocumentIsMissing()
         {
             string stateDirectory = CreateStateDirectory(false);
             try
             {
+                StateLoadResult loaded =
+                    new XmlServiceDirectoryStateStore(
+                        stateDirectory).Load();
+
+                Assert.IsFalse(loaded.IsSuccess);
+                Assert.AreEqual(
+                    StateLoadFailureCode.InvalidData,
+                    loaded.FailureCode);
+                Assert.IsNull(loaded.Snapshot);
+            }
+            finally
+            {
+                DeleteStateDirectory(stateDirectory);
+            }
+        }
+
+        [TestMethod]
+        [DataRow("pending.xml")]
+        [DataRow("pending.xml.bak")]
+        public void LoadRejectsForbiddenLegacyPendingArtifact(
+            string fileName)
+        {
+            string stateDirectory = CreateStateDirectory();
+            try
+            {
+                File.WriteAllBytes(
+                    Path.Combine(stateDirectory, fileName),
+                    StrictUtf8.GetBytes("legacy pending state"));
+
                 StateLoadResult loaded =
                     new XmlServiceDirectoryStateStore(
                         stateDirectory).Load();
@@ -422,15 +465,9 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     initial.Snapshot,
                     before).IsSuccess);
 
-                ServiceDefinition updatedDefinition;
-                ServiceDefinitionValidationError validationError;
-                Assert.IsTrue(ServiceDefinition.TryCreate(
-                    "Updated Directory Service",
-                    "AB12",
-                    "service.internal",
-                    21000,
-                    out updatedDefinition,
-                    out validationError));
+                ServiceDefinition updatedDefinition = TestData.Definition(
+                    name: "Updated Directory Service",
+                    productCode: "AB12");
                 var after = new DirectorySnapshot(
                     new[]
                     {
@@ -551,28 +588,6 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 1UL);
         }
 
-        private static DirectorySnapshot CreateSnapshotWithPending()
-        {
-            ServiceRecord record = TestData.ActiveRecord(
-                TestData.Definition(),
-                4UL,
-                TestData.OriginA);
-            var pending = new PendingRegistration(
-                new Guid("33333333-3333-3333-3333-333333333333"),
-                PendingRequestType.Modify,
-                TestData.Utc(1),
-                "192.0.2.10",
-                TestData.Definition(
-                    name: "Updated Directory Service",
-                    serverAddress: "2001:db8::10",
-                    port: 22000),
-                DirectoryBaseRevision.Capture(record));
-            return new DirectorySnapshot(
-                new[] { record },
-                new[] { pending },
-                4UL);
-        }
-
         private static string CreateStateDirectory(
             bool initializeState = true)
         {
@@ -587,9 +602,6 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 File.WriteAllBytes(
                     Path.Combine(path, "directory.xml"),
                     codec.SerializeDirectory(empty));
-                File.WriteAllBytes(
-                    Path.Combine(path, "pending.xml"),
-                    codec.SerializePending(empty));
             }
 
             return path;

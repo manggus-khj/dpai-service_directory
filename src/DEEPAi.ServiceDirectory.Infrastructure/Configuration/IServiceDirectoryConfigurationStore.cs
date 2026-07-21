@@ -128,7 +128,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Configuration
             ServiceDirectoryConfiguration initialConfiguration);
 
         // Runtime mutations may update logging and durable synchronization state,
-        // but must not change ListenAddress or InstanceId.
+        // but must not change Directory identity or InstanceId.
         ConfigurationCommitResult Commit(
             ServiceDirectoryConfiguration expectedConfiguration,
             ServiceDirectoryConfiguration nextConfiguration);
@@ -136,8 +136,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Configuration
         // Only the installer repair workflow may call this narrow operation. The
         // caller still owns service stop, interface/profile validation, exact URL
         // ACL and firewall changes, restart, and rollback as one larger workflow.
-        ConfigurationCommitResult CommitListenAddressForRepair(
+        ConfigurationCommitResult CommitDirectoryIdentityForRepair(
             ServiceDirectoryConfiguration expectedConfiguration,
-            string nextListenAddress);
+            string nextDirectoryHostName,
+            string nextDirectoryIpv4Address);
     }
 }

@@ -96,15 +96,14 @@ namespace DEEPAi.ServiceDirectory.Application.Persistence
     {
         StateLoadResult Load();
 
-        // This snapshot contract owns directory.xml and pending.xml. Config and peer
-        // credential mutations use the same fixed-target journal engine through their
-        // dedicated stores once those component schemas are implemented. This store
-        // derives the affected documents from the two snapshots so a caller cannot omit
-        // part of a multi-document mutation. Success is allowed only after every affected
-        // document is durably committed. Once a commit may have changed any target but
-        // cannot prove the final state, it must return RecoveryRequired. The caller then
-        // stops mutations until Load has completed journal recovery and published a
-        // verified snapshot.
+        // This snapshot contract owns directory.xml. Config, peer credential, and PKI
+        // mutations use the same fixed-target journal engine through their dedicated
+        // stores. This store derives the Directory change from the two snapshots so a
+        // caller cannot provide arbitrary target bytes. Success is allowed only after
+        // the affected document is durably committed. Once a commit may have changed a
+        // target but cannot prove the final state, it must return RecoveryRequired. The
+        // caller then stops mutations until Load has completed journal recovery and
+        // published a verified snapshot.
         StateCommitResult Commit(
             DirectorySnapshot expectedSnapshot,
             DirectorySnapshot nextSnapshot);

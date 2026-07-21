@@ -128,6 +128,22 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             return GetTargetPath(target) + ".bak";
         }
 
+        internal void EnsureForbiddenLegacyStateIsAbsent()
+        {
+            string pendingPath = Path.Combine(
+                StateDirectoryPath,
+                "pending.xml");
+            string pendingBackupPath = pendingPath + ".bak";
+            EnsureExistingFileIsSafe(pendingPath);
+            EnsureExistingFileIsSafe(pendingBackupPath);
+            if (File.Exists(pendingPath)
+                || File.Exists(pendingBackupPath))
+            {
+                throw new InvalidDataException(
+                    "The target v1 state must not contain pending.xml artifacts.");
+            }
+        }
+
         internal void EnsureTargetParentIsSafe(StateFileTarget target)
         {
             EnsureStateDirectoryIsSafe();

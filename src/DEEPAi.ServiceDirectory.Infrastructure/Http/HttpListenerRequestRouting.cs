@@ -23,6 +23,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         private const string AdminPrefix = "/admin/";
         private const string ApiPrefix = "/api/";
         private const string EncodedApiPrefix = "/api%";
+        private const string PkiPrefix = "/pki/";
+        private const string EncodedPkiPrefix = "/pki%";
         private const string PeerRoot = "/api/sync";
         private const string PeerPrefix = "/api/sync/";
 
@@ -113,6 +115,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 && (path.StartsWith(ApiPrefix, StringComparison.Ordinal)
                     || path.StartsWith(
                         EncodedApiPrefix,
+                        StringComparison.Ordinal)
+                    || path.StartsWith(
+                        PkiPrefix,
+                        StringComparison.Ordinal)
+                    || path.StartsWith(
+                        EncodedPkiPrefix,
                         StringComparison.Ordinal));
         }
 
@@ -334,6 +342,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         internal static readonly TimeSpan ExternalReadDeadline =
             TimeSpan.FromSeconds(5);
         internal static readonly TimeSpan ExternalRegistrationDeadline =
+            TimeSpan.FromSeconds(15);
+        internal static readonly TimeSpan ExternalCrlDeadline =
             TimeSpan.FromSeconds(10);
         internal static readonly TimeSpan AdminDeadline =
             TimeSpan.FromSeconds(10);
@@ -352,11 +362,22 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             switch (route)
             {
                 case ServiceDirectoryHttpRoute.External:
-                    return StringComparer.Ordinal.Equals(method, "POST")
+                    if (StringComparer.Ordinal.Equals(method, "POST")
+                        && (StringComparer.Ordinal.Equals(
+                                path,
+                                "/api/registration")
+                            || StringComparer.Ordinal.Equals(
+                                path,
+                                "/api/certificates/renew")))
+                    {
+                        return ExternalRegistrationDeadline;
+                    }
+
+                    return StringComparer.Ordinal.Equals(method, "GET")
                         && StringComparer.Ordinal.Equals(
                             path,
-                            "/api/registration")
-                        ? ExternalRegistrationDeadline
+                            ExternalApiContract.CrlPath)
+                        ? ExternalCrlDeadline
                         : ExternalReadDeadline;
                 case ServiceDirectoryHttpRoute.Admin:
                     return AdminDeadline;

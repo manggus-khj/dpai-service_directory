@@ -51,49 +51,42 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             await RefreshWatchdogAsync(cancellationToken);
         }
 
-        private async Task ApprovePendingAsync()
+        private Task OpenRegistrationModeAsync()
         {
-            AdminPendingItem selected = SelectedPending;
-            if (selected == null)
-            {
-                return;
-            }
-
-            try
-            {
-                await _adminClient.ApprovePendingAsync(
-                    selected.Id,
-                    _lifetimeCancellation.Token);
-                MarkAdminSuccess(true);
-                SetStatus("승인 요청을 처리했습니다.", false);
-                await RefreshPendingWithGateAsync();
-            }
-            catch (AdminApiException exception)
-            {
-                HandleAdminFailure(exception);
-            }
+            return ChangeRegistrationModeAsync(true);
         }
 
-        private async Task RejectPendingAsync()
+        private Task CloseRegistrationModeAsync()
         {
-            AdminPendingItem selected = SelectedPending;
-            if (selected == null)
-            {
-                return;
-            }
+            return ChangeRegistrationModeAsync(false);
+        }
 
+        private async Task ChangeRegistrationModeAsync(bool open)
+        {
+            CancellationToken cancellationToken =
+                _lifetimeCancellation.Token;
+            await _listRefreshGate.WaitAsync(cancellationToken);
             try
             {
-                await _adminClient.RejectPendingAsync(
-                    selected.Id,
-                    _lifetimeCancellation.Token);
-                MarkAdminSuccess(true);
-                SetStatus("승인 요청을 거절했습니다.", false);
-                await RefreshPendingWithGateAsync();
+                AdminServerRegistrationModeResponse response = open
+                    ? await _adminClient.OpenRegistrationModeAsync(
+                        cancellationToken)
+                    : await _adminClient.CloseRegistrationModeAsync(
+                        cancellationToken);
+                ApplyRegistrationMode(response, true);
+                SetStatus(
+                    open
+                        ? "등록 모드를 시작했습니다. 첫 유효 요청 한 건만 처리됩니다."
+                        : "등록 모드를 종료했습니다.",
+                    false);
             }
             catch (AdminApiException exception)
             {
                 HandleAdminFailure(exception);
+            }
+            finally
+            {
+                _listRefreshGate.Release();
             }
         }
 
@@ -150,7 +143,7 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
                 out canonicalEndpoint))
             {
                 SetStatus(
-                    "피어 endpoint는 http://{IP}:21000 형식이어야 합니다.",
+                    "피어 endpoint는 https://{IPv4}:21000 형식이어야 합니다.",
                     true);
                 return;
             }
@@ -298,68 +291,6 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             }
         }
 
-        private async Task PreviousPendingPageAsync()
-        {
-            if (_pendingPreviousCursors.Count == 0
-                || !await _listRefreshGate.WaitAsync(
-                    0,
-                    _lifetimeCancellation.Token))
-            {
-                return;
-            }
-
-            try
-            {
-                string targetCursor = _pendingPreviousCursors.Peek();
-                AdminPage<AdminPendingItem> page = await _adminClient.GetPendingAsync(
-                    targetCursor,
-                    _lifetimeCancellation.Token);
-                _pendingPreviousCursors.Pop();
-                _pendingCursor = targetCursor;
-                _pendingPageNumber--;
-                ApplyPendingPage(page, true);
-            }
-            catch (AdminApiException exception)
-            {
-                await HandlePendingNavigationFailureAsync(exception);
-            }
-            finally
-            {
-                _listRefreshGate.Release();
-            }
-        }
-
-        private async Task NextPendingPageAsync()
-        {
-            string targetCursor = _pendingNextCursor;
-            if (string.IsNullOrEmpty(targetCursor)
-                || !await _listRefreshGate.WaitAsync(
-                    0,
-                    _lifetimeCancellation.Token))
-            {
-                return;
-            }
-
-            try
-            {
-                AdminPage<AdminPendingItem> page = await _adminClient.GetPendingAsync(
-                    targetCursor,
-                    _lifetimeCancellation.Token);
-                _pendingPreviousCursors.Push(_pendingCursor);
-                _pendingCursor = targetCursor;
-                _pendingPageNumber++;
-                ApplyPendingPage(page, true);
-            }
-            catch (AdminApiException exception)
-            {
-                await HandlePendingNavigationFailureAsync(exception);
-            }
-            finally
-            {
-                _listRefreshGate.Release();
-            }
-        }
-
         private async Task PreviousServicePageAsync()
         {
             if (_servicePreviousCursors.Count == 0
@@ -422,22 +353,6 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             }
         }
 
-        private async Task HandlePendingNavigationFailureAsync(
-            AdminApiException exception)
-        {
-            if (exception.IsConflict)
-            {
-                ResetPendingPaging();
-                await RefreshPendingPageCoreAsync(
-                    _lifetimeCancellation.Token,
-                    true);
-            }
-            else
-            {
-                HandleAdminFailure(exception);
-            }
-        }
-
         private async Task HandleServiceNavigationFailureAsync(
             AdminApiException exception)
         {
@@ -451,27 +366,6 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             else
             {
                 HandleAdminFailure(exception);
-            }
-        }
-
-        private async Task RefreshPendingWithGateAsync()
-        {
-            if (!await _listRefreshGate.WaitAsync(
-                0,
-                _lifetimeCancellation.Token))
-            {
-                return;
-            }
-
-            try
-            {
-                await RefreshPendingPageCoreAsync(
-                    _lifetimeCancellation.Token,
-                    true);
-            }
-            finally
-            {
-                _listRefreshGate.Release();
             }
         }
 

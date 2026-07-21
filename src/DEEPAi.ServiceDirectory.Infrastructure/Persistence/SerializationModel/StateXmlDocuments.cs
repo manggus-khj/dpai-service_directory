@@ -25,23 +25,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence.SerializationModel
         public List<ServiceRecordDocument> Records { get; set; }
     }
 
-    [XmlRoot("PendingRegistrations", Namespace = "", IsNullable = false)]
-    public sealed class PendingDocument
-    {
-        public PendingDocument()
-        {
-            Items = new List<PendingRegistrationDocument>();
-        }
-
-        [XmlAttribute("SchemaVersion")]
-        public string SchemaVersion { get; set; }
-
-        [XmlArray("Items", Order = 0)]
-        [XmlArrayItem("Pending", IsNullable = false)]
-        public List<PendingRegistrationDocument> Items { get; set; }
-    }
-
-    public sealed class ServiceDefinitionDocument
+    public sealed class ServiceRecordDocument
     {
         [XmlElement("Name", Order = 0)]
         public string Name { get; set; }
@@ -49,62 +33,29 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence.SerializationModel
         [XmlElement("ProductCode", Order = 1)]
         public string ProductCode { get; set; }
 
-        [XmlElement("ServerAddress", Order = 2)]
-        public string ServerAddress { get; set; }
+        [XmlElement("ServiceHostName", Order = 2)]
+        public string ServiceHostName { get; set; }
 
-        [XmlElement("Port", Order = 3)]
+        [XmlElement("ServiceIpv4Address", Order = 3)]
+        public string ServiceIpv4Address { get; set; }
+
+        [XmlElement("Port", Order = 4)]
         public string Port { get; set; }
-    }
 
-    public sealed class ServiceRecordDocument
-    {
-        [XmlElement("Definition", Order = 0)]
-        public ServiceDefinitionDocument Definition { get; set; }
-
-        [XmlElement("LastModifiedUtc", Order = 1)]
+        [XmlElement("LastModifiedUtc", Order = 5)]
         public string LastModifiedUtc { get; set; }
 
-        [XmlElement("Deleted", Order = 2)]
+        [XmlElement("Deleted", Order = 6)]
         public string Deleted { get; set; }
 
-        [XmlElement("DeletedUtc", Order = 3)]
+        [XmlElement("DeletedUtc", Order = 7)]
         public string DeletedUtc { get; set; }
 
-        [XmlElement("LogicalVersion", Order = 4)]
+        [XmlElement("LogicalVersion", Order = 8)]
         public string LogicalVersion { get; set; }
 
-        [XmlElement("OriginInstanceId", Order = 5)]
+        [XmlElement("OriginInstanceId", Order = 9)]
         public string OriginInstanceId { get; set; }
-    }
-
-    public sealed class PendingRegistrationDocument
-    {
-        [XmlElement("Id", Order = 0)]
-        public string Id { get; set; }
-
-        [XmlElement("Type", Order = 1)]
-        public string Type { get; set; }
-
-        [XmlElement("RequestedUtc", Order = 2)]
-        public string RequestedUtc { get; set; }
-
-        [XmlElement("SourceIp", Order = 3)]
-        public string SourceIp { get; set; }
-
-        [XmlElement("Requested", Order = 4)]
-        public ServiceDefinitionDocument Requested { get; set; }
-
-        [XmlElement("BaseRevision", Order = 5)]
-        public BaseRevisionDocument BaseRevision { get; set; }
-    }
-
-    public sealed class BaseRevisionDocument
-    {
-        [XmlAttribute("Kind")]
-        public string Kind { get; set; }
-
-        [XmlElement("Record", Order = 0)]
-        public ServiceRecordDocument Record { get; set; }
     }
 }
 
@@ -117,7 +68,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
             private static readonly string[] NoAttributes = new string[0];
             private static readonly string[] SchemaVersionAttribute =
                 { "SchemaVersion" };
-            private static readonly string[] KindAttribute = { "Kind" };
 
             private readonly XmlReader _reader;
 
@@ -161,26 +111,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 }
             }
 
-            internal static void ValidatePending(string xml)
-            {
-                try
-                {
-                    using (var reader = new StrictShapeReader(xml))
-                    {
-                        reader.ReadPendingDocument();
-                        reader.RequireEndOfDocument();
-                    }
-                }
-                catch (InvalidDataException)
-                {
-                    throw;
-                }
-                catch (XmlException exception)
-                {
-                    throw InvalidStateXml("pending.xml is not valid XML.", exception);
-                }
-            }
-
             public void Dispose()
             {
                 _reader.Dispose();
@@ -199,19 +129,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 ReadRecords();
                 SkipInterElementWhitespace();
                 LeaveElement("Directory");
-            }
-
-            private void ReadPendingDocument()
-            {
-                if (EnterElement("PendingRegistrations", SchemaVersionAttribute))
-                {
-                    throw InvalidStateXml("PendingRegistrations cannot be empty.");
-                }
-
-                SkipInterElementWhitespace();
-                ReadPendingItems();
-                SkipInterElementWhitespace();
-                LeaveElement("PendingRegistrations");
             }
 
             private void ReadRecords()
@@ -239,7 +156,15 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 }
 
                 SkipInterElementWhitespace();
-                ReadDefinition("Definition");
+                ReadScalar("Name");
+                SkipInterElementWhitespace();
+                ReadScalar("ProductCode");
+                SkipInterElementWhitespace();
+                ReadScalar("ServiceHostName");
+                SkipInterElementWhitespace();
+                ReadScalar("ServiceIpv4Address");
+                SkipInterElementWhitespace();
+                ReadScalar("Port");
                 SkipInterElementWhitespace();
                 ReadScalar("LastModifiedUtc");
                 SkipInterElementWhitespace();
@@ -256,91 +181,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                 ReadScalar("OriginInstanceId");
                 SkipInterElementWhitespace();
                 LeaveElement(elementName);
-            }
-
-            private void ReadDefinition(string elementName)
-            {
-                if (EnterElement(elementName, NoAttributes))
-                {
-                    throw InvalidStateXml(elementName + " cannot be empty.");
-                }
-
-                SkipInterElementWhitespace();
-                ReadScalar("Name");
-                SkipInterElementWhitespace();
-                ReadScalar("ProductCode");
-                SkipInterElementWhitespace();
-                ReadScalar("ServerAddress");
-                SkipInterElementWhitespace();
-                ReadScalar("Port");
-                SkipInterElementWhitespace();
-                LeaveElement(elementName);
-            }
-
-            private void ReadPendingItems()
-            {
-                if (EnterElement("Items", NoAttributes))
-                {
-                    return;
-                }
-
-                int itemCount = 0;
-                SkipInterElementWhitespace();
-                while (IsElement("Pending"))
-                {
-                    itemCount++;
-                    if (itemCount
-                        > DEEPAi.ServiceDirectory.Domain.DirectorySnapshot.PendingRegistrationLimit)
-                    {
-                        throw InvalidStateXml(
-                            "pending.xml exceeds the supported item limit.");
-                    }
-
-                    ReadPendingItem();
-                    SkipInterElementWhitespace();
-                }
-
-                LeaveElement("Items");
-            }
-
-            private void ReadPendingItem()
-            {
-                if (EnterElement("Pending", NoAttributes))
-                {
-                    throw InvalidStateXml("Pending cannot be empty.");
-                }
-
-                SkipInterElementWhitespace();
-                ReadScalar("Id");
-                SkipInterElementWhitespace();
-                ReadScalar("Type");
-                SkipInterElementWhitespace();
-                ReadScalar("RequestedUtc");
-                SkipInterElementWhitespace();
-                ReadScalar("SourceIp");
-                SkipInterElementWhitespace();
-                ReadDefinition("Requested");
-                SkipInterElementWhitespace();
-                ReadBaseRevision();
-                SkipInterElementWhitespace();
-                LeaveElement("Pending");
-            }
-
-            private void ReadBaseRevision()
-            {
-                if (EnterElement("BaseRevision", KindAttribute))
-                {
-                    return;
-                }
-
-                SkipInterElementWhitespace();
-                if (IsElement("Record"))
-                {
-                    ReadRecord("Record");
-                    SkipInterElementWhitespace();
-                }
-
-                LeaveElement("BaseRevision");
             }
 
             private void ReadScalar(string elementName)

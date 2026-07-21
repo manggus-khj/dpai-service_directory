@@ -69,6 +69,24 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
             return Hex;
         }
 
+        public byte[] ToByteArray()
+        {
+            if (!IsValid)
+            {
+                throw new InvalidOperationException(
+                    "Certificate serial number is not initialized.");
+            }
+
+            var bytes = new byte[HexLength / 2];
+            for (int index = 0; index < bytes.Length; index++)
+            {
+                bytes[index] = (byte)((ParseUpperHex(_hex[index * 2]) << 4)
+                    | ParseUpperHex(_hex[(index * 2) + 1]));
+            }
+
+            return bytes;
+        }
+
         public static bool operator ==(
             CertificateSerialNumber left,
             CertificateSerialNumber right)

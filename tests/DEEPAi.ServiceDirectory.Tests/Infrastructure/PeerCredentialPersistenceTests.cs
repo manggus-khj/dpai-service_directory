@@ -6,6 +6,7 @@ using System.Text;
 using DEEPAi.ServiceDirectory.Infrastructure.Configuration;
 using DEEPAi.ServiceDirectory.Infrastructure.PeerProtocol;
 using DEEPAi.ServiceDirectory.Infrastructure.Persistence;
+using DEEPAi.ServiceDirectory.Tests.TestSupport;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
@@ -206,7 +207,9 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
 
             ServiceDirectoryConfiguration unpaired =
                 ServiceDirectoryConfiguration.CreateInitial(
-                    "10.0.0.1",
+                    TestData.DirectoryIdentity(
+                        "management.internal",
+                        "10.0.0.1"),
                     LocalInstanceId);
             PeerCredentialConfigurationValidator.Validate(unpaired, null);
             using (PairedPeerCredential unexpected = CreateCredential(
@@ -223,11 +226,14 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             ServiceDirectoryConfiguration wrongPeer =
                 new ServiceDirectoryConfiguration(
                     "10.0.0.1",
+                    TestData.DirectoryIdentity(
+                        "management.internal",
+                        "10.0.0.1"),
                     LocalInstanceId,
                     42,
                     30,
                     SynchronizationConfiguration.PairedDisabled(
-                        "http://10.0.0.3:21000",
+                        "https://10.0.0.3:21000",
                         PeerInstanceId,
                         42,
                         LastSynchronizationStatus.NotRun(),
@@ -316,8 +322,8 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     PairingId,
                     LocalInstanceId,
                     PeerInstanceId,
-                    "http://10.0.0.1:21000",
-                    "http://10.0.0.2:21000",
+                    "https://10.0.0.1:21000",
+                    "https://10.0.0.2:21000",
                     42,
                     Bytes(32, 32),
                     Bytes(64, 32),
@@ -358,7 +364,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             {
                 synchronization =
                     SynchronizationConfiguration.PairedPendingCommit(
-                        "http://10.0.0.2:21000",
+                        "https://10.0.0.2:21000",
                         PeerInstanceId,
                         42,
                         PairingId,
@@ -373,13 +379,13 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 synchronization = state
                     == DurableSynchronizationState.Enabled
                     ? SynchronizationConfiguration.Enabled(
-                        "http://10.0.0.2:21000",
+                        "https://10.0.0.2:21000",
                         PeerInstanceId,
                         42,
                         LastSynchronizationStatus.NotRun(),
                         PeerNotificationStatus.NotRun())
                     : SynchronizationConfiguration.PairedDisabled(
-                        "http://10.0.0.2:21000",
+                        "https://10.0.0.2:21000",
                         PeerInstanceId,
                         42,
                         LastSynchronizationStatus.NotRun(),
@@ -388,6 +394,9 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
 
             return new ServiceDirectoryConfiguration(
                 "10.0.0.1",
+                TestData.DirectoryIdentity(
+                    "management.internal",
+                    "10.0.0.1"),
                 LocalInstanceId,
                 42,
                 30,

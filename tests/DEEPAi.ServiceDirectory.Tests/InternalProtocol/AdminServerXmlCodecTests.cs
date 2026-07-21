@@ -150,20 +150,10 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
             AdminEnableSyncRequest ipv4 =
                 AdminServerXmlCodec.ParseEnableSyncRequest(
                     Encode(CreateEnableSyncDocument(
-                        "http://10.0.0.2:21000",
+                        "https://10.0.0.2:21000",
                         "false")));
-            Assert.AreEqual("http://10.0.0.2:21000", ipv4.PeerEndpoint);
+            Assert.AreEqual("https://10.0.0.2:21000", ipv4.PeerEndpoint);
             Assert.IsFalse(ipv4.RePair);
-
-            AdminEnableSyncRequest ipv6 =
-                AdminServerXmlCodec.ParseEnableSyncRequest(
-                    Encode(CreateEnableSyncDocument(
-                        "http://[2001:db8::1]:21000",
-                        "true")));
-            Assert.AreEqual(
-                "http://[2001:db8::1]:21000",
-                ipv6.PeerEndpoint);
-            Assert.IsTrue(ipv6.RePair);
         }
 
         [TestMethod]
@@ -171,14 +161,15 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
         {
             string[] invalidEndpoints =
             {
-                "HTTP://10.0.0.2:21000",
-                " http://10.0.0.2:21000",
-                "http://010.0.0.2:21000",
-                "http://service.internal:21000",
-                "http://127.0.0.1:21000",
-                "http://10.0.0.2:21001",
-                "http://10.0.0.2:21000/path",
-                "http://[2001:0db8:0:0:0:0:0:1]:21000"
+                "HTTPS://10.0.0.2:21000",
+                " https://10.0.0.2:21000",
+                "https://010.0.0.2:21000",
+                "https://service.internal:21000",
+                "https://127.0.0.1:21000",
+                "https://10.0.0.2:21001",
+                "https://10.0.0.2:21000/path",
+                "https://[2001:db8::1]:21000",
+                "http://10.0.0.2:21000"
             };
 
             foreach (string invalidEndpoint in invalidEndpoints)
@@ -196,7 +187,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
         public void ParseEnableSyncRequestRejectsClosedSchemaViolations()
         {
             string endpoint =
-                "<PeerEndpoint>http://10.0.0.2:21000</PeerEndpoint>";
+                "<PeerEndpoint>https://10.0.0.2:21000</PeerEndpoint>";
             string rePair = "<RePair>false</RePair>";
             string[] invalidDocuments =
             {
@@ -239,7 +230,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 "<EnableSync xmlns=\""
                     + XmlNamespace
                     + "\"><PeerEndpoint Unexpected=\"true\">"
-                    + "http://10.0.0.2:21000</PeerEndpoint>"
+                    + "https://10.0.0.2:21000</PeerEndpoint>"
                     + rePair
                     + "</EnableSync>",
                 "<EnableSync xmlns=\""
@@ -428,6 +419,12 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
             Assert.AreEqual(
                 512,
                 StrictUtf8.GetByteCount(response.Payload.Items[0].Name));
+            Assert.AreEqual(
+                "service.internal",
+                response.Payload.Items[0].ServiceHostName);
+            Assert.AreEqual(
+                "10.20.30.40",
+                response.Payload.Items[0].ServiceIpv4Address);
 
             AssertServicesResponseRejected(
                 CreateServicesResponse(
@@ -445,6 +442,11 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 CreateServicesResponse(
                     "Directory",
                     "999.1.1.1"));
+            AssertServicesResponseRejected(
+                CreateServicesResponse(
+                    "Directory",
+                    "service.internal",
+                    "010.20.30.40"));
         }
 
         private static void AssertDisableSyncRejected(string xml)
@@ -517,7 +519,8 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
 
         private static string CreateServicesResponse(
             string name,
-            string serverAddress)
+            string serviceHostName,
+            string serviceIpv4Address = "10.20.30.40")
         {
             return "<Response xmlns=\""
                 + XmlNamespace
@@ -525,9 +528,11 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
                 + "<Services><Service><Name>"
                 + name
                 + "</Name><ProductCode>AB12</ProductCode>"
-                + "<ServerAddress>"
-                + serverAddress
-                + "</ServerAddress><Port>21000</Port>"
+                + "<ServiceHostName>"
+                + serviceHostName
+                + "</ServiceHostName><ServiceIpv4Address>"
+                + serviceIpv4Address
+                + "</ServiceIpv4Address><Port>21000</Port>"
                 + "<LastModifiedUtc>2026-07-18T00:00:00Z"
                 + "</LastModifiedUtc><Deleted>false</Deleted>"
                 + "</Service></Services><TotalCount>1</TotalCount>"

@@ -14,26 +14,34 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
         {
             byte[] csrHash = Hash(0x11);
             byte[] payloadHash = Hash(0x22);
+            byte[] leafCertificate = LeafCertificate();
             CertificateLedgerEntry entry = CreateEntry(
                 "01A4A5A6A7A8A9AAABACADAEAFB0B1B2",
                 "AB12",
                 new Guid("7f35b4b8-854d-4ca1-90bc-da196772f49f"),
                 csrHash,
-                payloadHash);
+                payloadHash,
+                leafCertificate);
 
             csrHash[0] = 0xff;
             payloadHash[0] = 0xff;
+            leafCertificate[0] = 0xff;
 
             Assert.AreEqual(CertificateLedgerStatus.Current, entry.Status);
             Assert.AreEqual(CertificateIssuanceKind.Registration, entry.IssuanceKind);
             Assert.AreEqual("vms-bridge.example.local", entry.ServiceIdentity.ServiceHostName);
             Assert.AreEqual((byte)0x11, entry.GetCsrSha256()[0]);
             Assert.AreEqual((byte)0x22, entry.GetRequestPayloadSha256()[0]);
+            CollectionAssert.AreEqual(
+                LeafCertificate(),
+                entry.GetLeafCertificate());
             Assert.IsTrue(entry.MatchesIssuanceRequest(
+                CertificateIssuanceKind.Registration,
                 entry.IssuanceRequestId,
                 Hash(0x11),
                 Hash(0x22)));
             Assert.IsFalse(entry.MatchesIssuanceRequest(
+                CertificateIssuanceKind.Registration,
                 entry.IssuanceRequestId,
                 Hash(0x11),
                 Hash(0x23)));
@@ -128,7 +136,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
         }
 
         [TestMethod]
-        public void SnapshotAllowsRenewalOverlapButRejectsOrphanedRetiringEntry()
+        public void SnapshotAllowsRenewalOverlapAndOrphanedRetiringEntry()
         {
             CertificateLedgerEntry previous = CreateEntry(
                 "06A4A5A6A7A8A9AAABACADAEAFB0B1B2",
@@ -154,11 +162,11 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
                 out resolved));
             Assert.AreSame(current, resolved);
 
-            Assert.ThrowsExactly<ArgumentException>(() =>
-                new CertificateLedgerSnapshot(
-                    new[] { previous },
-                    1,
-                    0));
+            var orphanedRetiring = new CertificateLedgerSnapshot(
+                new[] { previous },
+                1,
+                0);
+            Assert.AreEqual(0, orphanedRetiring.CurrentCount);
         }
 
         [TestMethod]
@@ -180,30 +188,33 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
             string productCode,
             Guid requestId,
             byte[] csrHash,
-            byte[] payloadHash)
+            byte[] payloadHash,
+            byte[] leafCertificate = null)
         {
             CertificateSerialNumber serialNumber;
             Assert.IsTrue(CertificateSerialNumber.TryCreate(serial, out serialNumber));
-            ServiceEndpointIdentity identity;
-            EndpointIdentityValidationError error;
-            Assert.IsTrue(ServiceEndpointIdentity.TryCreate(
-                "vms-bridge.example.local",
-                "10.20.30.40",
-                out identity,
-                out error));
             return CertificateLedgerEntry.CreateIssued(
                 serialNumber,
-                TestData.ProductCode(productCode),
+                TestData.Definition(
+                    "VMS Bridge",
+                    productCode,
+                    "vms-bridge.example.local",
+                    "10.20.30.40",
+                    21000),
                 requestId,
                 CertificateIssuanceKind.Registration,
-                identity,
                 csrHash,
                 payloadHash,
                 Hash(0x33),
-                Hash(0x44),
+                leafCertificate ?? LeafCertificate(),
                 TestData.Utc(1),
                 TestData.Utc(0),
                 TestData.Utc(3));
+        }
+
+        private static byte[] LeafCertificate()
+        {
+            return new byte[] { 0x30, 0x01, 0x00 };
         }
 
         private static byte[] Hash(byte value)

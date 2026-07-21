@@ -155,7 +155,8 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Peer
         public PeerSyncServiceItem(
             string name,
             string productCode,
-            string serverAddress,
+            string serviceHostName,
+            string serviceIpv4Address,
             int port,
             DateTime lastModifiedUtc,
             bool deleted,
@@ -163,12 +164,19 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Peer
             ulong logicalVersion,
             Guid originInstanceId)
         {
+            ServiceEndpointIdentity identity;
+            EndpointIdentityValidationError identityError;
             ServiceDefinition definition;
             ServiceDefinitionValidationError validationError;
-            if (!ServiceDefinition.TryCreate(
+            if (!ServiceEndpointIdentity.TryCreate(
+                    serviceHostName,
+                    serviceIpv4Address,
+                    out identity,
+                    out identityError)
+                || !ServiceDefinition.TryCreate(
                 name,
                 productCode,
-                serverAddress,
+                identity,
                 port,
                 out definition,
                 out validationError)
@@ -179,8 +187,11 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Peer
                     productCode,
                     definition.ProductCode.Value)
                 || !StringComparer.Ordinal.Equals(
-                    serverAddress,
-                    definition.ServerAddress))
+                    serviceHostName,
+                    definition.ServiceHostName)
+                || !StringComparer.Ordinal.Equals(
+                    serviceIpv4Address,
+                    definition.ServiceIpv4Address))
             {
                 throw new ArgumentException(
                     "The Peer sync service definition is invalid or non-canonical.",
@@ -224,7 +235,8 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Peer
 
             Name = definition.Name;
             ProductCode = definition.ProductCode.Value;
-            ServerAddress = definition.ServerAddress;
+            ServiceHostName = definition.ServiceHostName;
+            ServiceIpv4Address = definition.ServiceIpv4Address;
             Port = definition.Port;
             LastModifiedUtc = lastModifiedUtc;
             Deleted = deleted;
@@ -237,7 +249,9 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Peer
 
         public string ProductCode { get; }
 
-        public string ServerAddress { get; }
+        public string ServiceHostName { get; }
+
+        public string ServiceIpv4Address { get; }
 
         public int Port { get; }
 

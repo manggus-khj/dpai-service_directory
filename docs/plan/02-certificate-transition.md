@@ -2,17 +2,18 @@
 
 ```text
 최초 작성일: 2026-07-19
-최종 변경일: 2026-07-20
-revision: 8
+최종 변경일: 2026-07-21
+revision: 20
 ```
 
-> 문서 상태: 목표 설계 확정, PKI core·저장·Admin/UI 일부 반영, External/Peer XSD·HTTPS·등록 모드 미반영
+> 문서 상태: 목표 설계 확정, PKI core·저장·등록 모드 Admin route·설정 UI·Directory IPv4·hostname 두 exact remote HTTPS 설치/리스너, External 공개 PKI·즉시 등록·renewal 발급과 삭제·재등록 원자 폐기·commit 이후 시스템 이벤트, Peer 전용 pinned TLS·PKI state 교환, standby 구성·명시적 승격 소스 반영
 > 기준일: 2026-07-19
 > 적용 기준: 사내 `Directory서비스_애플리케이션_하드닝_가이드` 개정본
+> 로컬 검증 상태: Directory IPv4·hostname 두 exact HTTPS prefix 보완까지 포함한 2026-07-21 최신 작업 트리의 `Debug|x64`·`Release|x64` locked restore·빌드와 자동 테스트 663개가 각 구성에서 모두 통과했고 installer ACL round-trip·HTTPS binding rollback·installed-state·live endpoint PowerShell 회귀도 통과했다. 실제 Windows Server 설치·DPAPI·HTTP.sys TLS·두 장비 승격 검증은 남아 있다.
 
-이 문서는 현재 구현된 평문 HTTP·승인 대기 기반 서비스 디렉토리를 사이트 CA·HTTPS·즉시 등록 모드 기반으로 전환하기 위한 변경 범위와 구현 순서를 정의한다. 요청·응답의 목표 wire 계약은 [외부 애플리케이션 API 명세](./04-api-01-external-application.md)와 [내부 API 명세](./04-api-02-internal.md)가 단일 원본이다.
+이 문서는 평문 HTTP·승인 대기 기반이었던 서비스 디렉토리를 사이트 CA·HTTPS·즉시 등록 모드 기반으로 전환하기 위한 변경 범위와 구현 순서를 정의한다. 요청·응답의 목표 wire 계약은 [외부 애플리케이션 API 명세](./04-api-01-external-application.md)와 [내부 API 명세](./04-api-02-internal.md)가 단일 원본이다.
 
-문서 확정은 구현 완료를 뜻하지 않는다. CA·Directory/service leaf·CSR 검증·serial·CRL·certificate ledger 상태·IPv4 endpoint identity primitive와 CA/ledger/CRL 내구 저장·backup·운영 Admin/UI·repair restore 일부를 소스로 연결했지만 실제 remote runtime은 여전히 HTTP listener, 일일 API 키, `pending.xml`, 승인·거절 Admin API와 승인 대기 UI를 사용한다. Release 빌드·568개 자동 테스트·설치 EXE 생성은 성공했지만 등록·갱신 발급 wire·HTTPS·Peer PKI 교환과 실제 설치·실행 검증 전에는 인증서 전환 완료가 아니다.
+문서 확정은 구현 완료를 뜻하지 않는다. CA·leaf·CSR·serial·CRL·ledger·DPAPI 저장과 복합 journal, 등록 모드, 즉시 등록·재등록·renewal·삭제 폐기, Directory IPv4·hostname 두 exact HTTPS prefix의 설치/기동 검증, Peer pinned TLS·PKI state cache와 standby 구성·승격 소스를 연결했다. Admin pending 경계와 legacy schema도 제거했다. 2026-07-21 최신 양 구성 자동 테스트와 installer PowerShell 회귀는 통과했지만 실제 Windows 설치·TLS·DPAPI·두 장비 승격 실행 전에는 인증서 전환 전체를 현장 검증 완료로 표시하지 않는다.
 
 ## 1. 확정 결정
 
@@ -209,7 +210,7 @@ CLAIMED
 | 6. Peer·CA 운영 | Peer HTTPS, 동일 CA, rotation·CRL | 이중화·partition·승격·dual-pin·폐기 전파 검증 |
 | 7. 릴리스 | 지원 OS·Milestone 조합 종합 검증 | 인증서 설치·갱신·만료·폐기·CA 복구와 실제 외부 앱 연동 통과 |
 
-2026-07-20 진행 상태: endpoint identity, site CA·Directory/service leaf, CSR 검증, 16바이트 positive serial, signed CRL과 `CURRENT/RETIRING/REVOKED` ledger 불변식에 이어 canonical CA metadata·ledger 저장, DPAPI `LocalMachine` `secrets\ca.key`, signed CRL·CA certificate fixed target, 공용 recovery journal, password authenticated encrypted backup을 소스로 연결했다. `GET /admin/ca/status`, `POST /admin/ca/backup`, `GET /admin/certificates`, `POST /admin/certificates/{serial}/revoke`의 DTO·XSD·handler·HTTP route·설정 UI와 중지된 installer repair의 표준 입력 restore 진입점도 반영했다. 첫 전환 기동은 PKI artifact가 전혀 없을 때만 CA를 만들고 backup 전 `BACKUP_REQUIRED`로 제한하며, 기존 artifact 일부 누락은 자동 재생성하지 않는다. 2026-07-20 locked restore·`Release|x64` 솔루션 빌드·568개 테스트, installer ACL round-trip 검사와 build 12 설치 EXE 생성은 성공했다. 등록 모드, 실제 등록·갱신 발급 transaction, HTTPS binding, Peer PKI 교환과 rotation은 아직 연결하지 않았고 실제 DPAPI/ACL·installer 실행은 검증하지 않았다.
+2026-07-21 진행 상태: endpoint identity부터 CA·leaf·CSR·serial·CRL·ledger·DPAPI 저장, operation별 journal, 등록 모드, 즉시 등록·재등록·renewal·삭제 폐기, HTTPS installer/runtime, Peer pinned TLS·PKI state와 standby 구성·승격까지 소스를 연결했다. Admin은 단일 목표 `admin.xsd`를 사용하고 pending DTO·codec·legacy schema를 제공하지 않는다. `Debug|x64`·`Release|x64` 자동 테스트 663개와 installer ACL·HTTPS binding 회귀는 통과했다. 실제 설치·TLS·DPAPI·승격 실행과 CA rotation은 남아 있다.
 
 ## 9. 필수 보안·장애 검증
 
@@ -236,15 +237,15 @@ CLAIMED
 
 현재 소스에서 확인된 직접 변경 대상은 다음과 같다.
 
-- `ServiceDirectoryListenerAddress`·`ServiceDirectoryHttpListenerHost`: `http://` remote prefix와 anonymous remote transport
-- installer setup/state scripts: HTTP URL ACL만 구성하고 `sslcert` binding·CA 수명주기가 없음
-- `DailyApiKeyCodec`·External handler: CSR·등록 모드·인증서 결과가 없는 승인 대기 계약
-- Domain·External·Peer DTO: 단일 `ServerAddress`를 `ServiceHostName`·`ServiceIpv4Address` 필수 pair로 바꾸고 Directory 접속용 `DirectoryHostName`·`DirectoryIpv4Address`와 분리해야 함
-- Domain/Application state: `pending.xml`과 approve/reject 상태 머신
-- Admin protocol/handler/Tray: pending 3 endpoint와 승인 대기 화면
-- `config.xml`·recovery journal: CA metadata·ledger·CRL·CA certificate·DPAPI key fixed target과 복구 검증은 반영됨. 최초 정식 v1 serializer와 Directory 등록 transaction·PKI target 결합은 남음
-- Peer endpoint parser·outbound client: `http://` canonical endpoint 고정
-- `Infrastructure/Pki`·Domain endpoint identity/ledger: primitive, canonical 직렬화·DPAPI 저장·backup·CRL 폐기와 runtime/Admin composition 소스까지 추가됨. 현재 변경분의 `Release|x64` 컴파일과 자동 테스트는 성공했으며 등록·갱신 발급 연결과 실제 환경 검증이 남음
-- tests: 기존 HTTP·pending 계약 테스트는 목표 계약으로 교체·확장해야 하며 새 PKI 단위 테스트 소스도 아직 실행하지 않음
+- `ServiceDirectoryListenerAddress`·`ServiceDirectoryHttpListenerHost`: remote HTTPS IPv4와 Admin·WDOG exact loopback HTTP로 전환했으며 기동 전 certificate/binding 검증을 연결함. 실제 Windows TLS 실행 검증은 남음
+- installer setup/state scripts: 초기 CA backup, Directory leaf/private-key ACL, HTTPS URL ACL·exact `sslcert` binding·방화벽과 rollback을 구성함. 실제 fresh/repair/uninstall 실행 검증은 남음
+- `DailyApiKeyCodec`·External handler: 목표 `/pki/ca`·`/pki/crl`, 조회와 CSR registration/renewal certificate DTO·codec·즉시 발급 handler를 연결하고 단일 주소 legacy 모델을 제거함
+- Domain·External·Peer DTO: `ServiceHostName`·`ServiceIpv4Address` 필수 pair와 분리된 Directory identity로 전환 완료
+- Domain/Application state: 저장 `pending.xml`과 approve/reject application 경계 제거, registration·renewal·삭제 directory·ledger·CRL transaction 연결 완료
+- Admin protocol/handler/Tray: pending 3 endpoint·승인 대기 화면 제거와 registration-mode 세 route·UI 전환 완료
+- `config.xml`·recovery journal: 최초 정식 v1, CA metadata·ledger·CRL·CA certificate·DPAPI key fixed target과 registration claim·serial·서명 복합 transaction 연결 완료. 전체 장애 지점의 serial 재사용·CRL rollback 실행 검증은 남음
+- Peer endpoint parser·outbound client: canonical HTTPS IPv4와 동일 site CA SPKI pin·exact endpoint SAN·leaf profile·signed CRL 검증, session-authenticated `pki-state` 교환을 연결함. 실제 Windows TLS 실행은 남음
+- `Infrastructure/Pki`·Domain endpoint identity/ledger: primitive, canonical 직렬화·DPAPI 저장·backup·CRL 폐기, Directory leaf machine-store 설치와 native HTTP.sys binding 검증, 즉시 등록·재등록·renewal 발급·overlap 폐기와 서비스 삭제 원자 transaction까지 추가됨. 실제 환경 검증이 남음
+- tests: remote HTTPS prefix·IPv6 거부·Directory leaf profile과 installer binding rollback 테스트 소스를 추가했으나 이번 변경 뒤 실행하지 않음
 
 후속 코드 변경은 위 순서대로 작은 검증 단위로 수행한다. PKI core 부분 구현만으로 기존 HTTP runtime을 새 계약 준수로 표시하지 않는다.

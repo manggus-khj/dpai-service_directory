@@ -11,16 +11,22 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence.SerializationModel
         [XmlElement("ListenAddress", Order = 0)]
         public string ListenAddress { get; set; }
 
-        [XmlElement("InstanceId", Order = 1)]
+        [XmlElement("DirectoryHostName", Order = 1)]
+        public string DirectoryHostName { get; set; }
+
+        [XmlElement("DirectoryIpv4Address", Order = 2)]
+        public string DirectoryIpv4Address { get; set; }
+
+        [XmlElement("InstanceId", Order = 3)]
         public string InstanceId { get; set; }
 
-        [XmlElement("LastPeerKeyEpoch", Order = 2)]
+        [XmlElement("LastPeerKeyEpoch", Order = 4)]
         public string LastPeerKeyEpoch { get; set; }
 
-        [XmlElement("LogRetentionDays", Order = 3)]
+        [XmlElement("LogRetentionDays", Order = 5)]
         public string LogRetentionDays { get; set; }
 
-        [XmlElement("Sync", Order = 4)]
+        [XmlElement("Sync", Order = 6)]
         public SynchronizationConfigurationDocument Sync { get; set; }
     }
 

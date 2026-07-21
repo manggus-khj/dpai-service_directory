@@ -6,19 +6,40 @@
            attributeFormDefault="unqualified">
 
   <xs:annotation>
-    <xs:documentation>Normative, versionless External HTTP XML contract.</xs:documentation>
+    <xs:documentation>Normative, versionless External HTTPS XML contract.</xs:documentation>
   </xs:annotation>
 
   <xs:element name="RegistrationRequest" type="tns:RegistrationRequestType" />
+  <xs:element name="CertificateRenewalRequest" type="tns:CertificateRenewalRequestType" />
   <xs:element name="Response" type="tns:ResponseType" />
   <xs:element name="Service" type="tns:ServiceType" />
 
   <xs:complexType name="RegistrationRequestType">
     <xs:sequence>
+      <xs:element name="RegistrationRequestId" type="tns:GuidType" />
       <xs:element name="Name" type="tns:NameInputType" />
       <xs:element name="ProductCode" type="tns:ProductCodeInputType" />
-      <xs:element name="ServerAddress" type="tns:ServerAddressInputType" />
+      <xs:element name="ServiceHostName" type="tns:IdentityInputType" />
+      <xs:element name="ServiceIpv4Address" type="tns:IdentityInputType" />
       <xs:element name="Port" type="tns:PortType" />
+      <xs:element name="CertificateSigningRequest" type="tns:CanonicalBase64Type" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CertificateRenewalRequestType">
+    <xs:sequence>
+      <xs:element name="RenewalRequestId" type="tns:GuidType" />
+      <xs:element name="ProductCode" type="tns:ProductCodeInputType" />
+      <xs:element name="CurrentSerialNumber" type="tns:SerialNumberType" />
+      <xs:element name="TimestampUtc" type="tns:ProofUtcDateTimeType" />
+      <xs:element name="Nonce" type="tns:CanonicalBase64Type" />
+      <xs:element name="Name" type="tns:NameInputType" />
+      <xs:element name="ServiceHostName" type="tns:IdentityInputType" />
+      <xs:element name="ServiceIpv4Address" type="tns:IdentityInputType" />
+      <xs:element name="Port" type="tns:PortType" />
+      <xs:element name="CertificateSigningRequest" type="tns:CanonicalBase64Type" />
+      <xs:element name="ServiceIdentitySha256" type="tns:CanonicalBase64Type" />
+      <xs:element name="ProofSignature" type="tns:CanonicalBase64Type" />
     </xs:sequence>
   </xs:complexType>
 
@@ -28,14 +49,29 @@
       <xs:element name="Code" type="tns:CodeType" />
       <xs:element name="Message" type="tns:MessageType" />
       <xs:choice minOccurs="0">
+        <xs:element name="TrustInfo" type="tns:TrustInfoType" />
         <xs:element name="UtcNow" type="tns:UtcDateTimeType" />
         <xs:element name="Service" type="tns:ServiceType" />
         <xs:sequence>
-          <xs:element name="Status" type="tns:RegistrationStatusType" />
-          <xs:element name="PendingId" type="tns:GuidType" minOccurs="0" />
+          <xs:element name="Status" type="tns:CertificateIssuanceStatusType" />
+          <xs:choice>
+            <xs:element name="RegistrationRequestId" type="tns:GuidType" />
+            <xs:element name="RenewalRequestId" type="tns:GuidType" />
+          </xs:choice>
+          <xs:element name="Service" type="tns:ServiceType" />
+          <xs:element name="Certificate" type="tns:IssuedCertificateType" />
         </xs:sequence>
       </xs:choice>
       <xs:element name="Extensions" type="tns:ExtensionsType" minOccurs="0" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="TrustInfoType">
+    <xs:sequence>
+      <xs:element name="SiteId" type="tns:GuidType" />
+      <xs:element name="CaCertificate" type="tns:CanonicalBase64Type" />
+      <xs:element name="CaSpkiSha256" type="tns:CanonicalBase64Type" />
+      <xs:element name="CrlUri" type="tns:CrlUriType" />
     </xs:sequence>
   </xs:complexType>
 
@@ -43,9 +79,21 @@
     <xs:sequence>
       <xs:element name="Name" type="tns:NameType" />
       <xs:element name="ProductCode" type="tns:ProductCodeType" />
-      <xs:element name="ServerAddress" type="tns:ServerAddressType" />
+      <xs:element name="ServiceHostName" type="tns:ServiceHostNameType" />
+      <xs:element name="ServiceIpv4Address" type="tns:ServiceIpv4AddressType" />
       <xs:element name="Port" type="tns:PortType" />
       <xs:element name="LastModifiedUtc" type="tns:UtcDateTimeType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="IssuedCertificateType">
+    <xs:sequence>
+      <xs:element name="LeafCertificate" type="tns:CanonicalBase64Type" />
+      <xs:element name="IssuerCertificate" type="tns:CanonicalBase64Type" />
+      <xs:element name="SerialNumber" type="tns:SerialNumberType" />
+      <xs:element name="NotBeforeUtc" type="tns:UtcDateTimeType" />
+      <xs:element name="NotAfterUtc" type="tns:UtcDateTimeType" />
+      <xs:element name="CrlUri" type="tns:CrlUriType" />
     </xs:sequence>
   </xs:complexType>
 
@@ -62,12 +110,12 @@
     </xs:restriction>
   </xs:simpleType>
 
-  <xs:simpleType name="RegistrationStatusType">
+  <xs:simpleType name="CertificateIssuanceStatusType">
     <xs:restriction base="xs:string">
-      <xs:enumeration value="PENDING_NEW" />
-      <xs:enumeration value="PENDING_MODIFY" />
-      <xs:enumeration value="PENDING_EXISTS" />
-      <xs:enumeration value="ALREADY_REGISTERED" />
+      <xs:enumeration value="REGISTERED" />
+      <xs:enumeration value="REREGISTERED" />
+      <xs:enumeration value="REPLAYED" />
+      <xs:enumeration value="RENEWED" />
     </xs:restriction>
   </xs:simpleType>
 
@@ -79,6 +127,9 @@
       <xs:enumeration value="1002" />
       <xs:enumeration value="1003" />
       <xs:enumeration value="1004" />
+      <xs:enumeration value="1005" />
+      <xs:enumeration value="1006" />
+      <xs:enumeration value="1007" />
       <xs:enumeration value="3000" />
     </xs:restriction>
   </xs:simpleType>
@@ -91,7 +142,7 @@
 
   <xs:simpleType name="NameType">
     <xs:annotation>
-      <xs:documentation>Canonical response envelope. The maxLength of 256 accommodates up to 128 supplementary Unicode scalar values in the target .NET Framework XML Schema validator's UTF-16 representation. The domain validator still enforces 1..128 Unicode scalar values and at most 512 UTF-8 bytes.</xs:documentation>
+      <xs:documentation>The maxLength accommodates 128 supplementary Unicode scalar values in .NET Framework's UTF-16 XSD validator. Domain validation also enforces 128 Unicode scalars and 512 UTF-8 bytes.</xs:documentation>
     </xs:annotation>
     <xs:restriction base="xs:string">
       <xs:minLength value="1" />
@@ -100,9 +151,6 @@
   </xs:simpleType>
 
   <xs:simpleType name="NameInputType">
-    <xs:annotation>
-      <xs:documentation>Raw registration input. Length facets are intentionally omitted because the server trims and then enforces the normative Name limits in the domain validator.</xs:documentation>
-    </xs:annotation>
     <xs:restriction base="xs:string" />
   </xs:simpleType>
 
@@ -119,18 +167,21 @@
     </xs:restriction>
   </xs:simpleType>
 
-  <xs:simpleType name="ServerAddressType">
+  <xs:simpleType name="IdentityInputType">
+    <xs:restriction base="xs:string" />
+  </xs:simpleType>
+
+  <xs:simpleType name="ServiceHostNameType">
     <xs:restriction base="xs:string">
       <xs:minLength value="1" />
       <xs:maxLength value="253" />
     </xs:restriction>
   </xs:simpleType>
 
-  <xs:simpleType name="ServerAddressInputType">
-    <xs:annotation>
-      <xs:documentation>Raw registration input. Length facets are intentionally omitted because the server trims and then enforces the canonical address grammar and length in the domain validator.</xs:documentation>
-    </xs:annotation>
-    <xs:restriction base="xs:string" />
+  <xs:simpleType name="ServiceIpv4AddressType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9]{1,3}(\.[0-9]{1,3}){3}" />
+    </xs:restriction>
   </xs:simpleType>
 
   <xs:simpleType name="PortType">
@@ -142,6 +193,31 @@
   <xs:simpleType name="GuidType">
     <xs:restriction base="xs:string">
       <xs:pattern value="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="SerialNumberType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9A-F]{32}" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="CanonicalBase64Type">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="4" />
+      <xs:pattern value="([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="CrlUriType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="/pki/crl" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ProofUtcDateTimeType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z" />
     </xs:restriction>
   </xs:simpleType>
 

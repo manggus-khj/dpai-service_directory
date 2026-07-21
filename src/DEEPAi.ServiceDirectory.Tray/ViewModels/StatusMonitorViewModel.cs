@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using DEEPAi.ServiceDirectory.Domain;
 using DEEPAi.ServiceDirectory.Infrastructure.WatchdogProtocol;
 using DEEPAi.ServiceDirectory.InternalProtocol.Admin;
 using DEEPAi.ServiceDirectory.Tray.Clients;
@@ -35,8 +34,9 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
         private readonly object _pollingStateGate = new object();
 
         private int _selectedPageIndex = 1;
-        private AdminPendingItem _selectedPending;
         private AdminServiceItem _selectedService;
+        private AdminServerRegistrationModeResponse
+            _registrationModeResponse;
         private bool _isAdminConnected;
         private bool _isWatchdogConnected;
         private string _mainServiceConnectionText = "연결 안 됨";
@@ -65,16 +65,10 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
         private string _peerNotificationText = "확인할 수 없음";
         private string _peerNotificationWarning;
         private AdminSyncStatus _syncStatus;
-        private int? _pendingTotalCount;
         private int? _serviceTotalCount;
-        private int _pendingPageNumber = 1;
         private int _servicePageNumber = 1;
-        private string _pendingNextCursor;
         private string _serviceNextCursor;
-        private string _pendingCursor;
         private string _serviceCursor;
-        private readonly System.Collections.Generic.Stack<string>
-            _pendingPreviousCursors = new System.Collections.Generic.Stack<string>();
         private readonly System.Collections.Generic.Stack<string>
             _servicePreviousCursors = new System.Collections.Generic.Stack<string>();
         private string _peerEndpointInput = string.Empty;
@@ -124,7 +118,6 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
                 throw new ArgumentNullException(nameof(exitApplication));
             }
 
-            PendingItems = new ObservableCollection<AdminPendingItem>();
             Services = new ObservableCollection<AdminServiceItem>();
             Certificates = new ObservableCollection<
                 AdminServerCertificateItem>();
@@ -151,12 +144,12 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             RefreshCurrentPageCommand = CreateAsyncCommand(
                 RefreshCurrentPageAsync,
                 () => true);
-            ApprovePendingCommand = CreateAsyncCommand(
-                ApprovePendingAsync,
-                () => IsAdminConnected && SelectedPending != null);
-            RejectPendingCommand = CreateAsyncCommand(
-                RejectPendingAsync,
-                () => IsAdminConnected && SelectedPending != null);
+            OpenRegistrationModeCommand = CreateAsyncCommand(
+                OpenRegistrationModeAsync,
+                CanOpenRegistrationMode);
+            CloseRegistrationModeCommand = CreateAsyncCommand(
+                CloseRegistrationModeAsync,
+                CanCloseRegistrationMode);
             DeleteServiceCommand = CreateAsyncCommand(
                 DeleteServiceAsync,
                 () => IsAdminConnected && SelectedService != null);
@@ -192,12 +185,6 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             SaveLoggingCommand = CreateAsyncCommand(
                 SaveLoggingAsync,
                 CanSaveLogging);
-            PreviousPendingPageCommand = CreateAsyncCommand(
-                PreviousPendingPageAsync,
-                () => _pendingPreviousCursors.Count > 0);
-            NextPendingPageCommand = CreateAsyncCommand(
-                NextPendingPageAsync,
-                () => !string.IsNullOrEmpty(_pendingNextCursor));
             PreviousServicePageCommand = CreateAsyncCommand(
                 PreviousServicePageAsync,
                 () => _servicePreviousCursors.Count > 0);
@@ -223,8 +210,6 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
                 _lifetimeCancellation.Token);
         }
 
-        public ObservableCollection<AdminPendingItem> PendingItems { get; }
-
         public ObservableCollection<AdminServiceItem> Services { get; }
 
         public ObservableCollection<AdminServerCertificateItem>
@@ -248,9 +233,9 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
 
         public AsyncCommand RefreshCurrentPageCommand { get; }
 
-        public AsyncCommand ApprovePendingCommand { get; }
+        public AsyncCommand OpenRegistrationModeCommand { get; }
 
-        public AsyncCommand RejectPendingCommand { get; }
+        public AsyncCommand CloseRegistrationModeCommand { get; }
 
         public AsyncCommand DeleteServiceCommand { get; }
 
@@ -267,10 +252,6 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
         public AsyncCommand ForgetPeerCommand { get; }
 
         public AsyncCommand SaveLoggingCommand { get; }
-
-        public AsyncCommand PreviousPendingPageCommand { get; }
-
-        public AsyncCommand NextPendingPageCommand { get; }
 
         public AsyncCommand PreviousServicePageCommand { get; }
 
@@ -304,27 +285,13 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
                     case 0:
                         return "대시보드";
                     case 1:
-                        return "승인 대기";
-                    case 2:
                         return "등록 서비스";
-                    case 3:
+                    case 2:
                         return "동기화";
-                    case 4:
+                    case 3:
                         return "설정";
                     default:
                         return "상태 모니터";
-                }
-            }
-        }
-
-        public AdminPendingItem SelectedPending
-        {
-            get => _selectedPending;
-            set
-            {
-                if (SetProperty(ref _selectedPending, value))
-                {
-                    RaiseCommandStates();
                 }
             }
         }
@@ -546,37 +513,9 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
         public bool HasPeerNotificationWarning =>
             !string.IsNullOrWhiteSpace(PeerNotificationWarning);
 
-        public string PendingCountText => _pendingTotalCount.HasValue
-            ? _pendingTotalCount.Value.ToString("N0", CultureInfo.CurrentCulture)
-            : "—";
-
-        public bool HasPendingCapacityWarning =>
-            _pendingTotalCount.HasValue
-            && _pendingTotalCount.Value
-                >= DirectorySnapshot.PendingRegistrationWarningThreshold;
-
-        public string PendingCapacityWarningText =>
-            HasPendingCapacityWarning
-                ? "승인 대기가 경고 기준에 도달했습니다. 운영자가 대기를 처리해야 합니다. (현재 "
-                    + _pendingTotalCount.Value.ToString(
-                        "N0",
-                        CultureInfo.CurrentCulture)
-                    + " / "
-                    + DirectorySnapshot.PendingRegistrationLimit.ToString(
-                        "N0",
-                        CultureInfo.CurrentCulture)
-                    + ")"
-                : string.Empty;
-
         public string ServiceCountText => _serviceTotalCount.HasValue
             ? _serviceTotalCount.Value.ToString("N0", CultureInfo.CurrentCulture)
             : "—";
-
-        public string PendingPageText => "페이지 "
-            + _pendingPageNumber.ToString(CultureInfo.CurrentCulture)
-            + " · 전체 "
-            + PendingCountText
-            + "개";
 
         public string ServicePageText => "페이지 "
             + _servicePageNumber.ToString(CultureInfo.CurrentCulture)
@@ -778,8 +717,8 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             StartServiceCommand?.RaiseCanExecuteChanged();
             StopServiceCommand?.RaiseCanExecuteChanged();
             RestartServiceCommand?.RaiseCanExecuteChanged();
-            ApprovePendingCommand?.RaiseCanExecuteChanged();
-            RejectPendingCommand?.RaiseCanExecuteChanged();
+            OpenRegistrationModeCommand?.RaiseCanExecuteChanged();
+            CloseRegistrationModeCommand?.RaiseCanExecuteChanged();
             DeleteServiceCommand?.RaiseCanExecuteChanged();
             SyncNowCommand?.RaiseCanExecuteChanged();
             EnableSyncCommand?.RaiseCanExecuteChanged();
@@ -788,8 +727,6 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             DisableSyncCommand?.RaiseCanExecuteChanged();
             ForgetPeerCommand?.RaiseCanExecuteChanged();
             SaveLoggingCommand?.RaiseCanExecuteChanged();
-            PreviousPendingPageCommand?.RaiseCanExecuteChanged();
-            NextPendingPageCommand?.RaiseCanExecuteChanged();
             PreviousServicePageCommand?.RaiseCanExecuteChanged();
             NextServicePageCommand?.RaiseCanExecuteChanged();
             RevokeCertificateCommand?.RaiseCanExecuteChanged();
