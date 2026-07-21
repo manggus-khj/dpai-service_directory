@@ -16,6 +16,8 @@
   <xs:element name="LoggingSettings" type="tns:LoggingSettingsType" />
   <xs:element name="CreateCaBackup" type="tns:CreateCaBackupType" />
   <xs:element name="RevokeCertificate" type="tns:RevokeCertificateType" />
+  <xs:element name="PrepareCaRotation" type="tns:EmptyRequestType" />
+  <xs:element name="CancelCaRotation" type="tns:CancelCaRotationType" />
   <xs:element name="Response" type="tns:ResponseType" />
 
   <xs:complexType name="EnableSyncType">
@@ -62,6 +64,16 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:complexType name="EmptyRequestType">
+    <xs:sequence />
+  </xs:complexType>
+
+  <xs:complexType name="CancelCaRotationType">
+    <xs:sequence>
+      <xs:element name="RotationId" type="tns:GuidType" />
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:complexType name="ResponseType">
     <xs:sequence>
       <xs:element name="Result" type="tns:ResultType" />
@@ -82,6 +94,7 @@
         <xs:element name="LoggingSettings" type="tns:LoggingSettingsType" />
         <xs:element name="CaStatus" type="tns:CaStatusType" />
         <xs:element name="CaBackup" type="tns:CaBackupType" />
+        <xs:element name="CaRotation" type="tns:CaRotationType" />
         <xs:sequence>
           <xs:element name="Certificates" type="tns:CertificatesType" />
           <xs:element name="TotalCount" type="xs:unsignedInt" />
@@ -192,6 +205,37 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:complexType name="CaRotationType">
+    <xs:sequence>
+      <xs:element name="Phase" type="tns:CaRotationPhaseType" />
+      <xs:element name="TrustRevision" type="tns:PositiveEpochType" />
+      <xs:element name="RotationId" type="tns:GuidType" minOccurs="0" />
+      <xs:element name="PublishedUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+      <xs:element name="ActivationNotBeforeUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+      <xs:element name="ActivatedUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+      <xs:element name="RetirementNotBeforeUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+      <xs:element name="CurrentAuthority" type="tns:CaRotationAuthorityType" />
+      <xs:element name="OtherAuthority" type="tns:CaRotationAuthorityType" minOccurs="0" />
+      <xs:element name="CurrentRevisionBackupReady" type="tns:BooleanTextType" />
+      <xs:element name="PeerReadiness" type="tns:RotationReadinessType" />
+      <xs:element name="DirectoryLeafReadiness" type="tns:RotationReadinessType" />
+      <xs:element name="RetiringLeafCount" type="xs:unsignedInt" />
+      <xs:element name="ActivationReady" type="tns:BooleanTextType" />
+      <xs:element name="CompletionReady" type="tns:BooleanTextType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CaRotationAuthorityType">
+    <xs:sequence>
+      <xs:element name="Role" type="tns:CaRotationAuthorityRoleType" />
+      <xs:element name="CaSerialNumber" type="tns:CertificateSerialType" />
+      <xs:element name="CaSpkiSha256" type="tns:Sha256Base64Type" />
+      <xs:element name="NotBeforeUtc" type="tns:UtcDateTimeType" />
+      <xs:element name="NotAfterUtc" type="tns:UtcDateTimeType" />
+      <xs:element name="CrlNumber" type="tns:PositiveEpochType" />
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:complexType name="CertificatesType">
     <xs:sequence>
       <xs:element name="Certificate" type="tns:CertificateType" minOccurs="0" maxOccurs="250" />
@@ -201,6 +245,7 @@
   <xs:complexType name="CertificateType">
     <xs:sequence>
       <xs:element name="SerialNumber" type="tns:CertificateSerialType" />
+      <xs:element name="IssuerCaSerialNumber" type="tns:CertificateSerialType" />
       <xs:element name="ProductCode" type="tns:ProductCodeType" />
       <xs:element name="IssuanceKind" type="tns:CertificateIssuanceKindType" />
       <xs:element name="ServiceHostName" type="tns:ServiceHostNameType" />
@@ -219,6 +264,7 @@
   <xs:complexType name="CertificateRevocationType">
     <xs:sequence>
       <xs:element name="SerialNumber" type="tns:CertificateSerialType" />
+      <xs:element name="IssuerCaSerialNumber" type="tns:CertificateSerialType" />
       <xs:element name="RevokedUtc" type="tns:UtcDateTimeType" />
       <xs:element name="Reason" type="tns:OperatorRevocationReasonType" />
       <xs:element name="PkiRevision" type="tns:PositiveEpochType" />
@@ -254,6 +300,9 @@
   <xs:simpleType name="DisableNotificationResultType"><xs:restriction base="xs:string"><xs:enumeration value="CONFIRMED"/><xs:enumeration value="UNCONFIRMED"/><xs:enumeration value="NOT_REQUIRED"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="CaStateType"><xs:restriction base="xs:string"><xs:enumeration value="NOT_PROVISIONED"/><xs:enumeration value="BACKUP_REQUIRED"/><xs:enumeration value="READY"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="CaRoleType"><xs:restriction base="xs:string"><xs:enumeration value="ACTIVE_ISSUER"/><xs:enumeration value="STANDBY"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="CaRotationPhaseType"><xs:restriction base="xs:string"><xs:enumeration value="STABLE"/><xs:enumeration value="PUBLISHED"/><xs:enumeration value="ACTIVATED"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="CaRotationAuthorityRoleType"><xs:restriction base="xs:string"><xs:enumeration value="CURRENT"/><xs:enumeration value="NEXT"/><xs:enumeration value="RETIRING"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="RotationReadinessType"><xs:restriction base="xs:string"><xs:enumeration value="READY"/><xs:enumeration value="NOT_READY"/><xs:enumeration value="NOT_REQUIRED"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="CertificateIssuanceKindType"><xs:restriction base="xs:string"><xs:enumeration value="REGISTRATION"/><xs:enumeration value="RENEWAL"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="CertificateStatusType"><xs:restriction base="xs:string"><xs:enumeration value="CURRENT"/><xs:enumeration value="RETIRING"/><xs:enumeration value="REVOKED"/></xs:restriction></xs:simpleType>
   <xs:simpleType name="RevocationReasonType"><xs:restriction base="xs:string"><xs:enumeration value="KEY_COMPROMISE"/><xs:enumeration value="CA_COMPROMISE"/><xs:enumeration value="AFFILIATION_CHANGED"/><xs:enumeration value="SUPERSEDED"/><xs:enumeration value="CESSATION_OF_OPERATION"/><xs:enumeration value="PRIVILEGE_WITHDRAWN"/><xs:enumeration value="AA_COMPROMISE"/></xs:restriction></xs:simpleType>

@@ -2,7 +2,7 @@
 
 ```text
 최초 작성일: 2026-07-20
-최종 변경일: 2026-07-21
+최종 변경일: 2026-07-22
 ```
 
 ## AGENTS.md rev 9 적용 — 저장소 구조 정합화
@@ -41,7 +41,7 @@
 - [x] 서비스 삭제·열린 모드 재등록에서 current serial 폐기·CRL publish·directory tombstone/활성 record·ledger 상태를 원자 변경하고 감사 event 발생 시점을 durable commit 뒤로 고정 (근거: 05-next-development.md §5.6, 03-development.md §6.3·§9) (완료: 2026-07-21)
 - [x] Peer endpoint·outbound transport를 HTTPS IPv4로 전환해 TLS 검증을 ECDH·SAS·HMAC보다 먼저 수행하고, PKI state에서 CRL high-water·ProductCode별 current serial과 single active issuer를 검증해 standby Peer cache에 저장하되 full ledger·CA private key·등록 모드는 동기화하지 않음 (근거: 05-next-development.md §5.6, 04-api-02-internal.md §5.9) (완료: 2026-07-21)
 - [x] 인증된 동일-site backup으로 standby의 Directory leaf·공개 PKI cache를 구성하되 full ledger·CA key primary를 남기지 않고, 중지된 repair에서 관찰 high-water 이상인 backup만 복원해 issuer identity·role·revision과 cache 삭제를 원자 전환하는 명시적 승격 절차 구현 (근거: 03-development-01-storage-schema.md §9~§11, 04-api-02-internal.md §4.16) (완료: 2026-07-21)
-- [ ] CA rotation을 제외한 지원 OS·Milestone 교집합에서 HTTPS only, TOFU/pin, 즉시 발급, lost-response replay, 갱신, 삭제·폐기, CRL, CA backup/repair와 일반 제거 보존 시나리오의 검증 결과를 관련 계획 문서에 기록 (근거: 05-next-development.md §4 순서 7, 03-development.md §12)
+- [ ] ~~CA rotation을 제외한 지원 OS·Milestone 교집합에서 HTTPS only, TOFU/pin, 즉시 발급, lost-response replay, 갱신, 삭제·폐기, CRL, CA backup/repair와 일반 제거 보존 시나리오의 검증 결과를 관련 계획 문서에 기록~~ (취소: CA key rotation·dual-pin이 최초 릴리스 필수 범위로 변경되어 아래 rotation 포함 종합 검증 항목으로 대체, 07-ca-key-rotation.md rev 1)
 
 ## 현장 검증 도구 — `06-release-validation.md` rev 5
 
@@ -50,3 +50,24 @@
 - [x] `netsh http show sslcert`의 `IP:port` 라벨과 IPv4 endpoint 값에 포함된 콜론을 첫 콜론으로 잘못 분리하던 installer HTTPS binding parser를 공백으로 둘러싸인 key/value 구분자 기준으로 수정하고 실제 출력 형태 회귀 입력을 추가 (근거: 06-release-validation.md §3 HTTP.sys) (완료: 2026-07-21)
 - [x] 설치된 main service의 실제 IPv4·hostname TLS 1.2+ 연결, exact bound leaf·SAN name·CA signature, 공개 CA/SPKI·CRL 설치 원본 일치와 `WDOG` 일일 키 health를 GET-only로 검증하는 live endpoint JSON 도구를 installer payload에 추가하고 일일 키 고정 벡터·strict XML·HTTP framing parser 회귀를 package 진입점에 연결 (근거: 06-release-validation.md §4) (완료: 2026-07-21)
 - [x] External 명세의 DNS·IPv4 두 base와 달리 runtime·installer가 IPv4 HTTPS prefix·URL ACL만 등록하던 불일치를 수정해 두 exact remote prefix를 구성하고, repair hostname 변경 rollback·uninstall·installed-state 검증 및 listener·PowerShell 회귀에 반영 (근거: 04-api-01-external-application.md §2.1, 05-next-development.md §5.4, 06-release-validation.md §3~§4) (완료: 2026-07-21)
+
+## CA key rotation·dual-pin 최초 릴리스 필수 구현 — `07-ca-key-rotation.md` rev 3
+
+- [x] 1차 계약·저장 기반: External `TrustBundle`·issuer별 CRL과 Admin rotation 상태·Prepare·Cancel XSD/DTO/codec, 최초 정식 A/B state·issuer-aware ledger·13개 journal target·`DPAICAE2/DPAICAB2` 저장 계약을 문서와 소스에 반영 (근거: 03-development-01-storage-schema.md rev 14, 04-api-01-external-application.md rev 13, 04-api-02-internal.md rev 17) (완료: 2026-07-22)
+- [x] 1차 runtime: slot B 차기 RSA 3072 CA와 독립 CRL #1을 한 transaction으로 게시하고 exact RotationId로 취소·key 폐기하는 Prepare/Cancel, slot별 DPAPI entropy, live trust bundle·issuer별 CRL, dual-key backup/active repair와 trust revision backup marker를 구현하고 회귀 테스트 소스를 추가 (근거: 07-ca-key-rotation.md §4.1·§6·§8·§10·§12.2~§12.4) (완료: 2026-07-22, 테스트 실행 전)
+- [x] 1차 운영 UI·검사: Admin rotation 상태·Prepare·Cancel handler와 설정 UI를 연결하고 tray menu에는 명령을 추가하지 않았으며 설치 상태 검사에 phase·slot·B artifact·secret ACL 검증을 반영 (근거: 07-ca-key-rotation.md §5·§7.1~§7.2·§11·§12.5·§12.7) (완료: 2026-07-22, 테스트 실행 전)
+- [x] CA rotation Cancel request codec을 request-side canonical GUID parser와 canonical 소문자 `D` 포맷에 연결하고 rotation 저장소의 `InvalidDataException` namespace 누락을 수정 (근거: 07-ca-key-rotation.md §7.1·§12.2~§12.3) (완료: 2026-07-22)
+- [ ] 외부 API 명세와 `external.xsd`에 `/pki/ca` 마지막 `Extensions`의 monotonic `TrustBundle`, `STABLE/PUBLISHED/ACTIVATED` 전이, current·next/retiring authority 최대 2개, issuer serial별 `GET /pki/crl/{CaSerialNumber}`, 기존 `/pki/crl` current alias, issuer별 CDP와 retired issuer replay 오류를 확정하고 canonical golden XML·HTTP 오류·unknown/partial input 계약을 작성 (근거: 07-ca-key-rotation.md §6·§12.1)
+- [ ] 내부 API 명세와 `admin.xsd`·`peer.xsd`에 `GET /admin/ca/rotation`, Prepare·Cancel, 기존 CA 응답의 rotation/issuer 확장, Peer dual-CA PKI state·ACK·revision collision·standby readiness를 확정하고 Activate·Complete가 HTTP가 아닌 elevated maintenance 경계임을 명시 (근거: 07-ca-key-rotation.md §7·§9·§12.1)
+- [ ] 최초 정식 저장 schema v1 문서를 fixed A/B CA·CRL·DPAPI key slot, issuer-aware unified ledger, dual-CA Peer cache, retired authority 최대 16개 archive, 새 encrypted backup magic과 확장 fixed journal target·operation별 exact target 집합으로 개정하고 build 14 이하 단일 CA state·`DPAICAB1`을 운영 입력으로 거부하도록 확정 (근거: 07-ca-key-rotation.md §2.1·§8·§12.1)
+- [ ] Domain·ExternalProtocol·InternalProtocol에 rotation phase/role/revision, trust bundle, issuer별 CRL URI, Admin rotation과 Peer dual-CA DTO·strict codec를 구현하고 상태 조합·canonical 순서·크기·revision rollback·same-revision byte collision 검증과 golden vector 테스트를 추가 (근거: 07-ca-key-rotation.md §3~§6·§12.2·§13.1~§13.2)
+- [ ] Infrastructure 저장 계층을 `pki/state.xml` rotation metadata, issuer serial ledger, fixed `ca-a/b.der`·`crl-a/b.der`·`ca-a/b.key`, retired archive와 확장 recovery journal로 전환하고 모든 target PREPARED rollback·COMMITTED roll-forward·slot discard·누락/혼합 state fail-closed fault-injection 테스트를 추가 (근거: 07-ca-key-rotation.md §8·§10·§12.2·§13.4)
+- [ ] active issuer의 Prepare·Cancel transaction, 두 CA의 독립 CRL high-water, slot별 DPAPI entropy/ACL, dual-key encrypted backup/restore와 backup revision gate를 구현하고 next CA 발급 금지·Cancel key 폐기·부분/구형/변조 backup 거부를 검증 (근거: 07-ca-key-rotation.md §4.1·§8.2·§10·§12.3)
+- [ ] External `/pki/ca` trust bundle과 issuer별 CRL endpoint·current alias를 구현하고 모든 신규 Directory/service leaf의 DNS·IPv4 CDP를 issuer serial path로 발급하며 current TLS 없이 next pin 저장 금지, atomic dual-pin/CRL cache reference client, 놓친 client fail-closed와 retired issuer replay 거부를 테스트 (근거: 07-ca-key-rotation.md §6·§12.4·§13.2~§13.3)
+- [ ] Activate 뒤 retiring CA leaf proof를 허용해 current CA leaf로 즉시 renewal하고 기존 7일/24시간 overlap 뒤 retiring issuer CRL에 폐기하며, old `CURRENT/RETIRING` count가 0이 아니면 Complete를 거부하는 issuer-aware registration·renewal·delete·serial revoke transaction을 구현 (근거: 07-ca-key-rotation.md §4.3~§4.4·§6.3·§10·§12.3~§12.4)
+- [ ] Admin rotation status/Prepare/Cancel handler와 설정 UI의 phase·두 CA·30일 최소 시각·backup·old-leaf·peer readiness·마지막 결과를 구현하고 tray context menu에는 rotation 명령을 추가하지 않으며 암호·key·certificate 원문이 화면·로그·명령줄에 남지 않는지 검증 (근거: 07-ca-key-rotation.md §5·§7.1~§7.2·§11·§12.5)
+- [ ] 임의 경로·thumbprint·password 인수를 받지 않는 x64 `requireAdministrator` maintenance executable을 추가해 Activate의 service drain·Directory leaf staging·private-key ACL·HTTP.sys binding·slot role 전환과 Complete의 terminal CRL·retired archive·old key discard를 exact before-state rollback과 함께 구현하고 불완전 rollback에서는 서비스 중지·repair를 요구 (근거: 07-ca-key-rotation.md §4.2·§4.4·§7.3·§12.5·§13.5)
+- [ ] Peer TLS validator와 `pki-state`를 current+next/retiring CA·issuer별 CRL·TrustRevision·leaf issuer로 확장해 standby의 atomic public cache, revision/hash ACK, 두 Directory leaf 순차 전환, partition 차단과 rotation phase를 보존하는 dual-key backup 기반 승격을 구현 (근거: 07-ca-key-rotation.md §9·§12.6·§13.6)
+- [ ] installer fresh state·repair·upgrade·rollback·uninstall/purge와 installed-state/live-endpoint 도구를 dual-slot·rotation phase·issuer별 CRL·maintenance payload까지 확장하고 일반 제거 보존과 purge의 두 key·retired archive 완전 삭제, Windows PowerShell 5.1 parser 회귀를 추가 (근거: 07-ca-key-rotation.md §7.3·§8·§12.7·§13.5)
+- [ ] `STABLE -> PUBLISHED -> ACTIVATED -> STABLE` 전체 상태·30일 경계·730/400일 경고·overflow, trust rollback, 두 CRL, process termination, old key zeroization, UI·maintenance, Peer·Standby 조합의 자동 테스트를 추가하고 기존 전체 테스트와 설치 회귀를 함께 통과 (근거: 07-ca-key-rotation.md §13)
+- [ ] 지원 Windows Server·Milestone 교집합의 active/standby 두 장비와 외부 시험 앱에서 TOFU, dual-pin 배포, next pin 누락 fail-closed, Directory leaf 전환, retiring service leaf renewal, Peer sync·승격, Complete·terminal CRL·old key 폐기, repair·일반 제거·purge 증거를 수집해 최초 릴리스 완료 조건을 판정 (근거: 07-ca-key-rotation.md §12.8·§13.6·§14, 06-release-validation.md §6)

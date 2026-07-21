@@ -25,7 +25,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         GetCaStatus = 14,
         CreateCaBackup = 15,
         GetCertificates = 16,
-        RevokeCertificate = 17
+        RevokeCertificate = 17,
+        GetCaRotation = 18,
+        PrepareCaRotation = 19,
+        CancelCaRotation = 20
     }
 
     internal sealed class AdminRequestAdmissionResult
@@ -279,6 +282,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 || operation == AdminHttpOperation.GetSyncStatus
                 || operation == AdminHttpOperation.GetLoggingSettings
                 || operation == AdminHttpOperation.GetCaStatus
+                || operation == AdminHttpOperation.GetCaRotation
                 || operation == AdminHttpOperation.GetCertificates;
         }
 

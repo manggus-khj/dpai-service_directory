@@ -174,6 +174,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                         .GetSubjectPublicKeyInfoSha256();
                     return CertificateLedgerEntry.CreateIssued(
                         serialNumber,
+                        current.State.CaSerialNumber,
                         definition,
                         evidence.RequestId,
                         evidence.IssuanceKind,

@@ -2,13 +2,13 @@
 
 ```text
 최초 작성일: 2026-07-20
-최종 변경일: 2026-07-21
-revision: 27
+최종 변경일: 2026-07-22
+revision: 28
 ```
 
 ## 1. 목적과 범위
 
-이 문서는 [인증서 전환 변경계획](./02-certificate-transition.md#8-구현-단계와-종료-조건)과 [전체 개발 단계](./03-development.md#11-개발-단계)를 실제 개발 순서로 나눈 실행계획이다. 저장 형식은 [최초 정식 저장 schema v1](./03-development-01-storage-schema.md), API 필드·오류·인증 절차는 [외부 API](./04-api-01-external-application.md)와 [내부 API](./04-api-02-internal.md)를 단일 원본으로 사용한다.
+이 문서는 [인증서 전환 변경계획](./02-certificate-transition.md#8-구현-단계와-종료-조건)의 단일 CA 기준선을 실제 개발 순서로 나눈 선행 실행계획이다. 이 계획에서 후속으로 두었던 CA key rotation·dual-pin은 최초 릴리스 필수로 변경됐으며, 이후 구현 순서는 [CA key rotation 구현계획](./07-ca-key-rotation.md)이 소유한다. 저장 형식은 [최초 정식 저장 schema v1](./03-development-01-storage-schema.md), API 필드·오류·인증 절차는 [외부 API](./04-api-01-external-application.md)와 [내부 API](./04-api-02-internal.md)를 단일 원본으로 사용한다.
 
 다음 개발의 목표는 기존 `HTTP + pending 승인` 기준선을 `HTTPS + 등록 모드 + CSR 즉시 발급` runtime으로 완전히 전환하는 것이다. 저장·Admin 등록 모드·HTTPS 설치/리스너, 공개 PKI·즉시 등록·renewal 발급과 삭제·재등록 원자 폐기·commit 이후 시스템 이벤트 전환 뒤 남은 Peer trust 경계를 연결하며, HTTP 호환 endpoint·redirect·fallback을 다시 추가하지 않는다.
 
@@ -38,7 +38,7 @@ revision: 27
 
 ### 3.2 전환 원칙
 
-- CA key rotation·dual-pin 배포는 이번 실행계획에서 제외한다. 기존 CA backup 복원은 rotation으로 사용하지 않는다.
+- 이 문서의 단일 CA 구현 순서에는 CA key rotation·dual-pin을 포함하지 않았으나 최초 릴리스 전체 범위에서는 제외하지 않는다. [전용 계획](./07-ca-key-rotation.md)을 이어서 구현하며 기존 CA backup 복원은 rotation으로 사용하지 않는다.
 - API version 경로·필드, 임시 호환 endpoint, HTTP redirect와 인증서 검증 우회를 추가하지 않는다.
 - 등록 모드는 process-local이며 재시작 시 항상 `CLOSED`다. ProductCode와 등록 모드 상태를 설치 입력이나 `config.xml`에 저장하지 않는다.
 - Directory identity는 로컬 Management Server hostname/FQDN 한 개와 선택한 IPv4 `ListenAddress` 한 개다. 등록 서비스 identity와 서로 복사하지 않는다.
@@ -118,7 +118,7 @@ revision: 27
 - Peer endpoint·outbound transport를 HTTPS IPv4로 바꾸고 TLS 검증을 기존 ECDH·SAS·HMAC보다 먼저 수행한다.
 - `pki-state`에서 CRL high-water와 ProductCode별 current serial을 검증해 standby 전용 `pki/peer-cache.xml`과 CRL에 원자 저장한다. full ledger·CA private key와 process-local 등록 모드는 동기화하지 않는다.
 - standby 구성은 인증된 동일-site backup으로 Directory leaf와 공개 cache를 만들되 full ledger·CA key primary를 남기지 않는다. 승격은 중지된 repair에서 관찰 high-water 이상인 backup을 복원하고 issuer identity·role·`PkiRevision`을 원자 전환하는 명시적 절차로만 허용한다.
-- 이번 범위는 동일 site CA와 single active issuer·명시적 승격까지다. CA key rotation·dual-pin endpoint/UI는 별도 후속 계획으로 남긴다.
+- 이 선행 범위는 동일 site CA와 single active issuer·명시적 승격까지 완료한다. CA key rotation·dual-pin endpoint/UI·저장·maintenance는 [전용 계획](./07-ca-key-rotation.md)의 다음 필수 단계다.
 
 구현 상태: 재등록·삭제 폐기, commit 이후 이벤트·sync, Peer pinned TLS·session PKI state, standby 공개 cache와 backup 기반 승격을 구현하고 2026-07-21 양 구성 자동 테스트에서 검증했다. 실제 두 장비 동기화·승격·장애 복구 실행 검증은 남아 있다.
 
@@ -145,5 +145,5 @@ revision: 27
 - 실제 빌드 성공만으로 HTTPS·DPAPI·ACL·SCM·Milestone 상호운용을 완료로 표시하지 않는다.
 - 실제 설치 증거 수집과 실행 순서는 [현장 검증 실행계획](./06-release-validation.md)을 따른다.
 - 설치 상태 정적 증적 뒤에는 live endpoint 도구로 실제 IPv4·hostname TLS 1.2+와 공개 CA·CRL·health를 확인하되 이 결과를 외부 앱 TOFU/pin 영속화나 등록·갱신·폐기 완료로 확대 해석하지 않는다.
-- CA rotation, 인증 전 Peer endpoint-only 수치 제한, release·revoke 별도 제한은 상세 계약이 확정되기 전 임의 구현하지 않는다.
+- CA rotation은 [전용 계획](./07-ca-key-rotation.md)의 단계 0에서 API·XSD·저장 계약을 먼저 확정한 뒤 구현한다. 인증 전 Peer endpoint-only 수치 제한과 release·revoke 별도 제한은 상세 계약이 확정되기 전 임의 구현하지 않는다.
 - 다음 구현 착수는 [todo-01.md](./todo-01.md)의 이 계획 항목을 위에서부터 수행한다.

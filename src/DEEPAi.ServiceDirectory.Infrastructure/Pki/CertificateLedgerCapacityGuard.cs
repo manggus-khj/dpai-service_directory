@@ -22,6 +22,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             IEnumerable<CertificateLedgerEntry> projectedExistingEntries,
             ulong projectedPkiRevision,
             ulong projectedCrlNumber,
+            CertificateSerialNumber issuerCaSerialNumber,
             CertificateIssuanceRequestEvidence evidence,
             byte[] subjectPublicKeyInfoSha256,
             DateTime issuedUtc,
@@ -47,6 +48,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 projectedExistingEntries,
                 projectedPkiRevision,
                 projectedCrlNumber,
+                issuerCaSerialNumber,
                 evidence,
                 subjectPublicKeyInfoSha256,
                 issuedUtc,
@@ -62,6 +64,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             IEnumerable<CertificateLedgerEntry> projectedExistingEntries,
             ulong projectedPkiRevision,
             ulong projectedCrlNumber,
+            CertificateSerialNumber issuerCaSerialNumber,
             CertificateIssuanceRequestEvidence evidence,
             byte[] subjectPublicKeyInfoSha256,
             DateTime issuedUtc,
@@ -92,6 +95,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             {
                 entries.Add(CertificateLedgerEntry.CreateIssued(
                     projectionSerial,
+                    issuerCaSerialNumber,
                     evidence.ServiceDefinition,
                     evidence.RequestId,
                     evidence.IssuanceKind,

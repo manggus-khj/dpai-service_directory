@@ -14,7 +14,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         PeerPkiCache = 5,
         CertificateRevocationList = 6,
         CaCertificate = 7,
-        CaPrivateKey = 8
+        CaPrivateKey = 8,
+        CertificateRevocationListB = 9,
+        CaCertificateB = 10,
+        CaPrivateKeyB = 11,
+        RetiredAuthorities = 12
     }
 
     internal sealed class StateFileTargetDescriptor
@@ -108,28 +112,60 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
                         "peer-pki.backup.discard.bin"),
                     new StateFileTargetDescriptor(
                         StateFileTarget.CertificateRevocationList,
-                        "CertificateRevocationList",
-                        @"pki\crl.der",
-                        "crl.before.bin",
-                        "crl.after.bin",
-                        "crl.primary.discard.bin",
-                        "crl.backup.discard.bin"),
+                        "CertificateRevocationListA",
+                        @"pki\crl-a.der",
+                        "crl-a.before.bin",
+                        "crl-a.after.bin",
+                        "crl-a.primary.discard.bin",
+                        "crl-a.backup.discard.bin"),
                     new StateFileTargetDescriptor(
                         StateFileTarget.CaCertificate,
-                        "CaCertificate",
-                        @"pki\ca.der",
-                        "ca-certificate.before.bin",
-                        "ca-certificate.after.bin",
-                        "ca-certificate.primary.discard.bin",
-                        "ca-certificate.backup.discard.bin"),
+                        "CaCertificateA",
+                        @"pki\ca-a.der",
+                        "ca-a.before.bin",
+                        "ca-a.after.bin",
+                        "ca-a.primary.discard.bin",
+                        "ca-a.backup.discard.bin"),
                     new StateFileTargetDescriptor(
                         StateFileTarget.CaPrivateKey,
-                        "CaPrivateKey",
-                        @"secrets\ca.key",
-                        "ca-key.before.bin",
-                        "ca-key.after.bin",
-                        "ca-key.primary.discard.bin",
-                        "ca-key.backup.discard.bin")
+                        "CaPrivateKeyA",
+                        @"secrets\ca-a.key",
+                        "ca-a-key.before.bin",
+                        "ca-a-key.after.bin",
+                        "ca-a-key.primary.discard.bin",
+                        "ca-a-key.backup.discard.bin"),
+                    new StateFileTargetDescriptor(
+                        StateFileTarget.CertificateRevocationListB,
+                        "CertificateRevocationListB",
+                        @"pki\crl-b.der",
+                        "crl-b.before.bin",
+                        "crl-b.after.bin",
+                        "crl-b.primary.discard.bin",
+                        "crl-b.backup.discard.bin"),
+                    new StateFileTargetDescriptor(
+                        StateFileTarget.CaCertificateB,
+                        "CaCertificateB",
+                        @"pki\ca-b.der",
+                        "ca-b.before.bin",
+                        "ca-b.after.bin",
+                        "ca-b.primary.discard.bin",
+                        "ca-b.backup.discard.bin"),
+                    new StateFileTargetDescriptor(
+                        StateFileTarget.CaPrivateKeyB,
+                        "CaPrivateKeyB",
+                        @"secrets\ca-b.key",
+                        "ca-b-key.before.bin",
+                        "ca-b-key.after.bin",
+                        "ca-b-key.primary.discard.bin",
+                        "ca-b-key.backup.discard.bin"),
+                    new StateFileTargetDescriptor(
+                        StateFileTarget.RetiredAuthorities,
+                        "RetiredAuthorities",
+                        @"pki\retired-authorities.xml",
+                        "retired-authorities.before.bin",
+                        "retired-authorities.after.bin",
+                        "retired-authorities.primary.discard.bin",
+                        "retired-authorities.backup.discard.bin")
                 });
 
         internal static IReadOnlyList<StateFileTargetDescriptor> All => Descriptors;
@@ -150,7 +186,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Persistence
         internal static bool IsSecret(StateFileTarget target)
         {
             return target == StateFileTarget.PeerSecret
-                || target == StateFileTarget.CaPrivateKey;
+                || target == StateFileTarget.CaPrivateKey
+                || target == StateFileTarget.CaPrivateKeyB;
         }
 
         internal static bool TryParseJournalName(

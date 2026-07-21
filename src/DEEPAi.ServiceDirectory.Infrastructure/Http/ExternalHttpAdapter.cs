@@ -549,6 +549,17 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 return ExternalHttpEndpoint.CertificateRevocationList;
             }
 
+            string ignoredCaSerialNumber;
+            if (StringComparer.Ordinal.Equals(
+                    method,
+                    CertificateRevocationListMethod)
+                && ExternalApiContract.TryParseIssuerCrlPath(
+                    absolutePath,
+                    out ignoredCaSerialNumber))
+            {
+                return ExternalHttpEndpoint.CertificateRevocationList;
+            }
+
             return ExternalHttpEndpoint.Undefined;
         }
 
@@ -707,10 +718,22 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 return _administration.GetExternalTrustInfo();
             }
 
+            public ExternalTrustSnapshot GetTrustSnapshot()
+            {
+                return _administration.GetExternalTrustSnapshot();
+            }
+
             public byte[] GetCertificateRevocationList()
             {
                 return _administration
                     .GetExternalCertificateRevocationList();
+            }
+
+            public byte[] GetCertificateRevocationList(
+                string caSerialNumber)
+            {
+                return _administration
+                    .GetExternalCertificateRevocationList(caSerialNumber);
             }
 
             public ExternalRegistrationServiceResult Register(

@@ -41,25 +41,57 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                         ? "ACTIVE_ISSUER"
                         : "STANDBY"),
                 new XElement(
-                    "CaSerialNumber",
-                    state.CaSerialNumber.Hex),
+                    "RotationPhase",
+                    FormatRotationPhase(state.RotationPhase)),
                 new XElement(
-                    "CaSpkiSha256",
-                    Convert.ToBase64String(state.GetCaSpkiSha256())),
-                new XElement(
-                    "NotBeforeUtc",
-                    FormatUtc(state.NotBeforeUtc)),
-                new XElement(
-                    "NotAfterUtc",
-                    FormatUtc(state.NotAfterUtc)),
+                    "TrustRevision",
+                    state.TrustRevision.ToString(
+                        CultureInfo.InvariantCulture)),
                 new XElement(
                     "PkiRevision",
                     state.PkiRevision.ToString(CultureInfo.InvariantCulture)),
                 new XElement(
-                    "CrlNumber",
-                    state.CrlNumber.ToString(CultureInfo.InvariantCulture)));
+                    "CurrentSlot",
+                    FormatSlot(state.CurrentSlot)));
+            if (state.RotationPhase
+                != CertificateAuthorityRotationPhase.Stable)
+            {
+                root.Add(new XElement(
+                    "RotationId",
+                    FormatGuid(state.RotationId.Value)));
+                root.Add(new XElement(
+                    "PublishedUtc",
+                    FormatUtc(state.PublishedUtc.Value)));
+                root.Add(new XElement(
+                    "ActivationNotBeforeUtc",
+                    FormatUtc(state.ActivationNotBeforeUtc.Value)));
+            }
+
+            if (state.RotationPhase
+                == CertificateAuthorityRotationPhase.Activated)
+            {
+                root.Add(new XElement(
+                    "ActivatedUtc",
+                    FormatUtc(state.ActivatedUtc.Value)));
+                root.Add(new XElement(
+                    "RetirementNotBeforeUtc",
+                    FormatUtc(state.RetirementNotBeforeUtc.Value)));
+            }
+
+            foreach (CertificateAuthorityLiveState authority in
+                new[] { state.CurrentAuthority, state.OtherAuthority }
+                    .Where(value => value != null)
+                    .OrderBy(value => value.Slot))
+            {
+                root.Add(SerializeAuthority(authority));
+            }
+
             if (state.LastBackupUtc.HasValue)
             {
+                root.Add(new XElement(
+                    "LastBackupTrustRevision",
+                    state.LastBackupTrustRevision.Value.ToString(
+                        CultureInfo.InvariantCulture)));
                 root.Add(new XElement(
                     "LastBackupUtc",
                     FormatUtc(state.LastBackupUtc.Value)));
@@ -73,8 +105,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             XElement root = Parse(contents, "CertificateAuthorityState");
             RequireRootAttribute(root);
             XElement[] elements = root.Elements().ToArray();
-            int expectedCount = elements.Length == 10 ? 10 : 9;
-            if (elements.Length != expectedCount)
+            if (elements.Length < 8)
             {
                 throw Invalid("CA state contains an invalid element count.");
             }
@@ -84,21 +115,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 "SiteId",
                 "IssuerInstanceId",
                 "Role",
-                "CaSerialNumber",
-                "CaSpkiSha256",
-                "NotBeforeUtc",
-                "NotAfterUtc",
+                "RotationPhase",
+                "TrustRevision",
                 "PkiRevision",
-                "CrlNumber"
+                "CurrentSlot"
             };
             RequireOrderedNames(elements, requiredNames);
-            if (elements.Length == 10
-                && !IsCanonicalSimpleElement(
-                    elements[9],
-                    "LastBackupUtc"))
-            {
-                throw Invalid("CA state contains an unexpected element.");
-            }
 
             Guid siteId = ParseGuid(elements[0].Value, "SiteId");
             Guid issuerInstanceId = ParseGuid(
@@ -122,17 +144,109 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 throw Invalid("CA role is invalid.");
             }
 
-            CertificateSerialNumber caSerialNumber;
-            if (!CertificateSerialNumber.TryCreate(
-                    elements[3].Value,
-                    out caSerialNumber))
+            CertificateAuthorityRotationPhase phase =
+                ParseRotationPhase(elements[3].Value);
+            ulong trustRevision = ParsePositiveUInt64(
+                elements[4].Value,
+                "TrustRevision");
+            ulong pkiRevision = ParsePositiveUInt64(
+                elements[5].Value,
+                "PkiRevision");
+            CertificateAuthoritySlot currentSlot = ParseSlot(
+                elements[6].Value,
+                "CurrentSlot");
+            int index = 7;
+            Guid? rotationId = null;
+            DateTime? publishedUtc = null;
+            DateTime? activationNotBeforeUtc = null;
+            DateTime? activatedUtc = null;
+            DateTime? retirementNotBeforeUtc = null;
+            if (phase != CertificateAuthorityRotationPhase.Stable)
             {
-                throw Invalid("CA serial number is invalid.");
+                RequireElement(elements, index, "RotationId");
+                rotationId = ParseGuid(elements[index++].Value, "RotationId");
+                RequireElement(elements, index, "PublishedUtc");
+                publishedUtc = ParseUtc(
+                    elements[index++].Value,
+                    "PublishedUtc");
+                RequireElement(elements, index, "ActivationNotBeforeUtc");
+                activationNotBeforeUtc = ParseUtc(
+                    elements[index++].Value,
+                    "ActivationNotBeforeUtc");
             }
 
-            byte[] caSpkiSha256 = ParseSha256(
-                elements[4].Value,
-                "CaSpkiSha256");
+            if (phase == CertificateAuthorityRotationPhase.Activated)
+            {
+                RequireElement(elements, index, "ActivatedUtc");
+                activatedUtc = ParseUtc(
+                    elements[index++].Value,
+                    "ActivatedUtc");
+                RequireElement(elements, index, "RetirementNotBeforeUtc");
+                retirementNotBeforeUtc = ParseUtc(
+                    elements[index++].Value,
+                    "RetirementNotBeforeUtc");
+            }
+
+            int authorityCount = phase
+                    == CertificateAuthorityRotationPhase.Stable
+                ? 1
+                : 2;
+            var authorities = new List<CertificateAuthorityLiveState>(
+                authorityCount);
+            for (int authorityIndex = 0;
+                authorityIndex < authorityCount;
+                authorityIndex++)
+            {
+                if (index >= elements.Length
+                    || elements[index].Name.NamespaceName.Length != 0
+                    || elements[index].Name.LocalName != "Authority")
+                {
+                    throw Invalid("CA authority state is missing.");
+                }
+
+                authorities.Add(ParseAuthority(elements[index++]));
+            }
+
+            if (authorities.Count == 2
+                && authorities[0].Slot >= authorities[1].Slot)
+            {
+                throw Invalid("CA authority slots are not canonical.");
+            }
+
+            ulong? lastBackupTrustRevision = null;
+            DateTime? lastBackupUtc = null;
+            if (index < elements.Length)
+            {
+                RequireElement(elements, index, "LastBackupTrustRevision");
+                lastBackupTrustRevision = ParsePositiveUInt64(
+                    elements[index++].Value,
+                    "LastBackupTrustRevision");
+                RequireElement(elements, index, "LastBackupUtc");
+                lastBackupUtc = ParseUtc(
+                    elements[index++].Value,
+                    "LastBackupUtc");
+            }
+
+            if (index != elements.Length)
+            {
+                throw Invalid("CA state contains an unexpected element.");
+            }
+
+            CertificateAuthorityLiveState[] currentAuthorities = authorities
+                .Where(value =>
+                    value.Role == CertificateAuthorityLiveRole.Current)
+                .ToArray();
+            if (currentAuthorities.Length != 1)
+            {
+                throw Invalid(
+                    "CA state must contain exactly one current authority.");
+            }
+
+            CertificateAuthorityLiveState currentAuthority =
+                currentAuthorities[0];
+            CertificateAuthorityLiveState otherAuthority = authorities
+                .FirstOrDefault(value =>
+                    value.Role != CertificateAuthorityLiveRole.Current);
             CertificateAuthorityState state;
             try
             {
@@ -140,25 +254,23 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     siteId,
                     issuerInstanceId,
                     role,
-                    caSerialNumber,
-                    caSpkiSha256,
-                    ParseUtc(elements[5].Value, "NotBeforeUtc"),
-                    ParseUtc(elements[6].Value, "NotAfterUtc"),
-                    ParsePositiveUInt64(elements[7].Value, "PkiRevision"),
-                    ParsePositiveUInt64(elements[8].Value, "CrlNumber"),
-                    elements.Length == 10
-                        ? (DateTime?)ParseUtc(
-                            elements[9].Value,
-                            "LastBackupUtc")
-                        : null);
+                    phase,
+                    trustRevision,
+                    pkiRevision,
+                    currentSlot,
+                    rotationId,
+                    publishedUtc,
+                    activationNotBeforeUtc,
+                    activatedUtc,
+                    retirementNotBeforeUtc,
+                    currentAuthority,
+                    otherAuthority,
+                    lastBackupTrustRevision,
+                    lastBackupUtc);
             }
             catch (ArgumentException exception)
             {
                 throw Invalid("CA state is inconsistent.", exception);
-            }
-            finally
-            {
-                Array.Clear(caSpkiSha256, 0, caSpkiSha256.Length);
             }
 
             RequireCanonicalDocument(
@@ -166,6 +278,89 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 SerializeState(state),
                 "pki/state.xml");
             return state;
+        }
+
+        private static XElement SerializeAuthority(
+            CertificateAuthorityLiveState authority)
+        {
+            return new XElement(
+                "Authority",
+                new XAttribute("Slot", FormatSlot(authority.Slot)),
+                new XElement("Role", FormatLiveRole(authority.Role)),
+                new XElement(
+                    "CaSerialNumber",
+                    authority.CaSerialNumber.Hex),
+                new XElement(
+                    "CaSpkiSha256",
+                    Convert.ToBase64String(authority.GetCaSpkiSha256())),
+                new XElement(
+                    "NotBeforeUtc",
+                    FormatUtc(authority.NotBeforeUtc)),
+                new XElement(
+                    "NotAfterUtc",
+                    FormatUtc(authority.NotAfterUtc)),
+                new XElement(
+                    "CrlNumber",
+                    authority.CrlNumber.ToString(
+                        CultureInfo.InvariantCulture)));
+        }
+
+        private static CertificateAuthorityLiveState ParseAuthority(
+            XElement element)
+        {
+            XAttribute[] attributes = element.Attributes().ToArray();
+            if (attributes.Length != 1
+                || attributes[0].Name.NamespaceName.Length != 0
+                || attributes[0].Name.LocalName != "Slot")
+            {
+                throw Invalid("CA authority slot is invalid.");
+            }
+
+            XElement[] values = element.Elements().ToArray();
+            RequireOrderedNames(
+                values,
+                new[]
+                {
+                    "Role",
+                    "CaSerialNumber",
+                    "CaSpkiSha256",
+                    "NotBeforeUtc",
+                    "NotAfterUtc",
+                    "CrlNumber"
+                });
+            if (values.Length != 6)
+            {
+                throw Invalid("CA authority shape is invalid.");
+            }
+
+            CertificateSerialNumber serial;
+            if (!CertificateSerialNumber.TryCreate(
+                    values[1].Value,
+                    out serial))
+            {
+                throw Invalid("CA serial number is invalid.");
+            }
+
+            byte[] spki = ParseSha256(values[2].Value, "CaSpkiSha256");
+            try
+            {
+                return new CertificateAuthorityLiveState(
+                    ParseSlot(attributes[0].Value, "Authority Slot"),
+                    ParseLiveRole(values[0].Value),
+                    serial,
+                    spki,
+                    ParseUtc(values[3].Value, "NotBeforeUtc"),
+                    ParseUtc(values[4].Value, "NotAfterUtc"),
+                    ParsePositiveUInt64(values[5].Value, "CrlNumber"));
+            }
+            catch (ArgumentException exception)
+            {
+                throw Invalid("CA authority state is inconsistent.", exception);
+            }
+            finally
+            {
+                Array.Clear(spki, 0, spki.Length);
+            }
         }
 
         internal byte[] SerializeLedger(CertificateLedgerSnapshot snapshot)
@@ -181,10 +376,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 new XAttribute(
                     "PkiRevision",
                     snapshot.PkiRevision.ToString(
-                        CultureInfo.InvariantCulture)),
-                new XAttribute(
-                    "CrlNumber",
-                    snapshot.CrlNumber.ToString(
                         CultureInfo.InvariantCulture)));
             foreach (CertificateLedgerEntry entry in snapshot
                 .EntriesBySerial
@@ -194,6 +385,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 var element = new XElement(
                     "Certificate",
                     new XElement("SerialNumber", entry.SerialNumber.Hex),
+                    new XElement(
+                        "IssuerCaSerialNumber",
+                        entry.IssuerCaSerialNumber.Hex),
                     new XElement("ProductCode", entry.ProductCode.Value),
                     new XElement(
                         "IssuanceRequestId",
@@ -285,20 +479,25 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             }
         }
 
-        internal CertificateLedgerSnapshot DeserializeLedger(byte[] contents)
+        internal CertificateLedgerSnapshot DeserializeLedger(
+            byte[] contents,
+            ulong crlNumber)
         {
+            if (crlNumber == 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(crlNumber));
+            }
+
             XElement root = Parse(contents, "CertificateLedger");
             XAttribute[] attributes = root.Attributes().ToArray();
-            if (attributes.Length != 3
+            if (attributes.Length != 2
                 || attributes[0].Name.LocalName != "SchemaVersion"
                 || attributes[0].Name.NamespaceName.Length != 0
                 || !StringComparer.Ordinal.Equals(
                     attributes[0].Value,
                     SchemaVersion)
                 || attributes[1].Name.LocalName != "PkiRevision"
-                || attributes[1].Name.NamespaceName.Length != 0
-                || attributes[2].Name.LocalName != "CrlNumber"
-                || attributes[2].Name.NamespaceName.Length != 0)
+                || attributes[1].Name.NamespaceName.Length != 0)
             {
                 throw Invalid("Certificate ledger attributes are invalid.");
             }
@@ -306,9 +505,6 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             ulong pkiRevision = ParsePositiveUInt64(
                 attributes[1].Value,
                 "PkiRevision");
-            ulong crlNumber = ParsePositiveUInt64(
-                attributes[2].Value,
-                "CrlNumber");
             var entries = new List<CertificateLedgerEntry>();
             foreach (XElement element in root.Elements())
             {
@@ -348,7 +544,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             XElement element)
         {
             XElement[] values = element.Elements().ToArray();
-            if (values.Length < 16 || values.Length > 19)
+            if (values.Length < 17 || values.Length > 20)
             {
                 throw Invalid("Certificate ledger entry shape is invalid.");
             }
@@ -356,6 +552,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             string[] requiredNames =
             {
                 "SerialNumber",
+                "IssuerCaSerialNumber",
                 "ProductCode",
                 "IssuanceRequestId",
                 "IssuanceKind",
@@ -374,26 +571,31 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             };
             RequireOrderedNames(values, requiredNames);
             CertificateSerialNumber serialNumber;
+            CertificateSerialNumber issuerCaSerialNumber;
             ProductCode productCode;
             ServiceEndpointIdentity identity;
             EndpointIdentityValidationError identityError;
             if (!CertificateSerialNumber.TryCreate(
                     values[0].Value,
                     out serialNumber)
-                || !ProductCode.TryCreate(values[1].Value, out productCode)
-                || !StringComparer.Ordinal.Equals(
+                || !CertificateSerialNumber.TryCreate(
                     values[1].Value,
+                    out issuerCaSerialNumber)
+                || issuerCaSerialNumber == serialNumber
+                || !ProductCode.TryCreate(values[2].Value, out productCode)
+                || !StringComparer.Ordinal.Equals(
+                    values[2].Value,
                     productCode.Value)
                 || !ServiceEndpointIdentity.TryCreate(
-                    values[5].Value,
                     values[6].Value,
+                    values[7].Value,
                     out identity,
                     out identityError)
                 || !StringComparer.Ordinal.Equals(
-                    values[5].Value,
+                    values[6].Value,
                     identity.ServiceHostName)
                 || !StringComparer.Ordinal.Equals(
-                    values[6].Value,
+                    values[7].Value,
                     identity.ServiceIpv4Address))
             {
                 throw Invalid("Certificate ledger identity is invalid.");
@@ -402,14 +604,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             ServiceDefinition definition;
             ServiceDefinitionValidationError definitionError;
             if (!ServiceDefinition.TryCreate(
-                    values[4].Value,
+                    values[5].Value,
                     productCode.Value,
                     identity,
-                    ParsePort(values[7].Value),
+                    ParsePort(values[8].Value),
                     out definition,
                     out definitionError)
                 || !StringComparer.Ordinal.Equals(
-                    values[4].Value,
+                    values[5].Value,
                     definition.Name))
             {
                 throw Invalid(
@@ -418,7 +620,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     + ".");
             }
 
-            int index = 16;
+            int index = 17;
             DateTime? scheduled = null;
             DateTime? revoked = null;
             CertificateRevocationReason? reason = null;
@@ -459,26 +661,27 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
 
             byte[][] hashes =
             {
-                ParseSha256(values[8].Value, "CsrSha256"),
-                ParseSha256(values[9].Value, "RequestPayloadSha256"),
-                ParseSha256(values[10].Value, "SubjectPublicKeyInfoSha256")
+                ParseSha256(values[9].Value, "CsrSha256"),
+                ParseSha256(values[10].Value, "RequestPayloadSha256"),
+                ParseSha256(values[11].Value, "SubjectPublicKeyInfoSha256")
             };
-            byte[] leafCertificate = ParseLeafCertificate(values[11].Value);
+            byte[] leafCertificate = ParseLeafCertificate(values[12].Value);
             try
             {
                 return CertificateLedgerEntry.Restore(
                     serialNumber,
+                    issuerCaSerialNumber,
                     definition,
-                    ParseGuid(values[2].Value, "IssuanceRequestId"),
-                    ParseIssuanceKind(values[3].Value),
+                    ParseGuid(values[3].Value, "IssuanceRequestId"),
+                    ParseIssuanceKind(values[4].Value),
                     hashes[0],
                     hashes[1],
                     hashes[2],
                     leafCertificate,
-                    ParseUtc(values[12].Value, "IssuedUtc"),
-                    ParseUtc(values[13].Value, "NotBeforeUtc"),
-                    ParseUtc(values[14].Value, "NotAfterUtc"),
-                    ParseStatus(values[15].Value),
+                    ParseUtc(values[13].Value, "IssuedUtc"),
+                    ParseUtc(values[14].Value, "NotBeforeUtc"),
+                    ParseUtc(values[15].Value, "NotAfterUtc"),
+                    ParseStatus(values[16].Value),
                     scheduled,
                     revoked,
                     reason);
@@ -710,6 +913,114 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             if (!IsCanonicalSimpleElement(element, expectedName))
             {
                 throw Invalid("PKI XML optional element is invalid.");
+            }
+        }
+
+        private static void RequireElement(
+            XElement[] elements,
+            int index,
+            string expectedName)
+        {
+            if (index < 0
+                || index >= elements.Length
+                || !IsCanonicalSimpleElement(
+                    elements[index],
+                    expectedName))
+            {
+                throw Invalid(
+                    "PKI XML element " + expectedName + " is missing.");
+            }
+        }
+
+        private static string FormatRotationPhase(
+            CertificateAuthorityRotationPhase value)
+        {
+            switch (value)
+            {
+                case CertificateAuthorityRotationPhase.Stable:
+                    return "STABLE";
+                case CertificateAuthorityRotationPhase.Published:
+                    return "PUBLISHED";
+                case CertificateAuthorityRotationPhase.Activated:
+                    return "ACTIVATED";
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(value));
+            }
+        }
+
+        private static CertificateAuthorityRotationPhase ParseRotationPhase(
+            string value)
+        {
+            switch (value)
+            {
+                case "STABLE":
+                    return CertificateAuthorityRotationPhase.Stable;
+                case "PUBLISHED":
+                    return CertificateAuthorityRotationPhase.Published;
+                case "ACTIVATED":
+                    return CertificateAuthorityRotationPhase.Activated;
+                default:
+                    throw Invalid("CA rotation phase is invalid.");
+            }
+        }
+
+        private static string FormatSlot(CertificateAuthoritySlot value)
+        {
+            switch (value)
+            {
+                case CertificateAuthoritySlot.A:
+                    return "A";
+                case CertificateAuthoritySlot.B:
+                    return "B";
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(value));
+            }
+        }
+
+        private static CertificateAuthoritySlot ParseSlot(
+            string value,
+            string fieldName)
+        {
+            switch (value)
+            {
+                case "A":
+                    return CertificateAuthoritySlot.A;
+                case "B":
+                    return CertificateAuthoritySlot.B;
+                default:
+                    throw Invalid(fieldName + " is invalid.");
+            }
+        }
+
+        private static string FormatLiveRole(
+            CertificateAuthorityLiveRole value)
+        {
+            switch (value)
+            {
+                case CertificateAuthorityLiveRole.Current:
+                    return "CURRENT";
+                case CertificateAuthorityLiveRole.Next:
+                    return "NEXT";
+                case CertificateAuthorityLiveRole.Retiring:
+                    return "RETIRING";
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(value));
+            }
+        }
+
+        private static CertificateAuthorityLiveRole ParseLiveRole(
+            string value)
+        {
+            switch (value)
+            {
+                case "CURRENT":
+                    return CertificateAuthorityLiveRole.Current;
+                case "NEXT":
+                    return CertificateAuthorityLiveRole.Next;
+                case "RETIRING":
+                    return CertificateAuthorityLiveRole.Retiring;
+                default:
+                    throw Invalid("CA authority role is invalid.");
             }
         }
 

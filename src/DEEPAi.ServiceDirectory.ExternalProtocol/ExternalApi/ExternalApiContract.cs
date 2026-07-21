@@ -12,6 +12,7 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
         public const string CrlContentType = "application/pkix-crl";
         public const string CaPath = "/pki/ca";
         public const string CrlPath = "/pki/crl";
+        public const string IssuerCrlPathPrefix = "/pki/crl/";
         public const int MaximumBodyBytes = 16 * 1024;
         public const int MaximumCertificateRequestBodyBytes = 64 * 1024;
         public const int MaximumCaResponseBytes = 32 * 1024;
@@ -27,6 +28,45 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
         public const int MaximumQueryFieldCount = 16;
         public const int MaximumXmlDepth = 16;
         public const int MaximumMessageCharacters = 512;
+
+        public static bool IsIssuerCrlPath(
+            string value,
+            string caSerialNumber)
+        {
+            return !string.IsNullOrEmpty(caSerialNumber)
+                && StringComparer.Ordinal.Equals(
+                    value,
+                    IssuerCrlPathPrefix + caSerialNumber);
+        }
+
+        public static bool TryParseIssuerCrlPath(
+            string value,
+            out string caSerialNumber)
+        {
+            caSerialNumber = null;
+            if (string.IsNullOrEmpty(value)
+                || !value.StartsWith(
+                    IssuerCrlPathPrefix,
+                    StringComparison.Ordinal)
+                || value.Length != IssuerCrlPathPrefix.Length + 32)
+            {
+                return false;
+            }
+
+            string candidate = value.Substring(IssuerCrlPathPrefix.Length);
+            for (int index = 0; index < candidate.Length; index++)
+            {
+                char character = candidate[index];
+                if (!((character >= '0' && character <= '9')
+                    || (character >= 'A' && character <= 'F')))
+                {
+                    return false;
+                }
+            }
+
+            caSerialNumber = candidate;
+            return true;
+        }
     }
 
     public sealed class ExternalProtocolException : Exception

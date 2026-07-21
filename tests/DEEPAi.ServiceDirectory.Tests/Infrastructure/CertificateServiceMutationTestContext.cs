@@ -216,7 +216,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     injector,
                     serviceFaultInjector);
                 store.Provision(instanceId, TestData.Utc(0));
-                if (!store.MarkBackupCompleted(1, 1, TestData.Utc(1)))
+                if (!store.MarkBackupCompleted(1, 1, 1, TestData.Utc(1)))
                 {
                     store.Dispose();
                     throw new InvalidOperationException(
@@ -430,7 +430,8 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             CertificateLedgerSnapshot ledger = caCodec.DeserializeLedger(
                 writer.Read(
                     StateFileTarget.CertificateLedger,
-                    CertificateAuthorityStateCodec.MaximumDocumentBytes));
+                    CertificateAuthorityStateCodec.MaximumDocumentBytes),
+                state.CrlNumber);
             byte[] caCertificate = null;
             byte[] crl = null;
             byte[] protectedKey = null;

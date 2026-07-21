@@ -214,6 +214,77 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             }
         }
 
+        public AdminHandlerResult<AdminServerCaRotationResponse>
+            GetCaRotation()
+        {
+            ThrowIfDisposed();
+            return ExecuteCaRotation(
+                owner => owner.GetRotationStatus(GetUtcNow()));
+        }
+
+        public AdminHandlerResult<AdminServerCaRotationResponse>
+            PrepareCaRotation()
+        {
+            ThrowIfDisposed();
+            return ExecuteCaRotation(
+                owner => owner.PrepareRotation(GetUtcNow()));
+        }
+
+        public AdminHandlerResult<AdminServerCaRotationResponse>
+            CancelCaRotation(AdminCancelCaRotationRequest request)
+        {
+            ThrowIfDisposed();
+            if (request == null)
+            {
+                return Failure<AdminServerCaRotationResponse>(
+                    AdminServerErrorCode.BadRequest);
+            }
+
+            return ExecuteCaRotation(owner => owner.CancelRotation(
+                request.RotationId,
+                GetUtcNow()));
+        }
+
+        private AdminHandlerResult<AdminServerCaRotationResponse>
+            ExecuteCaRotation(
+                Func<ICertificateAuthorityRotationAdministration,
+                    AdminServerCaRotationResponse> action)
+        {
+            var owner = _certificateAuthorityAdministration
+                as ICertificateAuthorityRotationAdministration;
+            if (owner == null)
+            {
+                return Failure<AdminServerCaRotationResponse>(
+                    AdminServerErrorCode.Conflict);
+            }
+
+            try
+            {
+                AdminServerCaRotationResponse response = action(owner);
+                return response == null
+                    ? Failure<AdminServerCaRotationResponse>(
+                        AdminServerErrorCode.Internal)
+                    : AdminHandlerResult<AdminServerCaRotationResponse>
+                        .Success(response);
+            }
+            catch (ArgumentException)
+            {
+                return Failure<AdminServerCaRotationResponse>(
+                    AdminServerErrorCode.BadRequest);
+            }
+            catch (InvalidOperationException)
+            {
+                return Failure<AdminServerCaRotationResponse>(
+                    AdminServerErrorCode.Conflict);
+            }
+            catch (Exception exception) when (IsPkiInfrastructureFailure(
+                exception))
+            {
+                return Failure<AdminServerCaRotationResponse>(
+                    AdminServerErrorCode.Internal);
+            }
+        }
+
         public AdminHandlerResult<AdminServerCertificateRevocationResponse>
             RevokeCertificate(
                 string serialNumber,
@@ -246,6 +317,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                     AdminServerCertificateRevocationResponse>.Success(
                         new AdminServerCertificateRevocationResponse(
                             result.SerialNumber,
+                            result.IssuerCaSerialNumber,
                             result.RevokedUtc,
                             MapRevocationReason(result.Reason),
                             result.PkiRevision,
@@ -283,6 +355,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             {
                 return new AdminServerCertificateItem(
                     entry.SerialNumber.Hex,
+                    entry.IssuerCaSerialNumber.Hex,
                     entry.ProductCode.Value,
                     entry.IssuanceKind == CertificateIssuanceKind.Registration
                         ? AdminCertificateIssuanceKind.Registration

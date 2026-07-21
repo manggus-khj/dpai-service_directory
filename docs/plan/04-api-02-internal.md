@@ -2,12 +2,12 @@
 
 ```text
 최초 작성일: 2026-07-17
-최종 변경일: 2026-07-21
-revision: 14
+최종 변경일: 2026-07-22
+revision: 17
 ```
 
-> 문서 상태: 인증서 기반 목표 내부 계약 확정
-> 구현 상태: CA 저장·backup·상태·full ledger 조회·serial 폐기, 목표 Admin registration-mode와 Peer DNS+IPv4·PKI high-water XSD·DTO·strict codec 테스트 소스를 반영했다. process-local 등록 모드 owner를 공용 mutation gate의 runtime composition에 연결하고 Admin 조회·열기·닫기 route와 `READY` active issuer gate를 구현했으며 pending Admin route·application handler·설정 UI를 제거했다. 즉시 등록·재등록 발급 완료 결과를 owner와 `LastRegistration`에 연결하고 renewal의 `CURRENT`→`RETIRING`→`REVOKED`·CRL high-water transaction을 구현했다. Admin 삭제는 tombstone과 같은 ProductCode의 모든 `CURRENT`·`RETIRING` 폐기·CRL·high-water를 한 transaction으로 commit한 뒤 삭제 이벤트와 sync를 예약한다. Peer remote transport는 request body 전송 전 동일 site CA SPKI pin·endpoint SAN·leaf profile·signed CRL을 검증하며, 일반 session HMAC `pki-state` route와 active issuer current mapping·standby metadata/cache/CRL 원자 저장을 연결했다. 중지된 installer repair에는 인증 backup 기반 standby 구성과 high-water·same-revision bytes를 확인하는 명시적 승격을 연결했고 standby runtime은 공개 CA·CRL·Peer cache만 읽으며 발급·폐기·backup·full ledger 요청을 거부한다. 실제 TLS·role 전환 실행 검증은 남아 있다
+> 문서 상태: CA key rotation·dual-pin을 포함한 최초 정식 내부 계약 확정
+> 구현 상태: 기존 CA 저장·backup·상태·full ledger 조회·serial 폐기와 등록·갱신·Peer 기준선에 더해 Admin rotation 상태·Prepare·Cancel DTO·strict codec·route와 설정 UI, dual-slot backup/active repair를 반영했다. `ACTIVATED`·Complete는 의도대로 Admin HTTP에 추가하지 않았으며 elevated maintenance 실행 파일, dual-CA Peer state·standby readiness와 실제 TLS·role 전환 실행 검증은 후속 구현 중이다.
 > 로컬 검증 상태: 2026-07-21 `Debug|x64`·`Release|x64` locked restore와 빌드가 경고·오류 없이 통과했고 자동 테스트 663개가 각 구성에서 모두 통과했다. 설치 ACL round-trip과 HTTPS binding rollback PowerShell 회귀도 통과했다. 실제 Windows 서비스·HTTP.sys TLS·DPAPI·두 장비 role 전환 실행 검증은 남아 있다.
 > 대상 독자: 메인 서비스, 트레이 앱, 와치독, 피어 동기화 구현 개발자
 
@@ -74,7 +74,7 @@ revision: 14
 
 ### 2.5 Site CA와 issuer 역할
 
-- active issuer의 기본 site CA private key PKCS#8은 DPAPI `LocalMachine`으로 보호해 `secrets\ca.key`에 저장하고 상속을 차단한 exact ACL로 메인 서비스 SID·`SYSTEM`·로컬 `Administrators`만 허용한다. standby에는 CA key primary를 두지 않고 구성 중 backup key는 Directory leaf 발급 뒤 메모리에서 지운다. `ca.key.bak`과 평문 key file을 금지하며, active issuer의 DPAPI 평문은 서명·backup 처리 중 메모리에서만 사용하고 byte buffer를 즉시 지운다. 로컬 관리자는 이 위협 모델의 신뢰된 복구 주체다.
+- active issuer의 site CA private key PKCS#8은 slot별 public entropy를 사용한 DPAPI `LocalMachine`으로 보호해 `secrets\ca-a.key` 또는 `secrets\ca-b.key`에 저장하고 상속을 차단한 exact ACL로 메인 서비스 SID·`SYSTEM`·로컬 `Administrators`만 허용한다. standby에는 CA key primary를 두지 않고 구성 중 backup key는 Directory leaf 발급 뒤 메모리에서 지운다. slot key의 `.bak`과 평문 key file을 금지하며, active issuer의 DPAPI 평문은 서명·backup 처리 중 메모리에서만 사용하고 byte buffer를 즉시 지운다. 로컬 관리자는 이 위협 모델의 신뢰된 복구 주체다.
 - 기본 site CA와 Directory leaf key는 RSA 3072다. CA·leaf·CRL은 SHA-256 with RSA PKCS#1 v1.5로 서명하고 CA는 `pathLen=0`·`keyCertSign`·`cRLSign`·SAN 없음 profile을 사용한다. 등록 서비스 CSR·leaf의 세부 profile은 [외부 명세 §9.1](./04-api-01-external-application.md#91-csr-생성)이 단일 원본이다.
 - CA backup은 운영자가 지정한 암호로 암호화하고 평문 export를 금지한다. 서비스는 임의 client 경로를 받지 않고 제한 ACL의 `%ProgramData%\DEEPAi\ServiceDirectory\backups\ca\`에 생성한다. API에는 내부 절대 경로·암호·key를 반환하지 않고 canonical 파일명과 SHA-256만 반환한다. 일반 uninstall은 보존하고 명시적 전체 삭제에서만 제거한다.
 - 같은 site의 Peer는 동일 CA trust anchor를 사용한다. 서로 다른 CA를 자동 병합하거나 pairing만으로 상대 CA를 무조건 신뢰하지 않는다.
@@ -530,6 +530,7 @@ active issuer의 full certificate ledger를 serial의 Ordinal 오름차순으로
   <Certificates>
     <Certificate>
       <SerialNumber>01A4B5C6D7E8F90123456789ABCDEF01</SerialNumber>
+      <IssuerCaSerialNumber>01A4B5C6D7E8F90123456789ABCDEE01</IssuerCaSerialNumber>
       <ProductCode>ABCD</ProductCode>
       <IssuanceKind>REGISTRATION</IssuanceKind>
       <ServiceHostName>vms-bridge.example.local</ServiceHostName>
@@ -546,7 +547,7 @@ active issuer의 full certificate ledger를 serial의 Ordinal 오름차순으로
 </Response>
 ```
 
-- `IssuanceKind`는 `REGISTRATION`, `RENEWAL`, `Status`는 `CURRENT`, `RETIRING`, `REVOKED`다.
+- `IssuerCaSerialNumber`는 leaf를 실제 서명한 CA serial이며 rotation 전후에도 바꾸지 않는다. `IssuanceKind`는 `REGISTRATION`, `RENEWAL`, `Status`는 `CURRENT`, `RETIRING`, `REVOKED`다.
 - `ScheduledRevocationUtc`는 `RETIRING` 또는 갱신 overlap을 거쳐 폐기된 항목에만, `RevokedUtc`·`RevocationReason`은 `REVOKED`에만 포함한다.
 - `RevocationReason`은 `KEY_COMPROMISE`, `CA_COMPROMISE`, `AFFILIATION_CHANGED`, `SUPERSEDED`, `CESSATION_OF_OPERATION`, `PRIVILEGE_WITHDRAWN`, `AA_COMPROMISE`다. `UNSPECIFIED`, `CERTIFICATE_HOLD`, `REMOVE_FROM_CRL`은 반환하거나 저장하지 않는다.
 - CSR·request payload·private key와 내부 저장 경로는 반환하지 않는다.
@@ -565,14 +566,81 @@ active issuer의 full certificate ledger를 serial의 Ordinal 오름차순으로
 - 현재 `CURRENT` 또는 `RETIRING` 항목만 폐기할 수 있다. 없는 serial은 `404 NOT_FOUND`, 이미 `REVOKED`이면 같은 reason의 exact retry만 현재 결과를 반환하고 다른 reason은 `409 CONFLICT`다.
 - active issuer와 `READY` 상태에서만 수행한다. ledger entry revoke, `PkiRevision+1`, `CrlNumber+1`과 새 signed DER CRL publish를 하나의 복구 transaction으로 commit한다. unsigned wrap, CA key·DPAPI·ACL·CRL 검증 또는 저장 실패에서는 부분 상태를 게시하지 않는다.
 - 명시적 serial 폐기는 service directory record를 자동 삭제하지 않는다. 폐기한 인증서가 해당 ProductCode의 `CURRENT`이면 `GET /admin/services`의 service record는 유지되고 `GET /admin/certificates`에서 해당 serial을 `REVOKED`로 반환한다. 운영자는 등록 모드를 통한 재등록 또는 서비스 삭제를 선택해야 한다.
-- 성공 응답은 폐기 serial, `RevokedUtc`, reason과 새 `PkiRevision`·`CrlNumber`를 반환한다.
+- 성공 응답은 폐기 serial, `IssuerCaSerialNumber`, `RevokedUtc`, reason과 새 `PkiRevision` 및 해당 issuer의 새 `CrlNumber`를 반환한다.
 
-### 4.16 CA 복원과 rotation 경계
+### 4.16 `GET /admin/ca/rotation`
+
+query와 body 없이 현재 회전 phase와 전이 readiness를 조회한다.
+
+```xml
+<Response xmlns="urn:deepai:service-directory:admin">
+  <Result>OK</Result>
+  <Code>0</Code>
+  <Message />
+  <CaRotation>
+    <Phase>PUBLISHED</Phase>
+    <TrustRevision>2</TrustRevision>
+    <RotationId>2b3fded9-fbe8-4d69-b201-746eb922f767</RotationId>
+    <PublishedUtc>2026-07-22T03:00:00Z</PublishedUtc>
+    <ActivationNotBeforeUtc>2026-08-21T03:00:00Z</ActivationNotBeforeUtc>
+    <CurrentAuthority>
+      <Role>CURRENT</Role>
+      <CaSerialNumber>01A4B5C6D7E8F90123456789ABCDEE01</CaSerialNumber>
+      <CaSpkiSha256>base64-sha256</CaSpkiSha256>
+      <NotBeforeUtc>2026-07-19T02:00:00Z</NotBeforeUtc>
+      <NotAfterUtc>2046-07-19T02:00:00Z</NotAfterUtc>
+      <CrlNumber>19</CrlNumber>
+    </CurrentAuthority>
+    <OtherAuthority>
+      <Role>NEXT</Role>
+      <CaSerialNumber>01A4B5C6D7E8F90123456789ABCDEE02</CaSerialNumber>
+      <CaSpkiSha256>base64-sha256</CaSpkiSha256>
+      <NotBeforeUtc>2026-07-22T03:00:00Z</NotBeforeUtc>
+      <NotAfterUtc>2046-07-22T03:00:00Z</NotAfterUtc>
+      <CrlNumber>1</CrlNumber>
+    </OtherAuthority>
+    <CurrentRevisionBackupReady>false</CurrentRevisionBackupReady>
+    <PeerReadiness>NOT_REQUIRED</PeerReadiness>
+    <DirectoryLeafReadiness>NOT_READY</DirectoryLeafReadiness>
+    <RetiringLeafCount>0</RetiringLeafCount>
+    <ActivationReady>false</ActivationReady>
+    <CompletionReady>false</CompletionReady>
+  </CaRotation>
+</Response>
+```
+
+- `Phase`는 `STABLE`, `PUBLISHED`, `ACTIVATED`다. `TrustRevision`은 양의 unsigned 64-bit high-water다.
+- `STABLE`은 rotation ID·시각·`OtherAuthority` 없이 `CURRENT` authority 하나만 반환한다. `PUBLISHED`는 ID, publish/activation-minimum 시각과 `NEXT`, `ACTIVATED`는 publish/activate/retirement-minimum 시각과 `RETIRING`을 반환한다.
+- `PeerReadiness`는 `READY`, `NOT_READY`, peer 관계가 전혀 없는 standalone의 `NOT_REQUIRED`다. peer 관계가 구성된 뒤에는 가짜 `NOT_REQUIRED`를 반환하지 않는다. `DirectoryLeafReadiness`는 `READY` 또는 `NOT_READY`만 사용한다.
+- `ActivationReady`·`CompletionReady`는 저장 상태가 아니라 조회 시점의 backup, 최소 시각, peer ACK, Directory leaf와 old leaf 조건을 모두 계산한 값이다.
+- `RetiringLeafCount`는 `ACTIVATED`가 아니면 0이며 retiring issuer의 `CURRENT`·`RETIRING` ledger 항목 수다.
+
+### 4.17 `POST /admin/ca/rotation/prepare`
+
+body는 exact empty root다.
+
+```xml
+<PrepareCaRotation xmlns="urn:deepai:service-directory:admin" />
+```
+
+active issuer의 `READY`·`STABLE`, 닫힌 등록 모드와 active journal 부재에서만 허용한다. 서버가 `RotationId`와 빈 slot의 새 RSA 3072 CA·CRL number 1을 생성하고 `TrustRevision+1`과 `PUBLISHED`를 한 transaction으로 commit한다. 성공은 §4.16의 `CaRotation` payload를 반환한다. phase 충돌·열린 등록 모드·revision overflow·archive/slot 한계는 `409 CONFLICT`, key 생성·DPAPI·저장 실패는 partial artifact를 게시하지 않고 `500 INTERNAL`이다.
+
+### 4.18 `POST /admin/ca/rotation/cancel`
+
+```xml
+<CancelCaRotation xmlns="urn:deepai:service-directory:admin">
+  <RotationId>2b3fded9-fbe8-4d69-b201-746eb922f767</RotationId>
+</CancelCaRotation>
+```
+
+현재 `PUBLISHED`의 exact non-empty rotation ID만 허용한다. `NEXT`가 leaf를 발급하지 않았음을 다시 검증하고 slot CA·CRL·DPAPI key primary와 backup/discard를 원자 폐기한 뒤 `STABLE`로 commit한다. stale ID, 다른 phase와 발급 흔적은 `409 CONFLICT`다. 성공은 §4.16의 새 `STABLE` payload를 반환한다. Activate와 Complete는 HTTP endpoint가 아니라 관리자 권한의 고정 maintenance executable만 수행한다.
+
+### 4.19 CA 복원과 rotation 경계
 
 - CA restore Admin endpoint는 없다. installer repair만 메인·와치독 서비스를 중지하고 operator가 선택한 `.dpca`와 암호를 maintenance process의 표준 입력으로 전달한다. 암호를 installer parameter·process command line·환경 변수·setup log·임시 파일에 넣지 않는다.
 - repair는 container MAC, CA profile·private key 일치, SiteId, issuer identity, full ledger, CRL signature와 backup 내부 `PkiRevision`·`CrlNumber` 일관성을 모두 검증한다. 설치 state가 정상 판독되면 현재 high-water보다 낮은 backup을 거부한다. 설치 state가 손상되어 판독할 수 없으면 operator가 명시적으로 선택한 인증된 backup을 복구 기준으로 사용하되, 읽을 수 있는 모든 기존 target bytes를 journal before image로 먼저 고정한다. 그 뒤 CA key·certificate·metadata·ledger·CRL을 한 recovery journal transaction으로 복원한다. restore transaction 자체가 실패하면 journal rollback으로 기존 bytes를 보존하고 서비스를 중지 상태로 둔다. restore commit 뒤 별도 서비스 재기동이 실패한 경우에는 인증이 끝난 복원 상태를 다시 이전 손상 상태로 되돌리지 않고 서비스를 중지 상태로 유지해 운영자가 원인을 확인하게 한다.
 - standby 승격은 같은 중지 repair 경계에서만 허용한다. 선택 backup의 full ledger·CRL high-water가 standby의 내구 Peer cache에서 마지막으로 관찰한 값 이상이어야 하며, 복원 뒤 local `InstanceId`를 새 issuer로 지정하고 `PkiRevision`을 정확히 1 증가시켜 metadata·ledger에 기록하면서 Peer cache를 같은 transaction에서 제거한다. 최신성을 증명하지 못하거나 revision이 최댓값이면 승격하지 않는다.
-- CA key rotation·dual-pin 배포와 관련 Admin endpoint는 이번 릴리스 범위가 아니다. restore는 backup에 있던 같은 CA state를 복구하는 작업이며 새 CA 생성이나 rotation으로 사용하지 않는다.
+- CA key rotation·dual-pin은 최초 릴리스 필수이며 Admin status/prepare/cancel wire 계약은 §4.16~§4.18과 `admin.xsd`가 소유한다. elevated maintenance Activate/Complete와 Peer dual-CA 상태는 [rotation 구현계획](./07-ca-key-rotation.md)을 따른다. restore는 backup에 있던 같은 phase·CA state를 복구하는 작업이며 새 CA 생성이나 rotation 시작으로 사용하지 않는다. 고객 CA mode는 추가하지 않는다.
 
 ## 5. 피어 동기화 데이터
 

@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using DEEPAi.ServiceDirectory.Domain.Certificates;
+using DEEPAi.ServiceDirectory.InternalProtocol.Admin;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
 {
@@ -150,6 +152,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
     {
         internal CertificateRevocationResult(
             string serialNumber,
+            string issuerCaSerialNumber,
             DateTime revokedUtc,
             CertificateRevocationReason reason,
             ulong pkiRevision,
@@ -157,6 +160,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             bool replayed)
         {
             SerialNumber = serialNumber;
+            IssuerCaSerialNumber = issuerCaSerialNumber;
             RevokedUtc = revokedUtc;
             Reason = reason;
             PkiRevision = pkiRevision;
@@ -165,6 +169,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
         }
 
         public string SerialNumber { get; }
+
+        public string IssuerCaSerialNumber { get; }
 
         public DateTime RevokedUtc { get; }
 
@@ -193,8 +199,20 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             DateTime revokedUtc);
     }
 
+    public interface ICertificateAuthorityRotationAdministration
+    {
+        AdminServerCaRotationResponse GetRotationStatus(DateTime utcNow);
+
+        AdminServerCaRotationResponse PrepareRotation(DateTime utcNow);
+
+        AdminServerCaRotationResponse CancelRotation(
+            Guid rotationId,
+            DateTime utcNow);
+    }
+
     internal sealed partial class CertificateAuthorityAdministration
         : ICertificateAuthorityAdministration,
+        ICertificateAuthorityRotationAdministration,
         IDisposable
     {
         private readonly CertificateAuthorityStore _store;
@@ -228,7 +246,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             {
                 CertificateAuthorityState state = snapshot.State;
                 return new CertificateAuthorityStatus(
-                    state.LastBackupUtc.HasValue
+                    state.IsCurrentRevisionBackedUp
                         ? CertificateAuthorityOperationalState.Ready
                         : CertificateAuthorityOperationalState.BackupRequired,
                     state.Role == CertificateAuthorityRole.ActiveIssuer
@@ -265,10 +283,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             }
 
             CaBackupCodec.ValidatePassword(password);
+            ulong trustRevision;
             ulong pkiRevision;
             ulong crlNumber;
             CaBackupPayload payload = _store.CaptureBackupPayload(
                 createdUtc,
+                out trustRevision,
                 out pkiRevision,
                 out crlNumber);
             byte[] encrypted = null;
@@ -282,6 +302,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     createdUtc,
                     encrypted);
                 if (!_store.MarkBackupCompleted(
+                        trustRevision,
                         pkiRevision,
                         crlNumber,
                         createdUtc))
@@ -367,11 +388,147 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
 
                 return new CertificateRevocationResult(
                     entry.SerialNumber.Hex,
+                    entry.IssuerCaSerialNumber.Hex,
                     entry.RevokedUtc.Value,
                     entry.RevocationReason.Value,
                     snapshot.State.PkiRevision,
                     snapshot.State.CrlNumber,
                     alreadyRevoked);
+            }
+        }
+
+        public AdminServerCaRotationResponse GetRotationStatus(
+            DateTime utcNow)
+        {
+            ThrowIfDisposed();
+            EnsureProvisioned();
+            EnsureUtc(utcNow, nameof(utcNow));
+            using (CertificateAuthorityStoreSnapshot snapshot =
+                _store.GetCurrent())
+            {
+                return CreateRotationResponse(snapshot, utcNow);
+            }
+        }
+
+        public AdminServerCaRotationResponse PrepareRotation(
+            DateTime utcNow)
+        {
+            ThrowIfDisposed();
+            EnsureProvisioned();
+            using (CertificateAuthorityStoreSnapshot snapshot =
+                _store.PrepareRotation(utcNow))
+            {
+                return CreateRotationResponse(snapshot, utcNow);
+            }
+        }
+
+        public AdminServerCaRotationResponse CancelRotation(
+            Guid rotationId,
+            DateTime utcNow)
+        {
+            ThrowIfDisposed();
+            EnsureProvisioned();
+            EnsureUtc(utcNow, nameof(utcNow));
+            using (CertificateAuthorityStoreSnapshot snapshot =
+                _store.CancelRotation(rotationId))
+            {
+                return CreateRotationResponse(snapshot, utcNow);
+            }
+        }
+
+        private static AdminServerCaRotationResponse CreateRotationResponse(
+            CertificateAuthorityStoreSnapshot snapshot,
+            DateTime utcNow)
+        {
+            CertificateAuthorityState state = snapshot.State;
+            AdminCaRotationAuthority current = ToAdminAuthority(
+                state.CurrentAuthority);
+            AdminCaRotationAuthority other = state.OtherAuthority == null
+                ? null
+                : ToAdminAuthority(state.OtherAuthority);
+            int retiringLeafCount = state.RotationPhase
+                    == CertificateAuthorityRotationPhase.Activated
+                ? snapshot.Ledger.EntriesBySerial.Values.Count(entry =>
+                    entry.IssuerCaSerialNumber
+                        == state.OtherAuthority.CaSerialNumber
+                    && entry.Status
+                        != CertificateLedgerStatus.Revoked)
+                : 0;
+            AdminCaRotationReadiness directoryReadiness =
+                state.RotationPhase
+                    == CertificateAuthorityRotationPhase.Stable
+                    ? AdminCaRotationReadiness.Ready
+                    : AdminCaRotationReadiness.NotReady;
+            return new AdminServerCaRotationResponse(
+                MapAdminPhase(state.RotationPhase),
+                state.TrustRevision,
+                state.RotationId,
+                state.PublishedUtc,
+                state.ActivationNotBeforeUtc,
+                state.ActivatedUtc,
+                state.RetirementNotBeforeUtc,
+                current,
+                other,
+                state.IsCurrentRevisionBackedUp,
+                AdminCaRotationReadiness.NotRequired,
+                directoryReadiness,
+                retiringLeafCount,
+                state.RotationPhase
+                    == CertificateAuthorityRotationPhase.Published
+                    && utcNow >= state.ActivationNotBeforeUtc.Value
+                    && state.IsCurrentRevisionBackedUp
+                    && directoryReadiness
+                        == AdminCaRotationReadiness.Ready,
+                false);
+        }
+
+        private static AdminCaRotationAuthority ToAdminAuthority(
+            CertificateAuthorityLiveState authority)
+        {
+            byte[] spki = authority.GetCaSpkiSha256();
+            try
+            {
+                return new AdminCaRotationAuthority(
+                    authority.Role == CertificateAuthorityLiveRole.Current
+                        ? AdminCaRotationAuthorityRole.Current
+                        : authority.Role == CertificateAuthorityLiveRole.Next
+                            ? AdminCaRotationAuthorityRole.Next
+                            : AdminCaRotationAuthorityRole.Retiring,
+                    authority.CaSerialNumber.Hex,
+                    Convert.ToBase64String(spki),
+                    authority.NotBeforeUtc,
+                    authority.NotAfterUtc,
+                    authority.CrlNumber);
+            }
+            finally
+            {
+                Array.Clear(spki, 0, spki.Length);
+            }
+        }
+
+        private static AdminCaRotationPhase MapAdminPhase(
+            CertificateAuthorityRotationPhase phase)
+        {
+            switch (phase)
+            {
+                case CertificateAuthorityRotationPhase.Stable:
+                    return AdminCaRotationPhase.Stable;
+                case CertificateAuthorityRotationPhase.Published:
+                    return AdminCaRotationPhase.Published;
+                case CertificateAuthorityRotationPhase.Activated:
+                    return AdminCaRotationPhase.Activated;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(phase));
+            }
+        }
+
+        private static void EnsureUtc(DateTime value, string parameterName)
+        {
+            if (value.Kind != DateTimeKind.Utc)
+            {
+                throw new ArgumentException(
+                    "CA rotation timestamps must use UTC.",
+                    parameterName);
             }
         }
 

@@ -331,13 +331,14 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
 
             if (endpoint == ExternalEndpoint.CertificateAuthority)
             {
-                ExternalTrustInfo trustInfo =
-                    _certificateService.GetTrustInfo();
+                ExternalTrustSnapshot trust =
+                    _certificateService.GetTrustSnapshot();
                 return ExternalApiHandlerResponse.Xml(
                     200,
                     ExternalXmlCodec.SerializeTrustInfoResponse(
                         ExternalResponse.CreateTrustInfoSuccess(
-                            trustInfo)));
+                            trust.TrustInfo,
+                            trust.TrustBundle)));
             }
 
             if (endpoint == ExternalEndpoint.CertificateRevocationList)
@@ -346,6 +347,27 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                     200,
                     _certificateService.GetCertificateRevocationList(),
                     ExternalApiContract.CrlContentType);
+            }
+
+            if (endpoint
+                == ExternalEndpoint.IssuerCertificateRevocationList)
+            {
+                string caSerialNumber;
+                if (!ExternalApiContract.TryParseIssuerCrlPath(
+                        request.AbsolutePath,
+                        out caSerialNumber))
+                {
+                    return ExternalApiHandlerResponse.UndefinedRoute();
+                }
+
+                byte[] crl = _certificateService
+                    .GetCertificateRevocationList(caSerialNumber);
+                return crl == null
+                    ? Error(404, ExternalResponseCode.NotFound)
+                    : ExternalApiHandlerResponse.Binary(
+                        200,
+                        crl,
+                        ExternalApiContract.CrlContentType);
             }
 
             return ExternalApiHandlerResponse.UndefinedRoute();
@@ -507,6 +529,15 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                 return ExternalEndpoint.CertificateRevocationList;
             }
 
+            string ignoredCaSerialNumber;
+            if (StringComparer.Ordinal.Equals(method, "GET")
+                && ExternalApiContract.TryParseIssuerCrlPath(
+                    absolutePath,
+                    out ignoredCaSerialNumber))
+            {
+                return ExternalEndpoint.IssuerCertificateRevocationList;
+            }
+
             return ExternalEndpoint.Undefined;
         }
 
@@ -531,7 +562,8 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
             Registration = 3,
             CertificateAuthority = 4,
             CertificateRevocationList = 5,
-            Renewal = 6
+            Renewal = 6,
+            IssuerCertificateRevocationList = 7
         }
 
         private sealed class UnavailableExternalCertificateService
@@ -546,7 +578,20 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                     "The External certificate service is unavailable.");
             }
 
+            public ExternalTrustSnapshot GetTrustSnapshot()
+            {
+                throw new InvalidOperationException(
+                    "The External certificate service is unavailable.");
+            }
+
             public byte[] GetCertificateRevocationList()
+            {
+                throw new InvalidOperationException(
+                    "The External certificate service is unavailable.");
+            }
+
+            public byte[] GetCertificateRevocationList(
+                string caSerialNumber)
             {
                 throw new InvalidOperationException(
                     "The External certificate service is unavailable.");

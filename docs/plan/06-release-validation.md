@@ -2,15 +2,15 @@
 
 ```text
 최초 작성일: 2026-07-21
-최종 변경일: 2026-07-21
-revision: 5
+최종 변경일: 2026-07-22
+revision: 7
 ```
 
 ## 1. 목적과 범위
 
 이 문서는 인증서 전환 소스의 자동 테스트가 끝난 뒤 실제 Windows 설치에서 수행할 비파괴 증거 수집과 수동 시나리오의 실행 순서를 정의한다. 제품 계약과 저장 불변식은 [개발계획](./03-development.md), API 상호운용은 [외부 API](./04-api-01-external-application.md)와 [내부 API](./04-api-02-internal.md)가 단일 원본이다.
 
-검증 도구는 설치 성공을 대신하지 않는다. 설치·repair·제거 로그, 실제 TLS 연결, 외부 앱의 TOFU·pin 저장, 두 Directory의 페어링·동기화·승격과 Milestone 조합은 별도로 실행하고 기록해야 한다. CA key rotation·dual-pin은 현재 범위가 아니며 이 도구를 근거로 구현 또는 검증 완료 처리하지 않는다.
+검증 도구는 설치 성공을 대신하지 않는다. 설치·repair·제거 로그, 실제 TLS 연결, 외부 앱의 TOFU·pin 저장, 두 Directory의 페어링·동기화·승격과 Milestone 조합은 별도로 실행하고 기록해야 한다. CA key rotation·dual-pin은 [전용 구현계획](./07-ca-key-rotation.md)의 최초 릴리스 필수 범위이며, 구현 뒤 별도 상태·trust bundle·issuer별 CRL·maintenance 증거를 추가하지 않은 현재 도구만으로 완료 처리하지 않는다.
 
 ## 2. 설치 상태 검증 도구
 
@@ -46,7 +46,7 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 | HTTP.sys | exact IPv4 `sslcert`, installer AppId, 유일한 thumbprint, LocalMachine leaf·private key·유효기간, IPv4·hostname 두 remote HTTPS와 loopback HTTP URL ACL의 exact service SID SDDL |
 | 방화벽 | installer-owned 단일 rule의 inbound allow, Domain·Private only, edge traversal 차단, TCP 21000, exact local IPv4·main executable·main service와 unrestricted remote boundary |
 
-일반 파일은 길이와 SHA-256을 보고서에 기록한다. `secrets\ca.key`와 `secrets\peer.dat`은 존재 여부·길이만 기록하고 내용과 hash를 읽거나 출력하지 않는다. 보고서에는 컴퓨터 이름, Directory hostname·IPv4, certificate subject·thumbprint, ACL SDDL이 포함되므로 내부 운영 증거로 취급하고 외부 공개하지 않는다.
+일반 파일은 길이와 SHA-256을 보고서에 기록한다. `secrets\ca-a.key`, phase에 따라 존재하는 `secrets\ca-b.key`와 `secrets\peer.dat`은 존재 여부·길이만 기록하고 내용과 hash를 읽거나 출력하지 않는다. 보고서에는 컴퓨터 이름, Directory hostname·IPv4, certificate subject·thumbprint, ACL SDDL이 포함되므로 내부 운영 증거로 취급하고 외부 공개하지 않는다.
 
 ## 4. 라이브 External endpoint 검증 도구
 
@@ -87,11 +87,12 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 5. repair 주소 변경 전후 보고서로 config·registry·URL ACL·HTTPS binding·leaf thumbprint·방화벽의 일관된 교체와 rollback을 확인한다.
 6. active issuer와 standby 두 장비에서 각각 보고서를 수집한 뒤 페어링·PKI state·directory sync·명시적 승격과 장애 복구를 실행한다.
 7. 외부 시험 앱에서 제한적 TOFU, 이후 pin 강제, 즉시 등록·lost-response replay·갱신·삭제/폐기·CRL 실패 정책을 검증한다.
-8. 일반 제거 뒤 SCM·제품 registry·URL ACL·HTTPS binding·방화벽·Program Files 제거와 ProgramData 보존을 확인한다. 전체 삭제는 별도 장비에서 이중 확인 뒤 검증한다.
-9. 지원 OS·Milestone 조합별 결과, 실패 로그, 보완 조치와 재검증 결과를 이 문서와 [TODO](./todo-01.md)에 반영한다.
+8. [rotation 구현계획 §13](./07-ca-key-rotation.md#13-필수-테스트-행렬)에 따라 current CA `STABLE`부터 `PUBLISHED`, dual-pin 수집, `ACTIVATED`, 기존 service leaf의 새 CA renewal, terminal CRL과 완료 `STABLE`까지 수행한다. next pin을 받은 client와 놓친 client, 두 Directory 순차 leaf 전환, standby 승격과 old key 폐기 증거를 각각 보존한다.
+9. 일반 제거 뒤 SCM·제품 registry·URL ACL·HTTPS binding·방화벽·Program Files 제거와 ProgramData의 current·rotation·retired CA 보존을 확인한다. 전체 삭제는 별도 장비에서 이중 확인 뒤 두 slot key·retired archive·client trust cache 완전 삭제를 검증한다.
+10. 지원 OS·Milestone 조합별 결과, 실패 로그, 보완 조치와 재검증 결과를 이 문서와 [TODO](./todo-01.md)에 반영한다.
 
 ## 7. 구현 상태와 남은 조건
 
 2026-07-21 installer payload에 읽기 전용 installed-state와 live-endpoint 검증 도구를 연결했고 config·HTTP.sys·URL ACL·service path, 일일 키 고정 벡터·External success XML·HTTP/1.1 framing parser 회귀 소스를 추가했다. 라이브 hostname 요청이 IPv4 전용 `HttpListener` prefix에서 HTTP.sys에 거부될 수 있던 계약 불일치를 찾아, runtime과 installer를 Directory IPv4·hostname 두 exact HTTPS prefix·URL ACL로 맞추고 repair rollback·uninstall·installed-state 판정에 두 항목을 모두 포함했다. installer와 검증 도구의 `netsh http show sslcert` parser는 `IP:port` 라벨과 IPv4 endpoint 값의 콜론을 key/value 구분자로 오인하지 않도록 공백으로 둘러싸인 구분자만 사용한다. 최신 작업 트리의 `Debug|x64`·`Release|x64` locked restore·빌드와 구성별 663개 테스트, ACL·HTTPS binding·installed-state·live endpoint PowerShell 회귀가 모두 통과했다. package 진입점은 다음 명시적 package 실행 때 네 회귀 소스를 함께 실행하도록 구성했으며 실제 package와 Windows 현장 검증은 아직 수행하지 않았다.
 
-남은 완료 조건은 Windows Server 2016 build 12 설치 기준선 확인, 최신 package의 지원 환경 설치와 보고서 수집, 실제 TLS/DPAPI/ACL/SCM, 외부 앱·Milestone 및 두 장비 시나리오 실행이다.
+남은 완료 조건은 CA key rotation·dual-pin 구현과 검증 도구 확장, Windows Server 2016 설치 기준선 확인, 최신 package의 지원 환경 설치와 보고서 수집, 실제 TLS/DPAPI/ACL/SCM, 외부 앱·Milestone 및 두 장비 rotation·승격 시나리오 실행이다.

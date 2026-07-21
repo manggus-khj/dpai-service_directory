@@ -102,18 +102,21 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
 
         internal CaBackupPayload CaptureBackupPayload(
             DateTime createdUtc,
+            out ulong trustRevision,
             out ulong pkiRevision,
             out ulong crlNumber)
         {
             EnsureUtc(createdUtc, nameof(createdUtc));
             ulong capturedPkiRevision = 0;
             ulong capturedCrlNumber = 0;
+            ulong capturedTrustRevision = 0;
             CaBackupPayload payload = _mutationGate.Execute(() =>
             {
                 lock (_lifecycleGate)
                 {
                     ThrowIfAvailable();
                     byte[] privateKey = null;
+                    byte[] otherPrivateKey = null;
                     byte[] backupMetadata = null;
                     try
                     {
@@ -126,6 +129,23 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                             DateTime.UtcNow);
                         capturedPkiRevision = _current.State.PkiRevision;
                         capturedCrlNumber = _current.State.CrlNumber;
+                        capturedTrustRevision =
+                            _current.State.TrustRevision;
+                        if (_current.State.OtherAuthority != null)
+                        {
+                            otherPrivateKey = _secondaryProtector.Unprotect(
+                                _current.OtherProtectedPrivateKey);
+                            CertificateAuthorityState otherState =
+                                CreateAuthorityValidationState(
+                                    _current.State,
+                                    _current.State.OtherAuthority);
+                            ValidateAuthority(
+                                otherState,
+                                _current.OtherCaCertificateDer,
+                                otherPrivateKey,
+                                DateTime.UtcNow);
+                        }
+
                         backupMetadata = _codec.SerializeState(
                             _current.State.WithLastBackupUtc(createdUtc));
                         return new CaBackupPayload(
@@ -133,21 +153,27 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                             _current.LedgerBytes,
                             _current.CaCertificateDer,
                             _current.CrlDer,
-                            privateKey);
+                            privateKey,
+                            _current.OtherCaCertificateDer,
+                            _current.OtherCrlDer,
+                            otherPrivateKey);
                     }
                     finally
                     {
                         Clear(privateKey);
+                        Clear(otherPrivateKey);
                         Clear(backupMetadata);
                     }
                 }
             });
+            trustRevision = capturedTrustRevision;
             pkiRevision = capturedPkiRevision;
             crlNumber = capturedCrlNumber;
             return payload;
         }
 
         internal bool MarkBackupCompleted(
+            ulong expectedTrustRevision,
             ulong expectedPkiRevision,
             ulong expectedCrlNumber,
             DateTime createdUtc)
@@ -158,7 +184,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 lock (_lifecycleGate)
                 {
                     ThrowIfAvailable();
-                    if (_current.State.PkiRevision != expectedPkiRevision
+                    if (_current.State.TrustRevision
+                            != expectedTrustRevision
+                        || _current.State.PkiRevision != expectedPkiRevision
                         || _current.State.CrlNumber != expectedCrlNumber)
                     {
                         return false;
@@ -350,12 +378,19 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             CertificateAuthorityState state = _codec.DeserializeState(
                 payload.Metadata);
             CertificateLedgerSnapshot ledger = _codec.DeserializeLedger(
-                payload.Ledger);
+                payload.Ledger,
+                state.CrlNumber);
             ValidateStateAndLedger(state, ledger);
             if (state.IssuerInstanceId != installedInstanceId)
             {
                 throw new InvalidDataException(
                     "This repair backup belongs to another issuer instance.");
+            }
+
+            if ((state.OtherAuthority != null) != payload.HasOtherAuthority)
+            {
+                throw new InvalidDataException(
+                    "CA backup slot components do not match rotation state.");
             }
 
             ValidateAuthority(
@@ -369,10 +404,35 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 payload.CaCertificateDer,
                 payload.CrlDer);
             byte[] protectedKey = null;
+            byte[] otherProtectedKey = null;
             try
             {
                 protectedKey = _protector.Protect(
                     payload.PrivateKeyPkcs8);
+                if (payload.HasOtherAuthority)
+                {
+                    CertificateAuthorityState otherState =
+                        CreateAuthorityValidationState(
+                            state,
+                            state.OtherAuthority);
+                    ValidateAuthority(
+                        otherState,
+                        payload.OtherCaCertificateDer,
+                        payload.OtherPrivateKeyPkcs8,
+                        utcNow);
+                    var emptyOtherLedger = new CertificateLedgerSnapshot(
+                        new CertificateLedgerEntry[0],
+                        state.PkiRevision,
+                        state.OtherAuthority.CrlNumber);
+                    ValidateCrl(
+                        otherState,
+                        emptyOtherLedger,
+                        payload.OtherCaCertificateDer,
+                        payload.OtherCrlDer);
+                    otherProtectedKey = _secondaryProtector.Protect(
+                        payload.OtherPrivateKeyPkcs8);
+                }
+
                 _mutationGate.Execute(() =>
                 {
                     lock (_lifecycleGate)
@@ -393,20 +453,28 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                         byte[][] repairBeforeImages = _current == null
                             ? ReadRepairBeforeImages()
                             : null;
+                        byte[][] otherRepairBeforeImages = _current == null
+                            ? ReadOtherSlotRepairBeforeImages()
+                            : null;
                         try
                         {
-                            CommitReplacement(
+                            CommitReplacementWithSlots(
                                 _current,
                                 repairBeforeImages,
+                                otherRepairBeforeImages,
                                 state,
                                 ledger,
                                 payload.CaCertificateDer,
                                 payload.CrlDer,
-                                protectedKey);
+                                protectedKey,
+                                payload.OtherCaCertificateDer,
+                                payload.OtherCrlDer,
+                                otherProtectedKey);
                         }
                         finally
                         {
                             ClearImages(repairBeforeImages);
+                            ClearImages(otherRepairBeforeImages);
                         }
                         _recoveryRequired = false;
                     }
@@ -415,6 +483,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             finally
             {
                 Clear(protectedKey);
+                Clear(otherProtectedKey);
             }
         }
     }

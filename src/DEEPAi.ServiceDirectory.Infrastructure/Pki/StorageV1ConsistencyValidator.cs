@@ -145,6 +145,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             foreach (CertificateLedgerEntry entry in
                 ledger.EntriesBySerial.Values)
             {
+                if (entry.IssuerCaSerialNumber != state.CaSerialNumber)
+                {
+                    throw Invalid(
+                        "Certificate ledger issuer does not match the installed CA.");
+                }
+
                 byte[] leafCertificate = entry.GetLeafCertificate();
                 try
                 {

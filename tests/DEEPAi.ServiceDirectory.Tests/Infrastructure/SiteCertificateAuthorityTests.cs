@@ -72,7 +72,8 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     leaf,
                     "management.example.local",
                     "10.20.30.10",
-                    directoryIdentity);
+                    directoryIdentity,
+                    authority.SerialNumber.Hex);
                 SiteCertificateAuthority.ValidateDirectoryLeaf(
                     leaf.GetEncoded(),
                     caCertificate.GetEncoded(),
@@ -169,7 +170,8 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     certificate,
                     identity.ServiceHostName,
                     identity.ServiceIpv4Address,
-                    directoryIdentity);
+                    directoryIdentity,
+                    authority.SerialNumber.Hex);
 
                 CollectionAssert.AreEqual(
                     Org.BouncyCastle.X509.SubjectPublicKeyInfoFactory
@@ -253,7 +255,8 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             X509Certificate certificate,
             string expectedDnsName,
             string expectedIpv4Address,
-            DirectoryEndpointIdentity directoryIdentity)
+            DirectoryEndpointIdentity directoryIdentity,
+            string issuerCaSerialNumber)
         {
             Assert.AreEqual(-1, certificate.GetBasicConstraints());
             bool[] keyUsage = certificate.GetKeyUsage();
@@ -277,14 +280,16 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     DerIA5String.GetInstance(name.Name).GetString(),
                     "https://"
                         + directoryIdentity.DirectoryHostName
-                        + ":21000/pki/crl")));
+                        + ":21000/pki/crl/"
+                        + issuerCaSerialNumber)));
             Assert.IsTrue(crlNames.Any(name =>
                 name.TagNo == GeneralName.UniformResourceIdentifier
                 && StringComparer.Ordinal.Equals(
                     DerIA5String.GetInstance(name.Name).GetString(),
                     "https://"
                         + directoryIdentity.DirectoryIpv4Address
-                        + ":21000/pki/crl")));
+                        + ":21000/pki/crl/"
+                        + issuerCaSerialNumber)));
 
             GeneralName[] names = certificate
                 .GetSubjectAlternativeNameExtension()

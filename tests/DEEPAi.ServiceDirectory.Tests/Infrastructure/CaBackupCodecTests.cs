@@ -49,6 +49,46 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void EncryptedBackupRoundTripsBothAuthoritySlots()
+        {
+            var codec = new CaBackupCodec();
+            using (var source = new CaBackupPayload(
+                new byte[] { 1, 2, 3 },
+                new byte[] { 4, 5, 6, 7 },
+                new byte[] { 8, 9 },
+                new byte[] { 10, 11, 12 },
+                new byte[] { 13, 14, 15, 16 },
+                new byte[] { 17, 18 },
+                new byte[] { 19, 20, 21 },
+                new byte[] { 22, 23, 24, 25 }))
+            {
+                byte[] encrypted = codec.Encrypt(source, Password);
+                try
+                {
+                    using (CaBackupPayload restored = codec.Decrypt(
+                        encrypted,
+                        Password))
+                    {
+                        Assert.IsTrue(restored.HasOtherAuthority);
+                        CollectionAssert.AreEqual(
+                            source.OtherCaCertificateDer,
+                            restored.OtherCaCertificateDer);
+                        CollectionAssert.AreEqual(
+                            source.OtherCrlDer,
+                            restored.OtherCrlDer);
+                        CollectionAssert.AreEqual(
+                            source.OtherPrivateKeyPkcs8,
+                            restored.OtherPrivateKeyPkcs8);
+                    }
+                }
+                finally
+                {
+                    Array.Clear(encrypted, 0, encrypted.Length);
+                }
+            }
+        }
+
+        [TestMethod]
         public void EncryptedBackupRejectsTamperingBeforePayloadParsing()
         {
             var codec = new CaBackupCodec();

@@ -373,10 +373,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                         return ExternalRegistrationDeadline;
                     }
 
+                    string ignoredCaSerialNumber;
                     return StringComparer.Ordinal.Equals(method, "GET")
-                        && StringComparer.Ordinal.Equals(
-                            path,
-                            ExternalApiContract.CrlPath)
+                        && (StringComparer.Ordinal.Equals(
+                                path,
+                                ExternalApiContract.CrlPath)
+                            || ExternalApiContract.TryParseIssuerCrlPath(
+                                path,
+                                out ignoredCaSerialNumber))
                         ? ExternalCrlDeadline
                         : ExternalReadDeadline;
                 case ServiceDirectoryHttpRoute.Admin:

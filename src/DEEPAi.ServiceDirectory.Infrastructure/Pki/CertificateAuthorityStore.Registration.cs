@@ -85,7 +85,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     return CreateRegistrationResult(
                         ExternalRegistrationServiceStatus.Replayed,
                         replayEntry,
-                        snapshot.CaCertificateDer);
+                        snapshot.CaCertificateDer,
+                        snapshot.State.CaSerialNumber);
                 }
 
                 if (replayStatus ==
@@ -165,6 +166,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                             projectedEntries,
                             nextPkiRevision,
                             nextCrlNumber,
+                            snapshot.State.CaSerialNumber,
                             evidence,
                             subjectPublicKeyInfoSha256,
                             utcNow,
@@ -336,6 +338,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 CertificateLedgerEntry issuedEntry =
                     CertificateLedgerEntry.CreateIssued(
                         serialNumber.ToLedgerSerialNumber(),
+                        snapshot.State.CaSerialNumber,
                         serviceDefinition,
                         evidence.RequestId,
                         CertificateIssuanceKind.Registration,
@@ -389,7 +392,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     CreateRegistrationResult(
                         resultStatus,
                         issuedEntry,
-                        snapshot.CaCertificateDer);
+                        snapshot.CaCertificateDer,
+                        snapshot.State.CaSerialNumber);
                 using (CertificateAuthorityStoreSnapshot committed =
                     CommitServiceMutation(
                         directoryState,
@@ -463,7 +467,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             CreateRegistrationResult(
                 ExternalRegistrationServiceStatus status,
                 CertificateLedgerEntry entry,
-                byte[] caCertificateDer)
+                byte[] caCertificateDer,
+                CertificateSerialNumber issuerCaSerialNumber)
         {
             ServiceDefinition definition = entry.ServiceDefinition;
             var service = new ExternalServiceItem(
@@ -479,7 +484,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 entry.SerialNumber.Hex,
                 entry.NotBeforeUtc,
                 entry.NotAfterUtc,
-                SiteCertificateAuthority.CrlRelativePath);
+                SiteCertificateAuthority.GetIssuerCrlRelativePath(
+                    issuerCaSerialNumber));
             return ExternalRegistrationServiceResult.Success(
                 status,
                 service,

@@ -75,6 +75,7 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
         private bool _rePairRequested;
         private string _logRetentionDaysText = string.Empty;
         private AdminServerCaStatusResponse _caStatus;
+        private AdminServerCaRotationResponse _caRotation;
         private AdminServerCertificateItem _selectedCertificate;
         private AdminCertificateRevocationReason _selectedRevocationReason =
             AdminCertificateRevocationReason.KeyCompromise;
@@ -200,6 +201,19 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
                     && _caStatus != null
                     && _caStatus.State == AdminCaState.Ready
                     && _caStatus.Role == AdminCaRole.ActiveIssuer);
+            PrepareCaRotationCommand = CreateAsyncCommand(
+                PrepareCaRotationAsync,
+                () => IsAdminConnected
+                    && _caStatus?.State == AdminCaState.Ready
+                    && _caStatus.Role == AdminCaRole.ActiveIssuer
+                    && _caRotation?.Phase
+                        == AdminCaRotationPhase.Stable);
+            CancelCaRotationCommand = CreateAsyncCommand(
+                CancelCaRotationAsync,
+                () => IsAdminConnected
+                    && _caRotation?.Phase
+                        == AdminCaRotationPhase.Published
+                    && _caRotation.RotationId.HasValue);
             PreviousCertificatePageCommand = CreateAsyncCommand(
                 PreviousCertificatePageAsync,
                 () => _certificatePreviousCursors.Count > 0);
@@ -262,6 +276,10 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
         public AsyncCommand PreviousCertificatePageCommand { get; }
 
         public AsyncCommand NextCertificatePageCommand { get; }
+
+        public AsyncCommand PrepareCaRotationCommand { get; }
+
+        public AsyncCommand CancelCaRotationCommand { get; }
 
         public int SelectedPageIndex
         {
@@ -595,6 +613,33 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             private set => SetProperty(ref _lastCaBackupText, value);
         }
 
+        public string CaRotationPhaseText => _caRotation == null
+            ? "확인할 수 없음"
+            : _caRotation.Phase.ToString();
+
+        public string CaTrustRevisionText => _caRotation == null
+            ? "—"
+            : _caRotation.TrustRevision.ToString(
+                CultureInfo.InvariantCulture);
+
+        public string CaOtherAuthorityText =>
+            _caRotation?.OtherAuthority == null
+                ? "—"
+                : _caRotation.OtherAuthority.Role
+                    + " · "
+                    + _caRotation.OtherAuthority.CaSerialNumber;
+
+        public string CaRotationReadinessText => _caRotation == null
+            ? "—"
+            : "백업 "
+                + (_caRotation.CurrentRevisionBackupReady
+                    ? "완료"
+                    : "필요")
+                + " · Peer "
+                + _caRotation.PeerReadiness
+                + " · Directory leaf "
+                + _caRotation.DirectoryLeafReadiness;
+
         public string CertificatePageText => "페이지 "
             + _certificatePageNumber.ToString(CultureInfo.CurrentCulture)
             + " · 전체 "
@@ -730,6 +775,8 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             PreviousServicePageCommand?.RaiseCanExecuteChanged();
             NextServicePageCommand?.RaiseCanExecuteChanged();
             RevokeCertificateCommand?.RaiseCanExecuteChanged();
+            PrepareCaRotationCommand?.RaiseCanExecuteChanged();
+            CancelCaRotationCommand?.RaiseCanExecuteChanged();
             PreviousCertificatePageCommand?.RaiseCanExecuteChanged();
             NextCertificatePageCommand?.RaiseCanExecuteChanged();
         }

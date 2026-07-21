@@ -53,6 +53,7 @@
     <Compile Include="ExternalApi\ExternalApiModelValidation.cs" />
     <Compile Include="ExternalApi\ExternalApiRequestModels.cs" />
     <Compile Include="ExternalApi\ExternalApiResponseModels.cs" />
+    <Compile Include="ExternalApi\ExternalTrustBundleModels.cs" />
     <Compile Include="ExternalApi\ExternalXmlCodec.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RateLimiting\ExternalRequestConcurrencyLimiter.cs" />

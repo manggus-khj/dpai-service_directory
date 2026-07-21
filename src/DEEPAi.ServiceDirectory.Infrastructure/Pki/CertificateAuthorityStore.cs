@@ -24,6 +24,31 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             byte[] caCertificateDer,
             byte[] crlDer,
             byte[] protectedPrivateKey)
+            : this(
+                state,
+                ledger,
+                metadataBytes,
+                ledgerBytes,
+                caCertificateDer,
+                crlDer,
+                protectedPrivateKey,
+                null,
+                null,
+                null)
+        {
+        }
+
+        internal CertificateAuthorityStoreSnapshot(
+            CertificateAuthorityState state,
+            CertificateLedgerSnapshot ledger,
+            byte[] metadataBytes,
+            byte[] ledgerBytes,
+            byte[] caCertificateDer,
+            byte[] crlDer,
+            byte[] protectedPrivateKey,
+            byte[] otherCaCertificateDer,
+            byte[] otherCrlDer,
+            byte[] otherProtectedPrivateKey)
         {
             State = state ?? throw new ArgumentNullException(nameof(state));
             Ledger = ledger ?? throw new ArgumentNullException(nameof(ledger));
@@ -36,6 +61,20 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             ProtectedPrivateKey = CloneRequired(
                 protectedPrivateKey,
                 nameof(protectedPrivateKey));
+            OtherCaCertificateDer = CloneOptional(otherCaCertificateDer);
+            OtherCrlDer = CloneOptional(otherCrlDer);
+            OtherProtectedPrivateKey = CloneOptional(
+                otherProtectedPrivateKey);
+            bool shouldHaveOther = state.OtherAuthority != null;
+            if (shouldHaveOther
+                != (OtherCaCertificateDer != null
+                    && OtherCrlDer != null
+                    && OtherProtectedPrivateKey != null))
+            {
+                Dispose();
+                throw new ArgumentException(
+                    "The secondary CA artifacts do not match rotation state.");
+            }
         }
 
         internal CertificateAuthorityState State { get; }
@@ -52,6 +91,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
 
         internal byte[] ProtectedPrivateKey { get; private set; }
 
+        internal byte[] OtherCaCertificateDer { get; private set; }
+
+        internal byte[] OtherCrlDer { get; private set; }
+
+        internal byte[] OtherProtectedPrivateKey { get; private set; }
+
         internal CertificateAuthorityStoreSnapshot Clone()
         {
             ThrowIfDisposed();
@@ -62,7 +107,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 LedgerBytes,
                 CaCertificateDer,
                 CrlDer,
-                ProtectedPrivateKey);
+                ProtectedPrivateKey,
+                OtherCaCertificateDer,
+                OtherCrlDer,
+                OtherProtectedPrivateKey);
         }
 
         public void Dispose()
@@ -77,11 +125,17 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             Clear(CaCertificateDer);
             Clear(CrlDer);
             Clear(ProtectedPrivateKey);
+            Clear(OtherCaCertificateDer);
+            Clear(OtherCrlDer);
+            Clear(OtherProtectedPrivateKey);
             MetadataBytes = null;
             LedgerBytes = null;
             CaCertificateDer = null;
             CrlDer = null;
             ProtectedPrivateKey = null;
+            OtherCaCertificateDer = null;
+            OtherCrlDer = null;
+            OtherProtectedPrivateKey = null;
             _disposed = true;
         }
 
@@ -95,6 +149,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             }
 
             return (byte[])value.Clone();
+        }
+
+        private static byte[] CloneOptional(byte[] value)
+        {
+            return value == null ? null : CloneRequired(value, nameof(value));
         }
 
         private void ThrowIfDisposed()
@@ -128,6 +187,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
         private readonly RecoveryJournalManager _journalManager;
         private readonly CertificateAuthorityStateCodec _codec;
         private readonly ICaPrivateKeyProtector _protector;
+        private readonly ICaPrivateKeyProtector _secondaryProtector;
         private readonly IPeerSecretAccessPolicy _accessPolicy;
         private readonly RenewalNonceReplayCache _renewalNonceReplayCache;
         private readonly ICertificateServiceMutationFaultInjector
@@ -160,7 +220,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 protector,
                 accessPolicy,
                 faultInjector,
-                NoOpCertificateServiceMutationFaultInjector.Instance)
+                NoOpCertificateServiceMutationFaultInjector.Instance,
+                null)
         {
         }
 
@@ -172,6 +233,26 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             IRecoveryJournalFaultInjector faultInjector,
             ICertificateServiceMutationFaultInjector
                 serviceMutationFaultInjector)
+            : this(
+                pathPolicy,
+                mutationGate,
+                protector,
+                accessPolicy,
+                faultInjector,
+                serviceMutationFaultInjector,
+                null)
+        {
+        }
+
+        internal CertificateAuthorityStore(
+            StateStoragePathPolicy pathPolicy,
+            StateMutationGate mutationGate,
+            ICaPrivateKeyProtector protector,
+            IPeerSecretAccessPolicy accessPolicy,
+            IRecoveryJournalFaultInjector faultInjector,
+            ICertificateServiceMutationFaultInjector
+                serviceMutationFaultInjector,
+            ICaPrivateKeyProtector secondaryProtector)
         {
             _pathPolicy = pathPolicy
                 ?? throw new ArgumentNullException(nameof(pathPolicy));
@@ -179,6 +260,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 ?? throw new ArgumentNullException(nameof(mutationGate));
             _protector = protector
                 ?? throw new ArgumentNullException(nameof(protector));
+            _secondaryProtector = secondaryProtector
+                ?? (protector is DpapiMachineCaPrivateKeyProtector
+                    ? (ICaPrivateKeyProtector)
+                        new DpapiMachineCaPrivateKeyProtector(
+                            CaPrivateKeySlot.B)
+                    : protector);
             if (accessPolicy == null)
             {
                 throw new ArgumentNullException(nameof(accessPolicy));
@@ -310,13 +397,24 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 "pki");
             if (!Directory.Exists(pkiDirectory))
             {
-                string caKeyPath = _pathPolicy.GetTargetPath(
-                    StateFileTarget.CaPrivateKey);
-                _pathPolicy.EnsureExistingFileIsSafe(caKeyPath);
-                _pathPolicy.EnsureExistingFileIsSafe(caKeyPath + ".bak");
-                if (File.Exists(caKeyPath)
-                    || File.Exists(caKeyPath + ".bak")
-                    || HasCaBackupArtifacts())
+                StateFileTarget[] keyTargets =
+                {
+                    StateFileTarget.CaPrivateKey,
+                    StateFileTarget.CaPrivateKeyB
+                };
+                bool hasKeyArtifact = false;
+                foreach (StateFileTarget keyTarget in keyTargets)
+                {
+                    string caKeyPath = _pathPolicy.GetTargetPath(keyTarget);
+                    _pathPolicy.EnsureExistingFileIsSafe(caKeyPath);
+                    _pathPolicy.EnsureExistingFileIsSafe(
+                        caKeyPath + ".bak");
+                    hasKeyArtifact = hasKeyArtifact
+                        || File.Exists(caKeyPath)
+                        || File.Exists(caKeyPath + ".bak");
+                }
+
+                if (hasKeyArtifact || HasCaBackupArtifacts())
                 {
                     throw new InvalidDataException(
                         "CA artifacts exist without the PKI state directory.");
@@ -340,12 +438,23 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     "The active issuer cannot contain a Peer PKI cache.");
             }
 
+            if (_fileWriter.Exists(StateFileTarget.RetiredAuthorities)
+                || _fileWriter.BackupExists(
+                    StateFileTarget.RetiredAuthorities))
+            {
+                throw new InvalidDataException(
+                    "Retired CA artifacts require the completed rotation maintenance runtime.");
+            }
+
             StateFileTarget[] targets = GetPkiTargets();
             bool[] exists = targets.Select(_fileWriter.Exists).ToArray();
             int existingCount = exists.Count(value => value);
             if (existingCount == 0)
             {
-                if (targets.Any(_fileWriter.BackupExists)
+                if (GetAllPkiTargets().Except(targets).Any(
+                        target => _fileWriter.Exists(target)
+                            || _fileWriter.BackupExists(target))
+                    || targets.Any(_fileWriter.BackupExists)
                     || HasCaBackupArtifacts())
                 {
                     throw new InvalidDataException(
@@ -370,7 +479,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             if (_fileWriter.BackupExists(StateFileTarget.CaPrivateKey))
             {
                 throw new InvalidDataException(
-                    "ca.key.bak is forbidden.");
+                    "ca-a.key.bak is forbidden.");
             }
 
             byte[] metadata = null;
@@ -379,11 +488,29 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             byte[] crl = null;
             byte[] protectedKey = null;
             byte[] privateKey = null;
+            byte[] otherCertificate = null;
+            byte[] otherCrl = null;
+            byte[] otherProtectedKey = null;
+            byte[] otherPrivateKey = null;
             try
             {
                 metadata = _fileWriter.Read(
                     StateFileTarget.PkiMetadata,
                     CertificateAuthorityStateCodec.MaximumDocumentBytes);
+                CertificateAuthorityState state =
+                    _codec.DeserializeState(metadata);
+                if (state.Role != CertificateAuthorityRole.ActiveIssuer)
+                {
+                    throw new InvalidDataException(
+                        "The active issuer store cannot load standby PKI state.");
+                }
+
+                if (state.CurrentSlot != CertificateAuthoritySlot.A)
+                {
+                    throw new InvalidDataException(
+                        "The active issuer runtime requires maintenance to switch the current CA slot.");
+                }
+
                 ledgerBytes = _fileWriter.Read(
                     StateFileTarget.CertificateLedger,
                     CertificateAuthorityStateCodec.MaximumDocumentBytes);
@@ -401,14 +528,65 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                         StateFileTarget.CaPrivateKey));
                 privateKey = _protector.Unprotect(protectedKey);
 
-                CertificateAuthorityState state =
-                    _codec.DeserializeState(metadata);
                 CertificateLedgerSnapshot ledger =
-                    _codec.DeserializeLedger(ledgerBytes);
-                if (state.Role != CertificateAuthorityRole.ActiveIssuer)
+                    _codec.DeserializeLedger(ledgerBytes, state.CrlNumber);
+                bool hasOther = state.OtherAuthority != null;
+                StateFileTarget[] otherTargets =
+                {
+                    StateFileTarget.CertificateRevocationListB,
+                    StateFileTarget.CaCertificateB,
+                    StateFileTarget.CaPrivateKeyB
+                };
+                if (_fileWriter.BackupExists(
+                    StateFileTarget.CaPrivateKeyB))
                 {
                     throw new InvalidDataException(
-                        "The active issuer store cannot load standby PKI state.");
+                        "ca-b.key.bak is forbidden.");
+                }
+
+                if (otherTargets.Any(_fileWriter.Exists) != hasOther
+                    || (hasOther
+                        && !otherTargets.All(_fileWriter.Exists)))
+                {
+                    throw new InvalidDataException(
+                        "CA B-slot artifacts do not match rotation state.");
+                }
+
+                if (hasOther)
+                {
+                    otherCrl = _fileWriter.Read(
+                        StateFileTarget.CertificateRevocationListB,
+                        MaximumCrlBytes);
+                    otherCertificate = _fileWriter.Read(
+                        StateFileTarget.CaCertificateB,
+                        MaximumCertificateBytes);
+                    otherProtectedKey = _fileWriter.Read(
+                        StateFileTarget.CaPrivateKeyB,
+                        DpapiMachineCaPrivateKeyProtector
+                            .MaximumProtectedBytes);
+                    _accessPolicy.ValidateExistingFile(
+                        _pathPolicy.GetTargetPath(
+                            StateFileTarget.CaPrivateKeyB));
+                    otherPrivateKey = _secondaryProtector.Unprotect(
+                        otherProtectedKey);
+                    CertificateAuthorityState otherState =
+                        CreateAuthorityValidationState(
+                            state,
+                            state.OtherAuthority);
+                    var emptyOtherLedger = new CertificateLedgerSnapshot(
+                        new CertificateLedgerEntry[0],
+                        state.PkiRevision,
+                        state.OtherAuthority.CrlNumber);
+                    ValidateAuthority(
+                        otherState,
+                        otherCertificate,
+                        otherPrivateKey,
+                        DateTime.UtcNow);
+                    ValidateCrl(
+                        otherState,
+                        emptyOtherLedger,
+                        otherCertificate,
+                        otherCrl);
                 }
 
                 ValidateStateAndLedger(state, ledger);
@@ -426,7 +604,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     ledgerBytes,
                     certificate,
                     crl,
-                    protectedKey);
+                    protectedKey,
+                    otherCertificate,
+                    otherCrl,
+                    otherProtectedKey);
             }
             finally
             {
@@ -436,7 +617,30 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 Clear(crl);
                 Clear(protectedKey);
                 Clear(privateKey);
+                Clear(otherCertificate);
+                Clear(otherCrl);
+                Clear(otherProtectedKey);
+                Clear(otherPrivateKey);
             }
+        }
+
+        private static CertificateAuthorityState
+            CreateAuthorityValidationState(
+                CertificateAuthorityState owner,
+                CertificateAuthorityLiveState authority)
+        {
+            return new CertificateAuthorityState(
+                owner.SiteId,
+                owner.IssuerInstanceId,
+                owner.Role,
+                authority.CaSerialNumber,
+                authority.GetCaSpkiSha256(),
+                authority.NotBeforeUtc,
+                authority.NotAfterUtc,
+                owner.TrustRevision,
+                owner.PkiRevision,
+                authority.CrlNumber,
+                null);
         }
 
         internal static void ValidateAuthority(
@@ -859,7 +1063,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
 
         private bool AnyTargetExists()
         {
-            return GetPkiTargets().Any(_fileWriter.Exists);
+            return GetAllPkiTargets().Any(target =>
+                _fileWriter.Exists(target)
+                || _fileWriter.BackupExists(target));
         }
 
         private static StateFileTarget[] GetPkiTargets()
@@ -871,6 +1077,23 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 StateFileTarget.CertificateRevocationList,
                 StateFileTarget.CaCertificate,
                 StateFileTarget.CaPrivateKey
+            };
+        }
+
+        private static StateFileTarget[] GetAllPkiTargets()
+        {
+            return new[]
+            {
+                StateFileTarget.PkiMetadata,
+                StateFileTarget.CertificateLedger,
+                StateFileTarget.PeerPkiCache,
+                StateFileTarget.CertificateRevocationList,
+                StateFileTarget.CaCertificate,
+                StateFileTarget.CaPrivateKey,
+                StateFileTarget.CertificateRevocationListB,
+                StateFileTarget.CaCertificateB,
+                StateFileTarget.CaPrivateKeyB,
+                StateFileTarget.RetiredAuthorities
             };
         }
 

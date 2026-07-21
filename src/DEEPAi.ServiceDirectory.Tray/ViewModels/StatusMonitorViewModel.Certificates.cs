@@ -96,6 +96,7 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
                 ApplyCaStatus(status);
                 if (status.State == AdminCaState.NotProvisioned)
                 {
+                    ApplyCaRotation(null);
                     ResetCertificatePaging();
                     Certificates.Clear();
                     _certificateTotalCount = 0;
@@ -103,6 +104,9 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
                 }
                 else
                 {
+                    ApplyCaRotation(
+                        await _adminClient.GetCaRotationAsync(
+                            cancellationToken));
                     await RefreshCertificatePageCoreAsync(
                         cancellationToken);
                 }
@@ -303,6 +307,82 @@ namespace DEEPAi.ServiceDirectory.Tray.ViewModels
             OnPropertyChanged(nameof(CaRevisionAndCrlText));
             OnPropertyChanged(nameof(CaLastBackupText));
             RaiseCommandStates();
+        }
+
+        private void ApplyCaRotation(
+            AdminServerCaRotationResponse rotation)
+        {
+            _caRotation = rotation;
+            OnPropertyChanged(nameof(CaRotationPhaseText));
+            OnPropertyChanged(nameof(CaTrustRevisionText));
+            OnPropertyChanged(nameof(CaOtherAuthorityText));
+            OnPropertyChanged(nameof(CaRotationReadinessText));
+            RaiseCommandStates();
+        }
+
+        private async Task PrepareCaRotationAsync()
+        {
+            if (!_confirmDelete(
+                "차기 Site CA를 생성하고 dual-pin 배포를 시작하시겠습니까?"))
+            {
+                return;
+            }
+
+            await ExecuteRotationChangeAsync(
+                token => _adminClient.PrepareCaRotationAsync(token),
+                "차기 Site CA를 게시했습니다. 새 revision 백업을 생성하십시오.");
+        }
+
+        private async Task CancelCaRotationAsync()
+        {
+            Guid? rotationId = _caRotation?.RotationId;
+            if (!rotationId.HasValue
+                || !_confirmDelete(
+                    "게시된 차기 Site CA와 private key를 폐기하시겠습니까?"))
+            {
+                return;
+            }
+
+            await ExecuteRotationChangeAsync(
+                token => _adminClient.CancelCaRotationAsync(
+                    rotationId.Value,
+                    token),
+                "CA rotation 게시를 취소하고 차기 key를 폐기했습니다.");
+        }
+
+        private async Task ExecuteRotationChangeAsync(
+            Func<CancellationToken, Task<AdminServerCaRotationResponse>> action,
+            string successMessage)
+        {
+            if (!await _certificateRefreshGate.WaitAsync(
+                0,
+                _lifetimeCancellation.Token))
+            {
+                SetStatus("다른 인증서 관리 요청이 처리 중입니다.", true);
+                return;
+            }
+
+            try
+            {
+                try
+                {
+                    ApplyCaRotation(await action(
+                        _lifetimeCancellation.Token));
+                    MarkAdminSuccess(true);
+                    SetStatus(successMessage, false);
+                    await RefreshCertificateAdministrationCoreAsync(
+                        _lifetimeCancellation.Token,
+                        false);
+                }
+                catch (AdminApiException exception)
+                {
+                    HandleAdminFailure(exception);
+                }
+            }
+            finally
+            {
+                _certificateRefreshGate.Release();
+            }
         }
 
         private void ApplyCertificatePage(

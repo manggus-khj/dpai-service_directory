@@ -13,6 +13,7 @@
   <xs:element name="CertificateRenewalRequest" type="tns:CertificateRenewalRequestType" />
   <xs:element name="Response" type="tns:ResponseType" />
   <xs:element name="Service" type="tns:ServiceType" />
+  <xs:element name="TrustBundle" type="tns:TrustBundleType" />
 
   <xs:complexType name="RegistrationRequestType">
     <xs:sequence>
@@ -71,7 +72,33 @@
       <xs:element name="SiteId" type="tns:GuidType" />
       <xs:element name="CaCertificate" type="tns:CanonicalBase64Type" />
       <xs:element name="CaSpkiSha256" type="tns:CanonicalBase64Type" />
-      <xs:element name="CrlUri" type="tns:CrlUriType" />
+      <xs:element name="CrlUri" type="tns:CurrentCrlAliasType" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="TrustBundleType">
+    <xs:sequence>
+      <xs:element name="SiteId" type="tns:GuidType" />
+      <xs:element name="TrustRevision" type="tns:PositiveRevisionType" />
+      <xs:element name="RotationId" type="tns:GuidType" minOccurs="0" />
+      <xs:element name="Phase" type="tns:RotationPhaseType" />
+      <xs:element name="PublishedUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+      <xs:element name="ActivationNotBeforeUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+      <xs:element name="ActivatedUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+      <xs:element name="RetirementNotBeforeUtc" type="tns:UtcDateTimeType" minOccurs="0" />
+      <xs:element name="Authority" type="tns:TrustAuthorityType" minOccurs="1" maxOccurs="2" />
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="TrustAuthorityType">
+    <xs:sequence>
+      <xs:element name="Role" type="tns:AuthorityRoleType" />
+      <xs:element name="CaSerialNumber" type="tns:SerialNumberType" />
+      <xs:element name="CaCertificate" type="tns:CanonicalBase64Type" />
+      <xs:element name="CaSpkiSha256" type="tns:CanonicalBase64Type" />
+      <xs:element name="CrlUri" type="tns:IssuerCrlUriType" />
+      <xs:element name="NotBeforeUtc" type="tns:UtcDateTimeType" />
+      <xs:element name="NotAfterUtc" type="tns:UtcDateTimeType" />
     </xs:sequence>
   </xs:complexType>
 
@@ -93,7 +120,7 @@
       <xs:element name="SerialNumber" type="tns:SerialNumberType" />
       <xs:element name="NotBeforeUtc" type="tns:UtcDateTimeType" />
       <xs:element name="NotAfterUtc" type="tns:UtcDateTimeType" />
-      <xs:element name="CrlUri" type="tns:CrlUriType" />
+      <xs:element name="CrlUri" type="tns:IssuerCrlUriType" />
     </xs:sequence>
   </xs:complexType>
 
@@ -116,6 +143,22 @@
       <xs:enumeration value="REREGISTERED" />
       <xs:enumeration value="REPLAYED" />
       <xs:enumeration value="RENEWED" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RotationPhaseType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="STABLE" />
+      <xs:enumeration value="PUBLISHED" />
+      <xs:enumeration value="ACTIVATED" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="AuthorityRoleType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="CURRENT" />
+      <xs:enumeration value="NEXT" />
+      <xs:enumeration value="RETIRING" />
     </xs:restriction>
   </xs:simpleType>
 
@@ -209,9 +252,21 @@
     </xs:restriction>
   </xs:simpleType>
 
-  <xs:simpleType name="CrlUriType">
+  <xs:simpleType name="CurrentCrlAliasType">
     <xs:restriction base="xs:string">
       <xs:enumeration value="/pki/crl" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="IssuerCrlUriType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="/pki/crl/[0-9A-F]{32}" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="PositiveRevisionType">
+    <xs:restriction base="xs:unsignedLong">
+      <xs:minInclusive value="1" />
     </xs:restriction>
   </xs:simpleType>
 

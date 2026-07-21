@@ -2,16 +2,16 @@
 
 ```text
 최초 작성일: 2026-07-17
-최종 변경일: 2026-07-21
-revision: 36
+최종 변경일: 2026-07-22
+revision: 37
 ```
 
-> 문서 묶음 상태: 인증서 기반 목표 설계·외부/내부 API 계약 확정
-> 구현 상태: 인증서 기반 External/Admin/Peer 계약, canonical DNS+IPv4 저장 schema, 9개 target 복구 journal, 즉시 등록·재등록·renewal·삭제·폐기, HTTPS 설치/기동 사전 검증, Peer pinned TLS·PKI state cache와 standby 구성·승격 소스를 연결했다. Admin 서비스 응답은 단일 목표 `admin.xsd`의 DNS+IPv4 pair를 사용하고 pending DTO·codec·legacy schema를 제거했다. Directory IPv4·hostname 두 exact HTTPS prefix 보완까지 포함한 2026-07-21 최신 작업 트리의 `Debug|x64`·`Release|x64` locked restore·빌드와 자동 테스트 663개가 각 구성에서 모두 통과했고 installer ACL round-trip·HTTPS binding rollback·installed-state·live endpoint PowerShell 회귀도 통과했다. 실제 Windows Server 재설치·DPAPI·HTTP.sys TLS·두 장비 동기화/승격·Milestone 조합 검증은 남아 있다.
+> 문서 묶음 상태: 인증서 기반 목표 설계와 단일 CA External/Admin/Peer 계약 확정, CA key rotation·dual-pin 최초 릴리스 필수 계획 확정
+> 구현 상태: 인증서 기반 External/Admin/Peer 계약, canonical DNS+IPv4 저장 schema, 9개 target 복구 journal, 즉시 등록·재등록·renewal·삭제·폐기, HTTPS 설치/기동 사전 검증, Peer pinned TLS·PKI state cache와 standby 구성·승격 소스를 연결했다. Admin 서비스 응답은 단일 목표 `admin.xsd`의 DNS+IPv4 pair를 사용하고 pending DTO·codec·legacy schema를 제거했다. Directory IPv4·hostname 두 exact HTTPS prefix 보완까지 포함한 2026-07-21 최신 작업 트리의 `Debug|x64`·`Release|x64` locked restore·빌드와 자동 테스트 663개가 각 구성에서 모두 통과했고 installer ACL round-trip·HTTPS binding rollback·installed-state·live endpoint PowerShell 회귀도 통과했다. CA key rotation·dual-pin, dual-slot 저장·issuer별 CRL·maintenance와 실제 Windows Server·Milestone 통합 검증은 아직 구현·검증되지 않았다.
 
 이 디렉터리는 서비스 디렉토리의 제품 설계, 인증서 전환 계획, 외부·내부 API와 Directory 구조 제품 전용 보안 기준을 관리한다. 사내 `Directory서비스_애플리케이션_하드닝_가이드` 개정에 따라 원격 평문 HTTP와 외부 승인 대기 계약을 사이트 CA·HTTPS·TOFU pin·1시간 1건 등록 모드·CSR 즉시 발급 계약으로 전환한다.
 
-문서에서 “확정”은 목표 설계 결정이며 구현 완료가 아니다. Domain·저장 directory·Admin·Peer exchange의 service identity와 remote listener·External 공개 PKI·즉시 registration·renewal route는 목표 HTTPS 구조로 전환됐고 로컬 자동 검증은 통과했다. 실제 Windows 서비스·TLS·standby 전환·Milestone 통합을 수행하지 않았으므로 인증서 전환 전체를 현장 검증 완료로 표시하지 않는다.
+문서에서 “확정”은 목표 설계 결정이며 구현 완료가 아니다. Domain·저장 directory·Admin·Peer exchange의 service identity와 remote listener·External 공개 PKI·즉시 registration·renewal route는 목표 HTTPS 구조로 전환됐고 로컬 자동 검증은 통과했다. CA key rotation·dual-pin은 [전용 구현계획](./07-ca-key-rotation.md)에 따라 최초 릴리스 전에 추가해야 한다. 실제 Windows 서비스·TLS·standby 전환·Milestone 통합도 수행하지 않았으므로 인증서 전환 전체를 완료로 표시하지 않는다.
 
 ## 목표 운영 기준
 
@@ -50,7 +50,8 @@ revision: 36
 | 6 | [외부 애플리케이션 API 명세](./04-api-01-external-application.md) | 주소 구성, TOFU·pin, 일일 키, CSR 발급·갱신, CRL과 대상 서비스 인증서 검증 |
 | 7 | [내부 API 명세](./04-api-02-internal.md) | 설정 UI 등록 모드, 와치독, CA 운영과 Peer 동기화 계약 |
 | 8 | [다음 개발 실행계획](./05-next-development.md) | 확정 계약을 실제 구현 단위로 나눈 선후관계·변경 위치·완료 조건 |
-| 9 | [현장 검증 실행계획](./06-release-validation.md) | 설치 상태 비파괴 증거 수집 도구와 실제 OS·Milestone·두 장비 검증 순서 |
+| 9 | [CA key rotation 구현계획](./07-ca-key-rotation.md) | dual-pin 상태 머신, issuer별 CRL, dual-slot 저장·복구와 구현·검증 순서 |
+| 10 | [현장 검증 실행계획](./06-release-validation.md) | 설치 상태 비파괴 증거 수집 도구와 실제 OS·Milestone·두 장비 검증 순서 |
 
 ## 문서 우선순위
 
@@ -82,17 +83,18 @@ revision: 36
 | 4 | External TOFU·등록 모드·즉시 발급·갱신 | 진행 중 — 목표 XSD·공개 DTO·strict codec, 공개 PKI·조회·즉시 등록·재등록·renewal 발급·exact replay와 overlap 폐기 runtime·테스트 소스 연결 완료. 외부 앱 TOFU/pin 상호운용 검증 대기 |
 | 5 | Admin·설정 UI의 pending 제거와 등록 모드 | 완료 — 단일 목표 `admin.xsd`, 서비스 DNS+IPv4 pair·registration-mode DTO·strict codec, 1시간 first-wins owner와 `READY` active issuer 조건의 실제 route, pending route·DTO·codec·legacy schema·application handler·UI 제거와 등록 서비스 화면의 countdown·제어·마지막 결과 binding 완료; 양 구성 자동 테스트 통과 |
 | 6 | 삭제·재등록 원자 폐기와 Peer HTTPS·동일 CA | 부분 완료 — 삭제·재등록 원자 commit, Peer pinned TLS·PKI state cache, 인증 backup 기반 standby 구성과 관찰 high-water 이상 backup만 허용하는 명시적 승격 소스를 연결했다. 실제 이중화 설치·동기화·승격 실행 검증은 남음 |
-| 7 | 지원 OS·Milestone 조합 릴리스 검증 | 진행 중 — Windows Server 2016 build 11 최초 설치의 PowerShell 5.1 generic list 반환 실패를 재현·수정하고 build 12 생성. 최신 installer에는 읽기 전용 설치 상태 및 실제 IPv4·hostname TLS/공개 PKI/health JSON 검증 도구와 parser 회귀 소스를 연결했으며 실제 build 12 재설치·최신 package 현장 검증 대기 |
+| 7 | CA key rotation·dual-pin | 계획 완료·구현 대기 — `STABLE/PUBLISHED/ACTIVATED`, current+next/retiring dual-pin, issuer별 CRL, fixed A/B slot, old key terminal 폐기와 Peer·Standby·maintenance 범위를 [전용 계획](./07-ca-key-rotation.md)으로 확정 |
+| 8 | 지원 OS·Milestone 조합 릴리스 검증 | 진행 중 — Windows Server 2016 build 11 최초 설치의 PowerShell 5.1 generic list 반환 실패를 재현·수정하고 build 12 생성. 최신 installer에는 읽기 전용 설치 상태 및 실제 IPv4·hostname TLS/공개 PKI/health JSON 검증 도구와 parser 회귀 소스를 연결했으며 rotation 구현 뒤 전체 현장 검증 필요 |
 
 상세 종료 조건은 [인증서 전환 변경계획 §8](./02-certificate-transition.md#8-구현-단계와-종료-조건)을 따른다.
 
-다음 단계는 [다음 개발 실행계획](./05-next-development.md)과 [현장 검증 실행계획](./06-release-validation.md)에 따라 build 12 Windows Server 2016 설치 기준선을 확인한 뒤, 완료된 계약·도메인·저장·복합 journal·HTTPS·External/Admin/Peer·standby 역할 전환 소스를 실제 지원 환경에서 통합 검증하는 것이다. 제품은 아직 배포되지 않았으므로 기존 단일 `ServerAddress`·`pending.xml` 형식은 운영 migration 대상이 아닌 개발 기준선으로 확정했다. 기존 개발·테스트 데이터 루트는 명시적으로 초기화하며 자동 추론·운영자 매핑·호환 migration 코드는 만들지 않는다. CA key rotation·dual-pin은 이번 실행계획에서 제외한다.
+다음 단계는 [CA key rotation 구현계획](./07-ca-key-rotation.md)의 계약·XSD·최초 정식 schema v1 개정을 먼저 완료하고 dual-pin·issuer별 CRL·maintenance·Peer 전환을 구현하는 것이다. 그 뒤 [현장 검증 실행계획](./06-release-validation.md)에 따라 전체 HTTPS·External/Admin/Peer·standby와 rotation을 실제 지원 환경에서 통합 검증한다. 제품은 아직 배포되지 않았으므로 기존 단일 `ServerAddress`·`pending.xml`과 build 14 이하 단일 CA 저장·backup 형식은 운영 migration 대상이 아닌 개발 기준선으로 한정하고 개발·테스트 데이터 루트를 명시적으로 초기화한다.
 
 ## API 경계
 
 | 호출자 | 허용 계약 | 금지된 의존 |
 |---|---|---|
-| 외부 조회 앱 | `/pki/ca`, `/pki/crl`, `/api/health`, `/api/services` | `/admin/*`, `/api/sync/*`, 저장 파일 |
+| 외부 조회 앱 | `/pki/ca`, current alias `/pki/crl`, issuer별 `/pki/crl/{CaSerialNumber}`, `/api/health`, `/api/services` | `/admin/*`, `/api/sync/*`, 저장 파일 |
 | 등록 서버 앱 | 조회 계약, `/api/registration`, `/api/certificates/renew` | 등록 모드 원격 제어, CA private key·ledger 파일 |
 | 설정 UI | `/admin/*`, 와치독 Named Pipe | XML·CA 파일 직접 수정, Peer endpoint 직접 호출 |
 | 와치독 | loopback health, 제한 서비스 제어 | Directory 데이터·등록 모드·CA 변경 |
@@ -110,6 +112,6 @@ revision: 36
 | installer | Site CA 초기 encrypted backup, Directory leaf/private-key ACL, IPv4·hostname 두 HTTPS URL ACL·HTTP.sys binding·방화벽과 exact rollback 소스 완료. 실제 Windows 설치 미검증 | site CA·leaf·encrypted backup·두 URL identity·HTTPS binding과 rollback의 실제 설치 검증 |
 | Peer | HTTPS IPv4 endpoint + 기존 HMAC, 동일 site CA·pin·SAN·CRL 검증과 active current mapping/standby 공개 cache 원자 교환 연결 | 실제 두 장비 TLS·PKI sync·명시적 승격 실행 검증 |
 | XSD/tests | External·Admin registration-mode·Peer DNS+IPv4/PKI high-water XSD·DTO·codec, 공개 PKI·registration·renewal·Peer PKI runtime과 발급/journal 장애 경계 테스트 소스 연결. 구형 External legacy 모델 제거 | 전체 테스트 실행과 지원 환경 통합 검증 |
-| PKI core | CA·CSR·leaf·CRL primitive, DPAPI CA key·metadata·ledger·CRL 저장, 암호화 backup, 상태·원장·serial 폐기 Admin/UI, repair 복원·standby 구성/승격과 등록·재등록·renewal·삭제 원자 폐기 연결 | 실제 DPAPI/ACL/TLS·backup/repair·역할 전환 실행 검증. CA rotation은 후속 범위 |
+| PKI core | 단일 CA의 CSR·leaf·CRL primitive, DPAPI key·metadata·ledger·CRL 저장, 암호화 backup, 상태·원장·serial 폐기 Admin/UI, repair 복원·standby 구성/승격과 등록·재등록·renewal·삭제 원자 폐기 연결 | 최초 릴리스 필수인 dual-slot CA key rotation·dual-pin·issuer별 CRL·old key 폐기 구현과 실제 DPAPI/ACL/TLS·backup/repair·역할 전환 검증 필요 |
 
 구체적인 후속 변경 대상과 장애 검증은 [인증서 전환 변경계획](./02-certificate-transition.md)을 따른다.

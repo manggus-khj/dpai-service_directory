@@ -27,6 +27,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     new CertificateLedgerEntry[0],
                     1,
                     1,
+                    Serial(10000),
                     evidence,
                     Hash(0x33),
                     TestData.Utc(1),
@@ -53,6 +54,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                         history,
                         2,
                         1,
+                        Serial(10000),
                         Evidence(),
                         Hash(0x33),
                         TestData.Utc(1),
@@ -79,6 +81,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     null,
                     0,
                     0,
+                    Serial(10000),
                     evidence,
                     null,
                     default(DateTime),
@@ -94,6 +97,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     null,
                     0,
                     0,
+                    Serial(10000),
                     CertificateIssuanceRequestEvidence.CreateRegistration(
                         evidence.RequestId,
                         evidence.ServiceDefinition,
@@ -123,6 +127,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     CertificateLedgerEntry issued =
                         CertificateLedgerEntry.CreateIssued(
                             Serial(index),
+                            Serial(10000),
                             TestData.Definition(
                                 "Historical Service",
                                 "AB12",
@@ -173,6 +178,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             {
                 return CertificateLedgerEntry.CreateIssued(
                     Serial(OversizedHistoryEntryCount + 1),
+                    Serial(10000),
                     evidence.ServiceDefinition,
                     evidence.RequestId,
                     evidence.IssuanceKind,

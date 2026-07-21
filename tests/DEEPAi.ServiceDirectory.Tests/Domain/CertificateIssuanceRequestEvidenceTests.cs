@@ -118,6 +118,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
             {
                 return CertificateLedgerEntry.CreateIssued(
                     Serial("02A4A5A6A7A8A9AAABACADAEAFB0B1B2"),
+                    Serial("01A4A5A6A7A8A9AAABACADAEAFB0B1B2"),
                     evidence.ServiceDefinition,
                     evidence.RequestId,
                     evidence.IssuanceKind,

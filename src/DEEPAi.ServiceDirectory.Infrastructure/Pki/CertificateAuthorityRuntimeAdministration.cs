@@ -5,12 +5,14 @@ using DEEPAi.ServiceDirectory.Domain;
 using DEEPAi.ServiceDirectory.Domain.Certificates;
 using DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi;
 using DEEPAi.ServiceDirectory.Infrastructure.Persistence;
+using DEEPAi.ServiceDirectory.InternalProtocol.Admin;
 using DEEPAi.ServiceDirectory.InternalProtocol.Peer;
 
 namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
 {
     public sealed class CertificateAuthorityRuntimeAdministration
         : ICertificateAuthorityAdministration,
+        ICertificateAuthorityRotationAdministration,
         ICertificateServiceMutationAdministration,
         ICertificateAuthorityPeerSynchronization,
         IPeerTlsTrustProvider,
@@ -177,6 +179,39 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 revokedUtc);
         }
 
+        public AdminServerCaRotationResponse GetRotationStatus(
+            DateTime utcNow)
+        {
+            ThrowIfDisposed();
+            EnsureActiveIssuer("CA rotation status access");
+            return _administration.GetRotationStatus(utcNow);
+        }
+
+        public AdminServerCaRotationResponse PrepareRotation(
+            DateTime utcNow)
+        {
+            ThrowIfDisposed();
+            EnsureActiveIssuer("CA rotation preparation");
+            if (_registrationModeOwner == null
+                || _registrationModeOwner.GetSnapshot().State
+                    != RegistrationModeState.Closed)
+            {
+                throw new InvalidOperationException(
+                    "Registration mode must be closed before CA rotation preparation.");
+            }
+
+            return _administration.PrepareRotation(utcNow);
+        }
+
+        public AdminServerCaRotationResponse CancelRotation(
+            Guid rotationId,
+            DateTime utcNow)
+        {
+            ThrowIfDisposed();
+            EnsureActiveIssuer("CA rotation cancellation");
+            return _administration.CancelRotation(rotationId, utcNow);
+        }
+
         internal ExternalTrustInfo GetExternalTrustInfo()
         {
             ThrowIfDisposed();
@@ -184,6 +219,15 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 ? _peerPkiStore.GetStandbyExternalTrustInfo(
                     DateTime.UtcNow)
                 : _administration.GetExternalTrustInfo();
+        }
+
+        internal ExternalTrustSnapshot GetExternalTrustSnapshot()
+        {
+            ThrowIfDisposed();
+            return _administration == null
+                ? _peerPkiStore.GetStandbyExternalTrustSnapshot(
+                    DateTime.UtcNow)
+                : _administration.GetExternalTrustSnapshot();
         }
 
         internal byte[] GetExternalCertificateRevocationList()
@@ -203,6 +247,25 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     _directoryState,
                     _installedInstanceId,
                     DateTime.UtcNow);
+        }
+
+        internal byte[] GetExternalCertificateRevocationList(
+            string caSerialNumber)
+        {
+            ThrowIfDisposed();
+            if (_directoryState == null)
+            {
+                throw new InvalidOperationException(
+                    "External PKI maintenance is not configured for this administration instance.");
+            }
+
+            return _administration == null
+                ? _peerPkiStore
+                    .GetStandbyExternalCertificateRevocationList(
+                        caSerialNumber,
+                        DateTime.UtcNow)
+                : _administration.GetExternalCertificateRevocationList(
+                    caSerialNumber);
         }
 
         internal ExternalRegistrationServiceResult RegisterExternalService(

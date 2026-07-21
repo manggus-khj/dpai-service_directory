@@ -156,6 +156,15 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
         AdminHandlerResult<AdminServerCaBackupResponse> CreateCaBackup(
             AdminCreateCaBackupRequest request);
 
+        AdminHandlerResult<AdminServerCaRotationResponse>
+            GetCaRotation();
+
+        AdminHandlerResult<AdminServerCaRotationResponse>
+            PrepareCaRotation();
+
+        AdminHandlerResult<AdminServerCaRotationResponse>
+            CancelCaRotation(AdminCancelCaRotationRequest request);
+
         AdminHandlerResult<AdminServerCertificatesResponse> GetCertificates(
             AdminCertificatesQuery query);
 

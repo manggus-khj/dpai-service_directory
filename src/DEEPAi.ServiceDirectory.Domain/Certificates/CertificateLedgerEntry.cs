@@ -40,6 +40,7 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
 
         private CertificateLedgerEntry(
             CertificateSerialNumber serialNumber,
+            CertificateSerialNumber issuerCaSerialNumber,
             ServiceDefinition serviceDefinition,
             Guid issuanceRequestId,
             CertificateIssuanceKind issuanceKind,
@@ -56,6 +57,7 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
             CertificateRevocationReason? revocationReason)
         {
             SerialNumber = serialNumber;
+            IssuerCaSerialNumber = issuerCaSerialNumber;
             ServiceDefinition = serviceDefinition;
             IssuanceRequestId = issuanceRequestId;
             IssuanceKind = issuanceKind;
@@ -77,6 +79,8 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
         }
 
         public CertificateSerialNumber SerialNumber { get; }
+
+        public CertificateSerialNumber IssuerCaSerialNumber { get; }
 
         public ServiceDefinition ServiceDefinition { get; }
 
@@ -105,6 +109,7 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
 
         public static CertificateLedgerEntry CreateIssued(
             CertificateSerialNumber serialNumber,
+            CertificateSerialNumber issuerCaSerialNumber,
             ServiceDefinition serviceDefinition,
             Guid issuanceRequestId,
             CertificateIssuanceKind issuanceKind,
@@ -121,6 +126,14 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
                 throw new ArgumentException(
                     "Certificate serial number must be valid.",
                     nameof(serialNumber));
+            }
+
+            if (!issuerCaSerialNumber.IsValid
+                || issuerCaSerialNumber == serialNumber)
+            {
+                throw new ArgumentException(
+                    "Issuer CA serial number must be valid and distinct from the leaf serial.",
+                    nameof(issuerCaSerialNumber));
             }
 
             if (serviceDefinition == null)
@@ -152,6 +165,7 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
 
             return new CertificateLedgerEntry(
                 serialNumber,
+                issuerCaSerialNumber,
                 serviceDefinition,
                 issuanceRequestId,
                 issuanceKind,
@@ -170,6 +184,7 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
 
         public static CertificateLedgerEntry Restore(
             CertificateSerialNumber serialNumber,
+            CertificateSerialNumber issuerCaSerialNumber,
             ServiceDefinition serviceDefinition,
             Guid issuanceRequestId,
             CertificateIssuanceKind issuanceKind,
@@ -187,6 +202,7 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
         {
             CertificateLedgerEntry entry = CreateIssued(
                 serialNumber,
+                issuerCaSerialNumber,
                 serviceDefinition,
                 issuanceRequestId,
                 issuanceKind,
@@ -266,6 +282,7 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
 
             return new CertificateLedgerEntry(
                 SerialNumber,
+                IssuerCaSerialNumber,
                 ServiceDefinition,
                 IssuanceRequestId,
                 IssuanceKind,
@@ -308,6 +325,7 @@ namespace DEEPAi.ServiceDirectory.Domain.Certificates
 
             return new CertificateLedgerEntry(
                 SerialNumber,
+                IssuerCaSerialNumber,
                 ServiceDefinition,
                 IssuanceRequestId,
                 IssuanceKind,

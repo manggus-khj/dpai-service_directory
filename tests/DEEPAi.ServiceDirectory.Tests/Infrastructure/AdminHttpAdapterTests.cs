@@ -439,6 +439,21 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 "/admin/settings/logging",
                 null,
                 "GetLoggingSettings");
+            AssertRoute(
+                "GET",
+                AdminApiContract.CaRotationPath,
+                null,
+                "GetCaRotation");
+            AssertRoute(
+                "POST",
+                AdminApiContract.PrepareCaRotationPath,
+                AdminXmlCodec.SerializePrepareCaRotation(),
+                "PrepareCaRotation");
+            AssertRoute(
+                "POST",
+                AdminApiContract.CancelCaRotationPath,
+                AdminXmlCodec.SerializeCancelCaRotation(id),
+                "CancelCaRotation");
         }
 
         [TestMethod]
@@ -980,6 +995,30 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                         new string('A', 43) + "="));
             }
 
+            public AdminHandlerResult<AdminServerCaRotationResponse>
+                GetCaRotation()
+            {
+                TotalCalls++;
+                LastOperation = "GetCaRotation";
+                return RotationSuccess();
+            }
+
+            public AdminHandlerResult<AdminServerCaRotationResponse>
+                PrepareCaRotation()
+            {
+                TotalCalls++;
+                LastOperation = "PrepareCaRotation";
+                return RotationSuccess();
+            }
+
+            public AdminHandlerResult<AdminServerCaRotationResponse>
+                CancelCaRotation(AdminCancelCaRotationRequest request)
+            {
+                TotalCalls++;
+                LastOperation = "CancelCaRotation";
+                return RotationSuccess();
+            }
+
             public AdminHandlerResult<AdminServerCertificatesResponse>
                 GetCertificates(AdminCertificatesQuery query)
             {
@@ -1003,6 +1042,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     AdminServerCertificateRevocationResponse>.Success(
                         new AdminServerCertificateRevocationResponse(
                             serialNumber,
+                            "01A4B5C6D7E8F90123456789ABCDEF01",
                             new DateTime(
                                 2026,
                                 7,
@@ -1037,6 +1077,48 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                                 null,
                                 null),
                             null));
+            }
+
+            private static AdminHandlerResult<
+                AdminServerCaRotationResponse> RotationSuccess()
+            {
+                return AdminHandlerResult<AdminServerCaRotationResponse>
+                    .Success(new AdminServerCaRotationResponse(
+                        AdminCaRotationPhase.Stable,
+                        1,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        new AdminCaRotationAuthority(
+                            AdminCaRotationAuthorityRole.Current,
+                            "01A4B5C6D7E8F90123456789ABCDEF01",
+                            new string('A', 43) + "=",
+                            new DateTime(
+                                2026,
+                                7,
+                                19,
+                                0,
+                                0,
+                                0,
+                                DateTimeKind.Utc),
+                            new DateTime(
+                                2046,
+                                7,
+                                19,
+                                0,
+                                0,
+                                0,
+                                DateTimeKind.Utc),
+                            1),
+                        null,
+                        true,
+                        AdminCaRotationReadiness.NotRequired,
+                        AdminCaRotationReadiness.Ready,
+                        0,
+                        false,
+                        false));
             }
         }
 

@@ -29,6 +29,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
         internal const int LeafValidityYears = 1;
         internal const int ActivationBackdateMinutes = 5;
         internal const string CrlRelativePath = "/pki/crl";
+        internal const string IssuerCrlRelativePathPrefix = "/pki/crl/";
         internal const int HttpsPort = 21000;
 
         private const string CaSignatureAlgorithm = "SHA256WITHRSA";
@@ -56,6 +57,22 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
         internal DateTime NotBeforeUtc => AsUtc(_certificate.NotBefore);
 
         internal DateTime NotAfterUtc => AsUtc(_certificate.NotAfter);
+
+        internal string IssuerCrlRelativePath =>
+            GetIssuerCrlRelativePath(SerialNumber);
+
+        internal static string GetIssuerCrlRelativePath(
+            CertificateSerialNumber caSerialNumber)
+        {
+            if (!caSerialNumber.IsValid)
+            {
+                throw new ArgumentException(
+                    "CA serial number must be valid.",
+                    nameof(caSerialNumber));
+            }
+
+            return IssuerCrlRelativePathPrefix + caSerialNumber.Hex;
+        }
 
         internal static SiteCertificateAuthority Create(
             Guid siteId,
@@ -517,7 +534,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 null);
         }
 
-        private static CrlDistPoint CreateCrlDistributionPoint(
+        private CrlDistPoint CreateCrlDistributionPoint(
             DirectoryEndpointIdentity directoryIdentity)
         {
             var distributionPointName = new DistributionPointName(
@@ -536,13 +553,13 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             });
         }
 
-        private static string CreateCrlUri(string host)
+        private string CreateCrlUri(string host)
         {
             return "https://"
                 + host
                 + ":"
                 + HttpsPort.ToString(CultureInfo.InvariantCulture)
-                + CrlRelativePath;
+                + IssuerCrlRelativePath;
         }
 
         private static AsymmetricCipherKeyPair GenerateRsaKeyPair(

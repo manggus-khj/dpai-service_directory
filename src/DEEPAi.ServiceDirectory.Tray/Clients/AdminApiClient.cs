@@ -171,6 +171,58 @@ namespace DEEPAi.ServiceDirectory.Tray.Clients
             }
         }
 
+        public Task<AdminServerCaRotationResponse> GetCaRotationAsync(
+            CancellationToken cancellationToken)
+        {
+            return SendAsync(
+                HttpMethod.Get,
+                AdminApiContract.CaRotationPath.TrimStart('/'),
+                null,
+                AdminXmlCodec.ParseCaRotationResponse,
+                cancellationToken);
+        }
+
+        public async Task<AdminServerCaRotationResponse>
+            PrepareCaRotationAsync(CancellationToken cancellationToken)
+        {
+            byte[] body = AdminXmlCodec.SerializePrepareCaRotation();
+            try
+            {
+                return await SendAsync(
+                    HttpMethod.Post,
+                    AdminApiContract.PrepareCaRotationPath.TrimStart('/'),
+                    body,
+                    AdminXmlCodec.ParseCaRotationResponse,
+                    cancellationToken);
+            }
+            finally
+            {
+                Array.Clear(body, 0, body.Length);
+            }
+        }
+
+        public async Task<AdminServerCaRotationResponse>
+            CancelCaRotationAsync(
+                Guid rotationId,
+                CancellationToken cancellationToken)
+        {
+            byte[] body = AdminXmlCodec.SerializeCancelCaRotation(
+                rotationId);
+            try
+            {
+                return await SendAsync(
+                    HttpMethod.Post,
+                    AdminApiContract.CancelCaRotationPath.TrimStart('/'),
+                    body,
+                    AdminXmlCodec.ParseCaRotationResponse,
+                    cancellationToken);
+            }
+            finally
+            {
+                Array.Clear(body, 0, body.Length);
+            }
+        }
+
         public Task<AdminServerCertificatesResponse> GetCertificatesAsync(
             string cursor,
             CancellationToken cancellationToken)

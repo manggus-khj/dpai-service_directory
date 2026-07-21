@@ -643,12 +643,12 @@ function Test-LiveTarget {
             CaSha256 = (Get-FileHash `
                 -LiteralPath (Join-Path `
                     ([Environment]::GetFolderPath('CommonApplicationData')) `
-                    'DEEPAi\ServiceDirectory\pki\ca.der') `
+                    'DEEPAi\ServiceDirectory\pki\ca-a.der') `
                 -Algorithm SHA256).Hash
             CrlSha256 = (Get-FileHash `
                 -LiteralPath (Join-Path `
                     ([Environment]::GetFolderPath('CommonApplicationData')) `
-                    'DEEPAi\ServiceDirectory\pki\crl.der') `
+                    'DEEPAi\ServiceDirectory\pki\crl-a.der') `
                 -Algorithm SHA256).Hash
             HealthUtc = $healthUtc.ToString(
                 "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'",
@@ -725,12 +725,12 @@ function Invoke-ServiceDirectoryLiveEndpointValidation {
             throw 'The installed Bouncy Castle runtime is missing.'
         }
         Add-Type -LiteralPath $bouncyCastlePath
-        $caPath = Join-Path $dataRoot 'pki\ca.der'
-        $crlPath = Join-Path $dataRoot 'pki\crl.der'
+        $caPath = Join-Path $dataRoot 'pki\ca-a.der'
+        $crlPath = Join-Path $dataRoot 'pki\crl-a.der'
         [void](Get-SafeInstalledFileEvidence `
-            -Path $caPath -EvidenceName 'pki\ca.der')
+            -Path $caPath -EvidenceName 'pki\ca-a.der')
         [void](Get-SafeInstalledFileEvidence `
-            -Path $crlPath -EvidenceName 'pki\crl.der')
+            -Path $crlPath -EvidenceName 'pki\crl-a.der')
         $script:LiveCaBytes = [IO.File]::ReadAllBytes($caPath)
         $script:LiveCrlBytes = [IO.File]::ReadAllBytes($crlPath)
         $script:LiveCaSpkiSha256 = Get-LiveCaSpkiSha256 `

@@ -161,7 +161,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                         ?? CreateRegistrationResult(
                             ExternalRegistrationServiceStatus.Replayed,
                             replayEntry,
-                            snapshot.CaCertificateDer);
+                            snapshot.CaCertificateDer,
+                            snapshot.State.CaSerialNumber);
                 }
 
                 CertificateLedgerEntry currentEntry;
@@ -241,6 +242,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                                 projectedEntries,
                                 nextPkiRevision,
                                 snapshot.State.CrlNumber,
+                                snapshot.State.CaSerialNumber,
                                 evidence,
                                 subjectPublicKeyInfoSha256,
                                 utcNow,
@@ -346,6 +348,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 CertificateLedgerEntry issuedEntry =
                     CertificateLedgerEntry.CreateIssued(
                         serialNumber.ToLedgerSerialNumber(),
+                        snapshot.State.CaSerialNumber,
                         serviceDefinition,
                         evidence.RequestId,
                         CertificateIssuanceKind.Renewal,
@@ -376,7 +379,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     CreateRegistrationResult(
                         ExternalRegistrationServiceStatus.Renewed,
                         issuedEntry,
-                        snapshot.CaCertificateDer);
+                        snapshot.CaCertificateDer,
+                        snapshot.State.CaSerialNumber);
                 using (CertificateAuthorityStoreSnapshot committed =
                     CommitServiceMutation(
                         directoryState,

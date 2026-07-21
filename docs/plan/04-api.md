@@ -2,21 +2,21 @@
 
 ```text
 최초 작성일: 2026-07-17
-최종 변경일: 2026-07-20
-revision: 2
+최종 변경일: 2026-07-22
+revision: 3
 ```
 
-> 문서 상태: 인증서 기반 목표 계약 확정
-> 구현 상태: PKI core 1차 소스만 부분 구현. 현재 wire·XSD·listener는 평문 HTTP·승인 대기 계약이며 목표 명세로 전환 필요
+> 문서 상태: 단일 CA 인증서 기반 목표 계약 확정, CA key rotation·dual-pin 계약 개정 대기
+> 구현 상태: HTTPS·등록 모드·즉시 발급·갱신·폐기·Peer PKI 단일 CA wire와 XSD를 구현했다. 최초 릴리스 전 [rotation 구현계획](./07-ca-key-rotation.md)에 따라 trust bundle·issuer별 CRL·Admin rotation·Peer dual-CA 계약을 추가해야 한다.
 
-이 파일은 호출 주체와 신뢰 경계별 상세 명세의 색인이다. 인증서 전환 범위와 구현 순서는 [인증서 전환 변경계획](./02-certificate-transition.md), 실제 요청·응답과 호출 절차는 아래 외부·내부 명세가 단일 원본이다. role별 full ledger·Peer PKI cache와 원자 저장 형식은 [최초 정식 저장 schema v1](./03-development-01-storage-schema.md)을 따른다.
+이 파일은 호출 주체와 신뢰 경계별 상세 명세의 색인이다. 인증서 전환 범위와 구현 순서는 [인증서 전환 변경계획](./02-certificate-transition.md)과 [CA key rotation 구현계획](./07-ca-key-rotation.md), 실제 요청·응답과 호출 절차는 아래 외부·내부 명세가 단일 원본이다. role별 full ledger·Peer PKI cache와 원자 저장 형식은 [최초 정식 저장 schema v1](./03-development-01-storage-schema.md)을 따른다.
 
 ## 목표 운영 기준
 
 - Milestone Management Server 주소는 같은 서버에 설치된 Directory의 위치다. 외부 앱은 성공한 Milestone session에서 얻은 `DirectoryHostName`·`DirectoryIpv4Address`를 같은 Directory identity로 저장하고 `https://{DirectoryHostName}:21000` 또는 `https://{DirectoryIpv4Address}:21000`으로 접속한다. 이 두 값은 Directory 위치·TLS 검증 전용이며 등록할 서비스 주소가 아니다.
 - 등록 서버 앱은 자기 서비스의 `ServiceHostName`과 `ServiceIpv4Address`를 사용자가 선택하게 하고 제한 ACL 설정에 한 쌍으로 영속화한다. 등록·조회 record, CSR와 등록 서비스 leaf SAN은 이 pair만 사용하고 Milestone/Directory 주소, TCP source IP와 DNS 역조회 값을 사용하지 않는다.
 - Directory listener, Peer와 등록 서비스 주소는 IPv4만 지원한다. CA certificate 자체에는 endpoint SAN을 넣지 않고, Directory leaf와 등록 서비스 leaf는 각각 자기 DNS+IPv4 pair를 섞지 않고 사용한다.
-- 모든 leaf의 CRL Distribution Point는 Directory identity로 만든 `https://{DirectoryHostName}:21000/pki/crl`과 `https://{DirectoryIpv4Address}:21000/pki/crl` 두 absolute URI다. 외부 응답의 `CrlUri=/pki/crl`은 현재 검증된 Directory base에 결합하는 상대 API path일 뿐 인증서 extension 값이 아니다.
+- 현재 단일 CA leaf의 CRL Distribution Point는 Directory identity의 `/pki/crl`을 사용한다. 최초 릴리스 rotation 계약에서는 두 CA CRL을 혼합하지 않도록 issuer CA serial별 immutable path를 DNS·IPv4 absolute URI에 사용하고 `/pki/crl`은 current issuer alias로만 유지한다.
 - 연결정보 파일, Directory 주소·CA pin·ProductCode의 설치 입력을 사용하지 않는다.
 - 첫 Directory 연결은 Directory leaf의 DNS·IPv4 SAN과 chain·CA 제약·키 강도를 검증한 제한적 TOFU이고, 이후에는 Milestone server identity별로 저장한 site CA와 SHA-256 SPKI pin을 강제한다.
 - 원격 External·Peer API는 TLS 1.2 이상을 지원하는 OS 보안 기본값의 HTTPS만 허용한다. protocol·cipher suite를 앱 코드에 고정하지 않으며 평문 HTTP remote listener와 redirect fallback은 제공하지 않는다.
@@ -25,7 +25,7 @@ revision: 2
 - 외부 승인 대기는 제거한다. 관리자가 설정 UI의 등록 서비스 화면에서 ProductCode 입력 없이 전역 등록 모드를 열고, 1시간 안의 첫 유효 요청 한 건을 즉시 등록·인증서 발급한 뒤 닫는다.
 - 서비스 삭제·재등록은 기존 인증서 serial 폐기와 CRL 갱신까지 완료해야 성공이다.
 - URL·media type·XML에 API version 필드를 두지 않는다. 암호 domain label과 알고리즘 식별자는 API version이 아니다.
-- External·Admin·Peer XML은 각 고정 namespace와 strict XSD를 사용한다. 현재 XSD는 목표 계약으로 아직 갱신하지 않았다.
+- External·Admin·Peer XML은 각 고정 namespace와 strict XSD를 사용한다. 현재 XSD는 단일 CA 계약을 구현했으며 rotation 구현 전 trust bundle·Admin rotation·Peer dual-CA 확장을 먼저 확정한다.
 - 인증·인가·endpoint·pin·CSR·발급·폐기 실패는 비밀값을 배제한 보안 감사 대상으로 한다.
 
 ## 상세 명세
@@ -39,7 +39,7 @@ revision: 2
 
 | 경계 | 호출 주체 | endpoint | 상세 문서 |
 |---|---|---|---|
-| PKI bootstrap | Milestone Management Server와 같은 서버의 Directory DNS·IPv4 pair를 이미 아는 외부 앱 | `GET /pki/ca`, `GET /pki/crl` | 외부 명세 |
+| PKI bootstrap | Milestone Management Server와 같은 서버의 Directory DNS·IPv4 pair를 이미 아는 외부 앱 | `GET /pki/ca`, current alias `GET /pki/crl`, issuer별 `GET /pki/crl/{CaSerialNumber}` | 외부 명세·rotation 계획 |
 | External 조회 | 일일 API 키와 저장 CA pin 검증을 통과한 외부 앱 | `GET /api/health`, `GET /api/services` | 외부 명세 |
 | External 발급 | 열린 전역 등록 모드에서 자기 `ServiceHostName`·`ServiceIpv4Address`와 첫 유효 CSR을 제출하는 서버 앱 | `POST /api/registration` | 외부 명세 |
 | External 갱신 | 현재 유효한 leaf private key proof를 가진 등록 서버 앱 | `POST /api/certificates/renew` | 외부 명세 |
@@ -77,4 +77,4 @@ revision: 2
 - 외부 승인 대기와 Admin approve/reject endpoint
 - HTTP canonical Peer endpoint
 
-CA·Directory/service leaf·CSR 검증·serial·CRL·certificate ledger 상태·endpoint identity primitive와 단위 테스트 소스는 추가됐지만 현재 코드의 wire와 XSD는 아직 위 계약을 구현하지 않는다. core 소스만으로 빌드·실행·설치가 완료됐다고 표시하지 않으며, 후속 구현에서 XSD·DTO·상태·저장·listener·installer·UI·테스트를 같은 목표 계약으로 변경한다.
+CA·Directory/service leaf·CSR 검증·serial·CRL·certificate ledger, HTTPS·등록 모드·즉시 발급·갱신·폐기와 Peer 단일 CA wire/XSD는 구현됐다. 그러나 rotation 전용 trust bundle·issuer별 CRL·Admin/Peer 계약은 아직 없으므로 현재 API를 최초 릴리스 완료로 표시하지 않는다. [rotation 구현계획 §12.1](./07-ca-key-rotation.md#121-단계-0--계약-선행-확정)에 따라 상세 명세와 XSD를 코드보다 먼저 개정한다.

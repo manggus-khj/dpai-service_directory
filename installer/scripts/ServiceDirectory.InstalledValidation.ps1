@@ -253,7 +253,7 @@ function Get-InstalledUrlAclPrefixes {
         "http://127.0.0.1:$script:ServicePort/")
 }
 
-function Get-InstalledCertificateAuthorityRole {
+function Get-InstalledCertificateAuthorityState {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     $bytes = [System.IO.File]::ReadAllBytes($Path)
@@ -293,7 +293,21 @@ function Get-InstalledCertificateAuthorityRole {
     if ($role -cnotin @('ACTIVE_ISSUER', 'STANDBY')) {
         throw 'pki/state.xml contains an invalid role.'
     }
-    return $role
+    $phase = Get-SingleInstalledXmlElementValue `
+        -Root $root -Name 'RotationPhase'
+    if ($phase -cnotin @('STABLE', 'PUBLISHED', 'ACTIVATED')) {
+        throw 'pki/state.xml contains an invalid rotation phase.'
+    }
+    $currentSlot = Get-SingleInstalledXmlElementValue `
+        -Root $root -Name 'CurrentSlot'
+    if ($currentSlot -cnotin @('A', 'B')) {
+        throw 'pki/state.xml contains an invalid current slot.'
+    }
+    return [pscustomobject]@{
+        Role = $role
+        RotationPhase = $phase
+        CurrentSlot = $currentSlot
+    }
 }
 
 function Get-InstalledExecutableFromServicePath {
@@ -649,8 +663,8 @@ function Invoke-ServiceDirectoryInstalledValidation {
         'directory.xml',
         'config.xml',
         'pki\state.xml',
-        'pki\ca.der',
-        'pki\crl.der')
+        'pki\ca-a.der',
+        'pki\crl-a.der')
     foreach ($relativePath in $requiredNonSecretFiles) {
         Invoke-InstalledValidationCheck -Name "File.$relativePath" -Action {
             $evidence = Get-SafeInstalledFileEvidence `
@@ -664,7 +678,8 @@ function Invoke-ServiceDirectoryInstalledValidation {
             'pending.xml',
             'pending.xml.bak',
             'secrets\peer.dat.bak',
-            'secrets\ca.key.bak')) {
+            'secrets\ca-a.key.bak',
+            'secrets\ca-b.key.bak')) {
         Invoke-InstalledValidationCheck -Name "Forbidden.$forbiddenPath" `
             -Action {
             if (Test-Path -LiteralPath (Join-Path $dataRoot $forbiddenPath)) {
@@ -675,33 +690,58 @@ function Invoke-ServiceDirectoryInstalledValidation {
     }
     Invoke-InstalledValidationCheck -Name 'State.CertificateAuthorityRole' `
         -Action {
-        $role = Get-InstalledCertificateAuthorityRole `
+        $caState = Get-InstalledCertificateAuthorityState `
             -Path (Join-Path $dataRoot 'pki\state.xml')
+        $role = $caState.Role
         $ledgerPath = Join-Path $dataRoot 'pki\ledger.xml'
         $peerCachePath = Join-Path $dataRoot 'pki\peer-cache.xml'
-        $caKeyPath = Join-Path $dataRoot 'secrets\ca.key'
+        $caKeyPath = Join-Path $dataRoot 'secrets\ca-a.key'
+        $caKeyBPath = Join-Path $dataRoot 'secrets\ca-b.key'
         if ($role -eq 'ACTIVE_ISSUER') {
             if (-not (Test-Path -LiteralPath $ledgerPath -PathType Leaf) `
                 -or -not (Test-Path -LiteralPath $caKeyPath -PathType Leaf) `
                 -or (Test-Path -LiteralPath $peerCachePath)) {
                 throw 'Active issuer role files are incomplete or contain standby cache.'
             }
+            $requiresOtherSlot = $caState.RotationPhase -ne 'STABLE'
+            foreach ($relativePath in @(
+                    'pki\ca-b.der',
+                    'pki\crl-b.der',
+                    'secrets\ca-b.key')) {
+                $exists = Test-Path -LiteralPath `
+                    (Join-Path $dataRoot $relativePath) -PathType Leaf
+                if ($exists -ne $requiresOtherSlot) {
+                    throw "CA B-slot artifact '$relativePath' does not match rotation phase."
+                }
+            }
             $roleEvidence = Get-SafeInstalledFileEvidence `
                 -Path $ledgerPath -EvidenceName 'pki\ledger.xml'
         }
         elseif (-not (Test-Path -LiteralPath $peerCachePath -PathType Leaf) `
             -or (Test-Path -LiteralPath $ledgerPath) `
-            -or (Test-Path -LiteralPath $caKeyPath)) {
+            -or (Test-Path -LiteralPath $caKeyPath) `
+            -or (Test-Path -LiteralPath $caKeyBPath)) {
             throw 'Standby role files are incomplete or contain active issuer secrets.'
         }
         else {
+            $requiresOtherSlot = $caState.RotationPhase -ne 'STABLE'
+            foreach ($relativePath in @('pki\ca-b.der', 'pki\crl-b.der')) {
+                $exists = Test-Path -LiteralPath `
+                    (Join-Path $dataRoot $relativePath) -PathType Leaf
+                if ($exists -ne $requiresOtherSlot) {
+                    throw "Standby CA B-slot artifact '$relativePath' does not match rotation phase."
+                }
+            }
             $roleEvidence = Get-SafeInstalledFileEvidence `
                 -Path $peerCachePath -EvidenceName 'pki\peer-cache.xml'
         }
         [void]$stateEvidence.Add($roleEvidence)
-        "Role=$role"
+        "Role=$role; RotationPhase=$($caState.RotationPhase); CurrentSlot=$($caState.CurrentSlot)"
     }
-    foreach ($secretPath in @('secrets\ca.key', 'secrets\peer.dat')) {
+    foreach ($secretPath in @(
+            'secrets\ca-a.key',
+            'secrets\ca-b.key',
+            'secrets\peer.dat')) {
         $absoluteSecretPath = Join-Path $dataRoot $secretPath
         if (Test-Path -LiteralPath $absoluteSecretPath -PathType Leaf) {
             Invoke-InstalledValidationCheck -Name "Secret.$secretPath" `

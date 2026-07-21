@@ -450,6 +450,19 @@
                                 <TextBlock Margin="0,6,0,4" Text="백업 암호 확인" Style="{StaticResource MutedTextStyle}" />
                                 <PasswordBox x:Name="CaBackupPasswordConfirmBox" Width="250" MaxLength="256" HorizontalAlignment="Left" />
                                 <TextBlock Margin="0,6,0,0" Text="{Binding LastCaBackupText}" TextWrapping="Wrap" Style="{StaticResource SmallMutedTextStyle}" />
+                                <Border Margin="0,10,0,0" Padding="10" Background="{StaticResource PageBackgroundBrush}" CornerRadius="6">
+                                    <StackPanel>
+                                        <TextBlock Text="CA key rotation" FontFamily="Segoe UI Semibold" />
+                                        <TextBlock Margin="0,5,0,0" Text="{Binding CaRotationPhaseText, StringFormat='Phase: {0}'}" />
+                                        <TextBlock Margin="0,3,0,0" Text="{Binding CaTrustRevisionText, StringFormat='Trust revision: {0}'}" />
+                                        <TextBlock Margin="0,3,0,0" Text="{Binding CaOtherAuthorityText, StringFormat='다른 CA: {0}'}" TextWrapping="Wrap" />
+                                        <TextBlock Margin="0,3,0,0" Text="{Binding CaRotationReadinessText}" TextWrapping="Wrap" Style="{StaticResource SmallMutedTextStyle}" />
+                                        <WrapPanel Margin="0,8,0,0">
+                                            <Button Margin="0,0,6,0" Content="차기 CA 준비" Command="{Binding PrepareCaRotationCommand}" Style="{StaticResource PrimaryButtonStyle}" />
+                                            <Button Content="게시 취소" Command="{Binding CancelCaRotationCommand}" Style="{StaticResource DangerButtonStyle}" />
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                         </Border>
 

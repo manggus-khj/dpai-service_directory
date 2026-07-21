@@ -109,7 +109,7 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                     ExternalApiContract.CrlPath))
             {
                 throw new ArgumentException(
-                    "The External CRL URI must be the exact relative contract path.",
+                    "The External CRL URI must be the exact current alias path.",
                     nameof(crlUri));
             }
 
@@ -156,14 +156,22 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                     nameof(notAfterUtc));
             }
 
-            if (!StringComparer.Ordinal.Equals(
-                    crlUri,
-                    ExternalApiContract.CrlPath))
+            if (string.IsNullOrEmpty(crlUri)
+                || !crlUri.StartsWith(
+                    ExternalApiContract.IssuerCrlPathPrefix,
+                    StringComparison.Ordinal)
+                || crlUri.Length
+                    != ExternalApiContract.IssuerCrlPathPrefix.Length + 32)
             {
                 throw new ArgumentException(
-                    "The External CRL URI must be the exact relative contract path.",
+                    "The issued certificate CRL URI must contain an issuer serial.",
                     nameof(crlUri));
             }
+
+            ExternalApiModelValidation.RequireSerialNumber(
+                crlUri.Substring(
+                    ExternalApiContract.IssuerCrlPathPrefix.Length),
+                nameof(crlUri));
 
             CrlUri = crlUri;
         }
@@ -188,6 +196,7 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
             string message,
             ExternalResponsePayloadKind payloadKind,
             ExternalTrustInfo trustInfo,
+            ExternalTrustBundle trustBundle,
             DateTime? utcNow,
             ExternalServiceItem service,
             ExternalCertificateIssuanceStatus? issuanceStatus,
@@ -204,6 +213,7 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
             Message = ValidateMessage(message);
             PayloadKind = payloadKind;
             TrustInfo = trustInfo;
+            TrustBundle = trustBundle;
             UtcNow = utcNow;
             Service = service;
             IssuanceStatus = issuanceStatus;
@@ -226,6 +236,8 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
 
         public ExternalTrustInfo TrustInfo { get; }
 
+        public ExternalTrustBundle TrustBundle { get; }
+
         public DateTime? UtcNow { get; }
 
         public ExternalServiceItem Service { get; }
@@ -243,14 +255,27 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
         public static ExternalResponse CreateTrustInfoSuccess(
             ExternalTrustInfo trustInfo)
         {
+            return CreateTrustInfoSuccess(trustInfo, null);
+        }
+
+        public static ExternalResponse CreateTrustInfoSuccess(
+            ExternalTrustInfo trustInfo,
+            ExternalTrustBundle trustBundle)
+        {
             if (trustInfo == null)
             {
                 throw new ArgumentNullException(nameof(trustInfo));
             }
 
+            if (trustBundle != null)
+            {
+                ValidateTrustBundleMatchesCurrent(trustInfo, trustBundle);
+            }
+
             return Success(
                 ExternalResponsePayloadKind.TrustInfo,
                 trustInfo,
+                trustBundle,
                 null,
                 null,
                 null,
@@ -263,6 +288,7 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
         {
             return Success(
                 ExternalResponsePayloadKind.Health,
+                null,
                 null,
                 ExternalApiModelValidation.RequireUtc(
                     utcNow,
@@ -284,6 +310,7 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
 
             return Success(
                 ExternalResponsePayloadKind.Service,
+                null,
                 null,
                 null,
                 service,
@@ -345,6 +372,7 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                 null,
                 null,
                 null,
+                null,
                 null);
         }
 
@@ -382,6 +410,7 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                 ExternalResponsePayloadKind.CertificateIssuance,
                 null,
                 null,
+                null,
                 service,
                 status,
                 registrationRequestId,
@@ -392,6 +421,7 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
         private static ExternalResponse Success(
             ExternalResponsePayloadKind payloadKind,
             ExternalTrustInfo trustInfo,
+            ExternalTrustBundle trustBundle,
             DateTime? utcNow,
             ExternalServiceItem service,
             ExternalCertificateIssuanceStatus? issuanceStatus,
@@ -404,12 +434,48 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                 string.Empty,
                 payloadKind,
                 trustInfo,
+                trustBundle,
                 utcNow,
                 service,
                 issuanceStatus,
                 registrationRequestId,
                 renewalRequestId,
                 certificate);
+        }
+
+        private static void ValidateTrustBundleMatchesCurrent(
+            ExternalTrustInfo trustInfo,
+            ExternalTrustBundle trustBundle)
+        {
+            ExternalTrustAuthority current = trustBundle.Authorities[0];
+            if (trustInfo.SiteId != trustBundle.SiteId
+                || !BytesEqual(
+                    trustInfo.CaCertificate,
+                    current.CaCertificate)
+                || !BytesEqual(
+                    trustInfo.CaSpkiSha256,
+                    current.CaSpkiSha256))
+            {
+                throw new ArgumentException(
+                    "TrustInfo must match the CURRENT trust bundle authority.",
+                    nameof(trustBundle));
+            }
+        }
+
+        private static bool BytesEqual(byte[] left, byte[] right)
+        {
+            if (left == null || right == null || left.Length != right.Length)
+            {
+                return false;
+            }
+
+            int difference = 0;
+            for (int index = 0; index < left.Length; index++)
+            {
+                difference |= left[index] ^ right[index];
+            }
+
+            return difference == 0;
         }
 
         private static string GetSafeErrorMessage(ExternalResponseCode code)

@@ -200,7 +200,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 }
 
                 ValidateIssuedServiceIdentity(leaf, serviceShape);
-                ValidateCrlDistributionPoints(leaf, identity);
+                ValidateCrlDistributionPoints(
+                    leaf,
+                    identity,
+                    caSerialNumber.Hex);
             }
             catch (CryptographicException exception)
             {
@@ -263,6 +266,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 string serialHex = leaf.SerialNumber.ToString(16)
                     .PadLeft(32, '0')
                     .ToUpperInvariant();
+                PkiSerialNumber authoritySerial;
                 bool[] keyUsage = leaf.GetKeyUsage();
                 IList<DerObjectIdentifier> extendedKeyUsage =
                     leaf.GetExtendedKeyUsage();
@@ -299,6 +303,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     || !StringComparer.Ordinal.Equals(
                         serialHex,
                         entry.SerialNumber.Hex)
+                    || !PkiSerialNumber.TryCreate(
+                        authority.SerialNumber,
+                        out authoritySerial)
                     || !leaf.IssuerDN.Equivalent(authority.SubjectDN)
                     || !leaf.SubjectDN.Equivalent(
                         new X509Name(
@@ -323,7 +330,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     entry.ServiceIdentity);
                 ValidateCrlDistributionPoints(
                     leaf,
-                    directoryIdentity);
+                    directoryIdentity,
+                    authoritySerial.Hex);
             }
             catch (CryptographicException exception)
             {
@@ -344,7 +352,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
 
         private static void ValidateCrlDistributionPoints(
             X509Certificate certificate,
-            DirectoryEndpointIdentity directoryIdentity)
+            DirectoryEndpointIdentity directoryIdentity,
+            string issuerCaSerialNumber)
         {
             CrlDistPoint distributionPoints;
             try
@@ -412,7 +421,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
 
             if (directoryIdentity == null)
             {
-                if (uris.Any(value => !IsCanonicalCrlUri(value)))
+                if (uris.Any(value => !IsCanonicalCrlUri(
+                        value,
+                        issuerCaSerialNumber)))
                 {
                     throw new CryptographicException(
                         "The issued service certificate CRL URI is not canonical.");
@@ -424,11 +435,13 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             string expectedDns = "https://"
                 + directoryIdentity.DirectoryHostName
                 + ":21000"
-                + CrlRelativePath;
+                + IssuerCrlRelativePathPrefix
+                + issuerCaSerialNumber;
             string expectedIpv4 = "https://"
                 + directoryIdentity.DirectoryIpv4Address
                 + ":21000"
-                + CrlRelativePath;
+                + IssuerCrlRelativePathPrefix
+                + issuerCaSerialNumber;
             if (!uris.SetEquals(new[] { expectedDns, expectedIpv4 }))
             {
                 throw new CryptographicException(
@@ -436,7 +449,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             }
         }
 
-        private static bool IsCanonicalCrlUri(string value)
+        private static bool IsCanonicalCrlUri(
+            string value,
+            string issuerCaSerialNumber)
         {
             Uri uri;
             return Uri.TryCreate(value, UriKind.Absolute, out uri)
@@ -444,7 +459,8 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 && uri.Port == HttpsPort
                 && StringComparer.Ordinal.Equals(
                     uri.AbsolutePath,
-                    CrlRelativePath)
+                    IssuerCrlRelativePathPrefix
+                        + issuerCaSerialNumber)
                 && string.IsNullOrEmpty(uri.Query)
                 && string.IsNullOrEmpty(uri.Fragment)
                 && StringComparer.Ordinal.Equals(uri.AbsoluteUri, value);

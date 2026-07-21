@@ -139,22 +139,46 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     "peer-pki.after.bin"),
                 Descriptor(
                     StateFileTarget.CertificateRevocationList,
-                    "CertificateRevocationList",
-                    @"pki\crl.der",
-                    "crl.before.bin",
-                    "crl.after.bin"),
+                    "CertificateRevocationListA",
+                    @"pki\crl-a.der",
+                    "crl-a.before.bin",
+                    "crl-a.after.bin"),
                 Descriptor(
                     StateFileTarget.CaCertificate,
-                    "CaCertificate",
-                    @"pki\ca.der",
-                    "ca-certificate.before.bin",
-                    "ca-certificate.after.bin"),
+                    "CaCertificateA",
+                    @"pki\ca-a.der",
+                    "ca-a.before.bin",
+                    "ca-a.after.bin"),
                 Descriptor(
                     StateFileTarget.CaPrivateKey,
-                    "CaPrivateKey",
-                    @"secrets\ca.key",
-                    "ca-key.before.bin",
-                    "ca-key.after.bin")
+                    "CaPrivateKeyA",
+                    @"secrets\ca-a.key",
+                    "ca-a-key.before.bin",
+                    "ca-a-key.after.bin"),
+                Descriptor(
+                    StateFileTarget.CertificateRevocationListB,
+                    "CertificateRevocationListB",
+                    @"pki\crl-b.der",
+                    "crl-b.before.bin",
+                    "crl-b.after.bin"),
+                Descriptor(
+                    StateFileTarget.CaCertificateB,
+                    "CaCertificateB",
+                    @"pki\ca-b.der",
+                    "ca-b.before.bin",
+                    "ca-b.after.bin"),
+                Descriptor(
+                    StateFileTarget.CaPrivateKeyB,
+                    "CaPrivateKeyB",
+                    @"secrets\ca-b.key",
+                    "ca-b-key.before.bin",
+                    "ca-b-key.after.bin"),
+                Descriptor(
+                    StateFileTarget.RetiredAuthorities,
+                    "RetiredAuthorities",
+                    @"pki\retired-authorities.xml",
+                    "retired-authorities.before.bin",
+                    "retired-authorities.after.bin")
             };
 
             Assert.AreEqual(expected.Length, StateFileTargets.All.Count);

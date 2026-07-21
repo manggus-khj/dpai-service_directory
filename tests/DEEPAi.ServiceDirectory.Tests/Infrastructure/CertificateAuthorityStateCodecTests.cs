@@ -31,14 +31,20 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 + "  <SiteId>aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee</SiteId>\r\n"
                 + "  <IssuerInstanceId>11111111-2222-4333-8444-555555555555</IssuerInstanceId>\r\n"
                 + "  <Role>ACTIVE_ISSUER</Role>\r\n"
-                + "  <CaSerialNumber>01A4A5A6A7A8A9AAABACADAEAFB0B1B2</CaSerialNumber>\r\n"
-                + "  <CaSpkiSha256>"
+                + "  <RotationPhase>STABLE</RotationPhase>\r\n"
+                + "  <TrustRevision>1</TrustRevision>\r\n"
+                + "  <PkiRevision>7</PkiRevision>\r\n"
+                + "  <CurrentSlot>A</CurrentSlot>\r\n"
+                + "  <Authority Slot=\"A\">\r\n"
+                + "    <Role>CURRENT</Role>\r\n"
+                + "    <CaSerialNumber>01A4A5A6A7A8A9AAABACADAEAFB0B1B2</CaSerialNumber>\r\n"
+                + "    <CaSpkiSha256>"
                 + Convert.ToBase64String(Hash(0x11))
                 + "</CaSpkiSha256>\r\n"
-                + "  <NotBeforeUtc>2026-07-20T00:00:00.0000000Z</NotBeforeUtc>\r\n"
-                + "  <NotAfterUtc>2046-07-20T00:00:00.0000000Z</NotAfterUtc>\r\n"
-                + "  <PkiRevision>7</PkiRevision>\r\n"
-                + "  <CrlNumber>3</CrlNumber>\r\n"
+                + "    <NotBeforeUtc>2026-07-20T00:00:00.0000000Z</NotBeforeUtc>\r\n"
+                + "    <NotAfterUtc>2046-07-20T00:00:00.0000000Z</NotAfterUtc>\r\n"
+                + "    <CrlNumber>3</CrlNumber>\r\n"
+                + "  </Authority>\r\n"
                 + "</CertificateAuthorityState>\r\n";
             CollectionAssert.AreEqual(
                 StrictUtf8.GetBytes(expectedXml),
@@ -90,9 +96,10 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             byte[] encoded = codec.SerializeLedger(expected);
             string expectedXml =
                 "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n"
-                + "<CertificateLedger SchemaVersion=\"1\" PkiRevision=\"7\" CrlNumber=\"3\">\r\n"
+                + "<CertificateLedger SchemaVersion=\"1\" PkiRevision=\"7\">\r\n"
                 + "  <Certificate>\r\n"
                 + "    <SerialNumber>02A4A5A6A7A8A9AAABACADAEAFB0B1B2</SerialNumber>\r\n"
+                + "    <IssuerCaSerialNumber>01A4A5A6A7A8A9AAABACADAEAFB0B1B2</IssuerCaSerialNumber>\r\n"
                 + "    <ProductCode>AB12</ProductCode>\r\n"
                 + "    <IssuanceRequestId>77777777-8888-4999-aaaa-bbbbbbbbbbbb</IssuanceRequestId>\r\n"
                 + "    <IssuanceKind>REGISTRATION</IssuanceKind>\r\n"
@@ -120,13 +127,17 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 encoded);
 
             CertificateLedgerSnapshot actual = codec.DeserializeLedger(
-                encoded);
+                encoded,
+                3);
             CertificateLedgerEntry entry;
             Assert.IsTrue(actual.TryGetByRequestId(
                 new Guid("77777777-8888-4999-aaaa-bbbbbbbbbbbb"),
                 out entry));
             Assert.AreEqual("VMS Bridge", entry.ServiceDefinition.Name);
             Assert.AreEqual(21500, entry.ServiceDefinition.Port);
+            Assert.AreEqual(
+                "01A4A5A6A7A8A9AAABACADAEAFB0B1B2",
+                entry.IssuerCaSerialNumber.Hex);
             CollectionAssert.AreEqual(
                 new byte[] { 0x30, 0x01, 0x00 },
                 entry.GetLeafCertificate());
@@ -187,11 +198,16 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         private static CertificateLedgerEntry CreateEntry()
         {
             CertificateSerialNumber serialNumber;
+            CertificateSerialNumber issuerCaSerialNumber;
             Assert.IsTrue(CertificateSerialNumber.TryCreate(
                 "02A4A5A6A7A8A9AAABACADAEAFB0B1B2",
                 out serialNumber));
+            Assert.IsTrue(CertificateSerialNumber.TryCreate(
+                "01A4A5A6A7A8A9AAABACADAEAFB0B1B2",
+                out issuerCaSerialNumber));
             return CertificateLedgerEntry.CreateIssued(
                 serialNumber,
+                issuerCaSerialNumber,
                 TestData.Definition(
                     "VMS Bridge",
                     "AB12",
@@ -222,7 +238,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             string xml)
         {
             Assert.ThrowsExactly<InvalidDataException>(() =>
-                codec.DeserializeLedger(StrictUtf8.GetBytes(xml)));
+                codec.DeserializeLedger(StrictUtf8.GetBytes(xml), 3));
         }
 
         private static DateTime Utc(

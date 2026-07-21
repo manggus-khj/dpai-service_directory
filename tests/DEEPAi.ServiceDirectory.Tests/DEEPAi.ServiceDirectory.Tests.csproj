@@ -93,6 +93,7 @@
     <Compile Include="Infrastructure\ConfigurationPersistenceTests.cs" />
     <Compile Include="Infrastructure\ConfigurationPersistenceIdentityTests.cs" />
     <Compile Include="Infrastructure\CertificateAuthorityStateCodecTests.cs" />
+    <Compile Include="Infrastructure\CertificateAuthorityRotationStoreTests.cs" />
     <Compile Include="Infrastructure\CertificateAuthorityRoleRepairStoreTests.cs" />
     <Compile Include="Infrastructure\CertificateLedgerCapacityGuardTests.cs" />
     <Compile Include="Infrastructure\CertificateServiceMutationTestContext.cs" />

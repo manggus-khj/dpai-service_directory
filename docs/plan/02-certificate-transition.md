@@ -2,11 +2,11 @@
 
 ```text
 최초 작성일: 2026-07-19
-최종 변경일: 2026-07-21
-revision: 20
+최종 변경일: 2026-07-22
+revision: 22
 ```
 
-> 문서 상태: 목표 설계 확정, PKI core·저장·등록 모드 Admin route·설정 UI·Directory IPv4·hostname 두 exact remote HTTPS 설치/리스너, External 공개 PKI·즉시 등록·renewal 발급과 삭제·재등록 원자 폐기·commit 이후 시스템 이벤트, Peer 전용 pinned TLS·PKI state 교환, standby 구성·명시적 승격 소스 반영
+> 문서 상태: 인증서 기반 목표 설계와 CA key rotation·dual-pin 최초 릴리스 필수 범위 확정. 기존 PKI·등록·갱신·삭제·HTTPS·Peer·standby 기준선과 dual-slot state·Prepare/Cancel·trust bundle·issuer별 CRL·dual-key backup·Admin/UI 1차 소스 반영. Activate/Complete maintenance와 dual-CA Peer·standby는 후속 구현 중
 > 기준일: 2026-07-19
 > 적용 기준: 사내 `Directory서비스_애플리케이션_하드닝_가이드` 개정본
 > 로컬 검증 상태: Directory IPv4·hostname 두 exact HTTPS prefix 보완까지 포함한 2026-07-21 최신 작업 트리의 `Debug|x64`·`Release|x64` locked restore·빌드와 자동 테스트 663개가 각 구성에서 모두 통과했고 installer ACL round-trip·HTTPS binding rollback·installed-state·live endpoint PowerShell 회귀도 통과했다. 실제 Windows Server 설치·DPAPI·HTTP.sys TLS·두 장비 승격 검증은 남아 있다.
@@ -103,7 +103,7 @@ CLAIMED
 - 서버 앱 leaf는 CSR의 RSA 2048 이상 또는 named curve ECDSA P-256 공개키, `Server Authentication`, `digitalSignature`, exact `ServiceHostName` DNS SAN 한 개·`ServiceIpv4Address` IPv4 SAN 한 개를 사용한다. RSA public exponent는 exact 65537만 허용한다.
 - CA·leaf `notBefore`는 발급 시각에서 5분 backdate한다. CA `notAfter`는 발급 시각 기준 최대 20년, leaf는 1년이며 leaf가 CA 만료를 넘으면 발급하지 않는다.
 - leaf Subject CN에는 canonical hostname을 넣지만 표시·도구 호환용일 뿐이다. 서버 identity 검증은 exact SAN pair만 사용하고 CN fallback을 금지한다.
-- leaf CRL Distribution Point의 URI형 GeneralName에는 상대 `/pki/crl`을 넣지 않는다. 하나의 fullName에 `https://{DirectoryHostName}:21000/pki/crl`과 `https://{DirectoryIpv4Address}:21000/pki/crl` 두 absolute HTTPS URI를 넣고 둘 다 같은 signed DER CRL을 반환한다. API envelope의 `CrlUri=/pki/crl`은 검증된 현재 Directory base에 결합하는 별도 relative path다.
+- leaf CRL Distribution Point의 URI형 GeneralName에는 상대 path를 넣지 않는다. 현재 단일 CA 구현은 DNS·IPv4의 absolute `/pki/crl` URI 두 개를 사용하지만, 최초 릴리스 rotation 계약은 두 CA CRL을 혼합하지 않도록 두 absolute URI 모두에 issuer CA serial 고정 path를 사용한다. `/pki/crl`은 current issuer alias로만 유지한다.
 - Directory가 반환하거나 TLS chain에 포함하는 root는 공개 인증서뿐이며 CA 개인키는 절대 API로 노출하지 않는다.
 
 ### 4.2 CSR과 SAN
@@ -140,16 +140,16 @@ CLAIMED
 | `pending.xml` | 제품이 아직 배포되지 않았으므로 최초 정식 저장 형식에 포함하지 않고 제거한다. build 12 이하 개발·테스트 데이터의 pending을 변환·승인·보존하는 migration은 만들지 않으며, 개발 환경에서는 데이터 루트 전체 초기화를 명시적으로 수행한다. |
 | `directory.xml` | 최초 정식 `SchemaVersion="1"`에서 각 서비스 레코드에 `ServiceHostName`·`ServiceIpv4Address`를 필수 쌍으로 저장한다. 인증서 serial·SPKI fingerprint·유효기간은 중복 저장하지 않고 role별 ledger 또는 Peer cache가 소유하며 외부 조회에는 내부 PKI 정보를 노출하지 않는다. |
 | `config.xml` | 최초 정식 `SchemaVersion="1"`에 `DirectoryHostName`·`DirectoryIpv4Address`, IPv4 listener, instance, 로그와 Peer 운영 설정을 저장한다. ProductCode·등록 모드·SiteId·CA role·rotation 상태를 저장하지 않는다. |
-| `pki\state.xml` | SiteId, issuer instance·role, CA identity, PKI revision·CRL number와 backup marker를 저장한다. CA rotation 상태는 이번 schema에서 제외한다. |
-| CA private key | active issuer에서만 PKCS#8을 DPAPI `LocalMachine`으로 보호해 `secrets\ca.key`에 저장하고, 메인 서비스 SID·`SYSTEM`·로컬 `Administrators`만 허용하는 상속 차단 exact ACL을 적용한다. standby 구성은 인증된 backup key를 새 Directory leaf 발급 동안만 메모리에서 사용하고 primary를 남기지 않는다. 평문 buffer는 즉시 지우며 `ca.key.bak`과 평문 export는 금지한다. |
-| certificate ledger | active issuer는 CSPRNG 16바이트 positive unique serial, ProductCode, request ID, CSR/request payload/SPKI hash, exact replay용 leaf DER, SAN, issue/expiry·예약 폐기·실제 revoke 시각·사유와 CRL high-water를 영속화한다. ProductCode별 `CURRENT`는 하나만 허용하고 갱신 overlap의 이전 leaf는 `RETIRING`, CRL에 반영된 leaf는 `REVOKED`로 보존한다. standby는 full ledger를 합성하지 않고 별도 공개 Peer PKI cache만 저장한다. |
-| Peer PKI cache | standby는 인증된 active issuer의 PKI/CRL high-water, ProductCode별 current serial·leaf hash·만료와 signed CRL만 `pki\peer-cache.xml`에 저장한다. full ledger 조회·backup·발급·폐기 근거로 사용하지 않는다. |
-| CRL | 서명된 canonical DER과 CRL number high-water를 원자 교체하고 CA ledger transaction과 복구 일관성을 유지한다. |
-| CA backup | active issuer만 운영자가 지정한 암호로 암호화한 승인 백업을 만들 수 있고 평문 export를 금지한다. backup 완료를 등록·발급·폐기가 가능한 PKI 운영 준비 완료 조건으로 취급한다. installer는 제한된 `BACKUP_REQUIRED` 상태로 끝날 수 있으며 운영자는 설정 UI에서 backup을 완료해야 한다. backup은 제한 ACL의 고정 `backups\ca` 폴더에 생성하고 Admin 응답에는 파일명·생성 시각·SHA-256만 반환한다. |
+| `pki\state.xml` | 최초 정식 schema v1의 phase·TrustRevision·current/other fixed slot과 issuer별 CRL high-water codec을 구현했다. `PUBLISHED`까지 runtime에서 사용하며 `ACTIVATED`·Complete는 maintenance 구현 뒤 허용한다. |
+| CA private key | active issuer의 fixed `secrets\ca-a.key`·`secrets\ca-b.key` PKCS#8을 서로 다른 entropy로 DPAPI `LocalMachine` 보호하고 exact ACL을 적용한다. standby에는 primary를 남기지 않고 평문 buffer를 즉시 지우며 secret `.bak`과 평문 export를 금지한다. |
+| certificate ledger | active issuer는 CSPRNG 16바이트 positive unique serial, issuer CA serial, ProductCode, request ID, CSR/request payload/SPKI hash, exact replay용 leaf DER, SAN, issue/expiry·예약 폐기·실제 revoke 시각·사유와 issuer별 CRL high-water를 영속화한다. ProductCode별 `CURRENT`는 하나만 허용하고 갱신 overlap의 이전 leaf는 `RETIRING`, CRL에 반영된 leaf는 `REVOKED`로 보존한다. standby는 full ledger를 합성하지 않고 별도 공개 Peer PKI cache만 저장한다. |
+| Peer PKI cache | standby는 인증된 rotation phase·dual-pin bundle, issuer별 PKI/CRL high-water, ProductCode별 current serial·issuer·leaf hash·만료와 signed CRL을 `pki\peer-cache.xml`에 저장한다. full ledger 조회·backup·발급·폐기 근거로 사용하지 않는다. |
+| CRL | CA issuer별 signed canonical DER과 독립 CRL number high-water를 원자 교체하고 ledger transaction과 복구 일관성을 유지한다. |
+| CA backup | active issuer만 운영자가 지정한 암호로 current와 next/retiring slot, issuer별 CRL·full ledger·retired archive를 함께 인증·암호화한 승인 backup을 만든다. 평문 export를 금지하고 backup 완료를 phase별 발급·Activate·Complete readiness 조건으로 취급한다. backup은 제한 ACL의 고정 `backups\ca` 폴더에 생성하고 Admin 응답에는 파일명·생성 시각·SHA-256만 반환한다. |
 
 등록·발급 commit은 최소한 `directory`, exact leaf DER을 포함한 certificate ledger와 필요한 CRL 변경을 하나의 journal transaction으로 처리한다. CA 서명 뒤 저장 실패가 발생해 같은 serial을 재사용하거나 발급 사실을 잃지 않도록 serial 예약·서명·commit 순서를 별도 설계하고 fault-injection으로 검증한다.
 
-현재 build 12 이하의 단일 `ServerAddress`·`pending.xml` `SchemaVersion="1"` 파일은 배포 계약이 아닌 개발 산출물이다. 목표 형식으로 자동 추론하거나 같은 schema의 호환 입력으로 읽지 않는다. 인증서 전환 구현을 적용하는 개발·테스트 장비는 서비스 중지와 명시적 확인 뒤 `%ProgramData%\DEEPAi\ServiceDirectory\`를 초기화하고 최초 설치 절차로 다시 만든다. 첫 정식 배포 뒤의 저장 형식 변경부터만 명시적 `N -> N+1` migration을 추가한다. 정확한 파일·요소·journal target은 [최초 정식 저장 schema v1](./03-development-01-storage-schema.md)을 따른다.
+현재 build 14 이하의 단일 `ServerAddress`·`pending.xml`·단일 CA `SchemaVersion="1"` 파일과 backup은 배포 계약이 아닌 개발 산출물이다. 목표 형식으로 자동 추론하거나 같은 schema의 호환 입력으로 읽지 않는다. 인증서 전환 구현을 적용하는 개발·테스트 장비는 서비스 중지와 명시적 확인 뒤 `%ProgramData%\DEEPAi\ServiceDirectory\`를 초기화하고 최초 설치 절차로 다시 만든다. 첫 정식 배포 뒤의 저장 형식 변경부터만 명시적 `N -> N+1` migration을 추가한다. 정확한 파일·요소·journal target은 [최초 정식 저장 schema v1](./03-development-01-storage-schema.md)을 rotation 계약으로 개정해 따른다.
 
 ## 6. UI와 Admin 변경
 
@@ -189,7 +189,7 @@ CLAIMED
 - 확장: 서비스 삭제는 인증서 폐기·CRL 갱신 결과를 포함
 - 추가: `GET /admin/ca/status`, `POST /admin/ca/backup`, `GET /admin/certificates`, `POST /admin/certificates/{serial}/revoke`
 - CA restore는 실행 중 Admin endpoint로 제공하지 않는다. 설치 프로그램 repair가 메인·와치독 서비스를 중지하고 encrypted backup·암호·site/ledger/CRL high-water를 검증한 뒤 전체 PKI state를 원자 복원하고 서비스를 재기동하는 절차로만 제공한다.
-- CA key rotation·dual-pin Admin endpoint와 UI는 후속 단계로 둔다. 현재 key를 암묵 교체하거나 backup restore를 rotation으로 사용하지 않는다.
+- CA key rotation·dual-pin은 [전용 구현계획](./07-ca-key-rotation.md)의 최초 릴리스 필수 단계로 둔다. 현재 key를 암묵 교체하거나 backup restore를 rotation으로 사용하지 않으며, 고객 CA mode는 구현하지 않는다.
 
 ### Peer
 
@@ -210,7 +210,7 @@ CLAIMED
 | 6. Peer·CA 운영 | Peer HTTPS, 동일 CA, rotation·CRL | 이중화·partition·승격·dual-pin·폐기 전파 검증 |
 | 7. 릴리스 | 지원 OS·Milestone 조합 종합 검증 | 인증서 설치·갱신·만료·폐기·CA 복구와 실제 외부 앱 연동 통과 |
 
-2026-07-21 진행 상태: endpoint identity부터 CA·leaf·CSR·serial·CRL·ledger·DPAPI 저장, operation별 journal, 등록 모드, 즉시 등록·재등록·renewal·삭제 폐기, HTTPS installer/runtime, Peer pinned TLS·PKI state와 standby 구성·승격까지 소스를 연결했다. Admin은 단일 목표 `admin.xsd`를 사용하고 pending DTO·codec·legacy schema를 제공하지 않는다. `Debug|x64`·`Release|x64` 자동 테스트 663개와 installer ACL·HTTPS binding 회귀는 통과했다. 실제 설치·TLS·DPAPI·승격 실행과 CA rotation은 남아 있다.
+2026-07-22 진행 상태: endpoint identity부터 단일 CA·leaf·CSR·serial·CRL·ledger·DPAPI 저장, operation별 journal, 등록 모드, 즉시 등록·재등록·renewal·삭제 폐기, HTTPS installer/runtime, Peer pinned TLS·PKI state와 standby 구성·승격까지 소스를 연결했다. Admin은 단일 목표 `admin.xsd`를 사용하고 pending DTO·codec·legacy schema를 제공하지 않는다. `Debug|x64`·`Release|x64` 자동 테스트 663개와 installer ACL·HTTPS binding 회귀는 통과했다. CA key rotation·dual-pin은 `STABLE/PUBLISHED/ACTIVATED`, fixed A/B slot, issuer별 CRL과 terminal old-key 폐기 계획을 확정했으며 구현과 실제 설치·TLS·DPAPI·승격 실행은 남아 있다.
 
 ## 9. 필수 보안·장애 검증
 

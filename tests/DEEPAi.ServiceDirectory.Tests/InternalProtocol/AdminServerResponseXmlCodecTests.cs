@@ -50,6 +50,7 @@ namespace DEEPAi.ServiceDirectory.Tests.InternalProtocol
 
             var item = new AdminServerCertificateItem(
                 "01A4B5C6D7E8F90123456789ABCDEF02",
+                "01A4B5C6D7E8F90123456789ABCDEF01",
                 "ABCD",
                 AdminCertificateIssuanceKind.Registration,
                 "service.example.local",

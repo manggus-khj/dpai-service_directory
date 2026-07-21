@@ -2,6 +2,23 @@ using System;
 
 namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
 {
+    internal sealed class ExternalTrustSnapshot
+    {
+        internal ExternalTrustSnapshot(
+            ExternalTrustInfo trustInfo,
+            ExternalTrustBundle trustBundle)
+        {
+            TrustInfo = trustInfo
+                ?? throw new ArgumentNullException(nameof(trustInfo));
+            TrustBundle = trustBundle
+                ?? throw new ArgumentNullException(nameof(trustBundle));
+        }
+
+        internal ExternalTrustInfo TrustInfo { get; }
+
+        internal ExternalTrustBundle TrustBundle { get; }
+    }
+
     internal enum ExternalRegistrationServiceStatus
     {
         Registered = 1,
@@ -73,7 +90,11 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
     {
         ExternalTrustInfo GetTrustInfo();
 
+        ExternalTrustSnapshot GetTrustSnapshot();
+
         byte[] GetCertificateRevocationList();
+
+        byte[] GetCertificateRevocationList(string caSerialNumber);
 
         ExternalRegistrationServiceResult Register(
             ExternalRegistrationRequest request,

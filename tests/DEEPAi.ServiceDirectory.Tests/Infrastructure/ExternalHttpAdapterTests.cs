@@ -961,9 +961,53 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                     ExternalApiContract.CrlPath);
             }
 
+            public ExternalTrustSnapshot GetTrustSnapshot()
+            {
+                ExternalTrustInfo trustInfo = GetTrustInfo();
+                DateTime notBeforeUtc = new DateTime(
+                    2026,
+                    1,
+                    1,
+                    0,
+                    0,
+                    0,
+                    DateTimeKind.Utc);
+                var authority = new ExternalTrustAuthority(
+                    ExternalTrustAuthorityRole.Current,
+                    "01A4B5C6D7E8F90123456789ABCDEF01",
+                    trustInfo.CaCertificate,
+                    trustInfo.CaSpkiSha256,
+                    ExternalApiContract.IssuerCrlPathPrefix
+                        + "01A4B5C6D7E8F90123456789ABCDEF01",
+                    notBeforeUtc,
+                    notBeforeUtc.AddYears(20));
+                return new ExternalTrustSnapshot(
+                    trustInfo,
+                    new ExternalTrustBundle(
+                        trustInfo.SiteId,
+                        1,
+                        null,
+                        ExternalCaRotationPhase.Stable,
+                        null,
+                        null,
+                        null,
+                        null,
+                        new[] { authority }));
+            }
+
             public byte[] GetCertificateRevocationList()
             {
                 return new byte[] { 0x30 };
+            }
+
+            public byte[] GetCertificateRevocationList(
+                string caSerialNumber)
+            {
+                return StringComparer.Ordinal.Equals(
+                        caSerialNumber,
+                        "01A4B5C6D7E8F90123456789ABCDEF01")
+                    ? GetCertificateRevocationList()
+                    : null;
             }
 
             public ExternalRegistrationServiceResult Register(
@@ -986,7 +1030,8 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                         "1234567890ABCDEF1234567890ABCDEF",
                         utcNow.AddMinutes(-5),
                         utcNow.AddYears(1),
-                        ExternalApiContract.CrlPath));
+                        ExternalApiContract.IssuerCrlPathPrefix
+                            + "01A4B5C6D7E8F90123456789ABCDEF01"));
             }
 
             public ExternalRegistrationServiceResult Renew(

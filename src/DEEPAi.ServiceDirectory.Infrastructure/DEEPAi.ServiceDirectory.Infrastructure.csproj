@@ -185,6 +185,7 @@
     <Compile Include="Pki\CertificateAuthorityStore.Deletion.cs" />
     <Compile Include="Pki\CertificateAuthorityStore.Registration.cs" />
     <Compile Include="Pki\CertificateAuthorityStore.Renewal.cs" />
+    <Compile Include="Pki\CertificateAuthorityStore.Rotation.cs" />
     <Compile Include="Pki\CertificateAuthorityStore.Retirement.cs" />
     <Compile Include="Pki\CertificateAuthorityStore.ServiceMutations.cs" />
     <Compile Include="Pki\CertificateAuthorityStore.cs" />

@@ -124,10 +124,10 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 snapshot = store.GetCurrent();
                 if (snapshot.State.Role
                         != CertificateAuthorityRole.ActiveIssuer
-                    || !snapshot.State.LastBackupUtc.HasValue)
+                    || !snapshot.State.IsCurrentRevisionBackedUp)
                 {
                     throw new InvalidOperationException(
-                        "The active site CA and its initial backup are required before Directory leaf issuance.");
+                        "The active site CA and a backup of its current trust revision are required before Directory leaf issuance.");
                 }
 
                 var protector = new DpapiMachineCaPrivateKeyProtector();

@@ -15,6 +15,27 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             byte[] caCertificateDer,
             byte[] crlDer,
             byte[] privateKeyPkcs8)
+            : this(
+                metadata,
+                ledger,
+                caCertificateDer,
+                crlDer,
+                privateKeyPkcs8,
+                null,
+                null,
+                null)
+        {
+        }
+
+        internal CaBackupPayload(
+            byte[] metadata,
+            byte[] ledger,
+            byte[] caCertificateDer,
+            byte[] crlDer,
+            byte[] privateKeyPkcs8,
+            byte[] otherCaCertificateDer,
+            byte[] otherCrlDer,
+            byte[] otherPrivateKeyPkcs8)
         {
             Metadata = CloneRequired(metadata, nameof(metadata));
             Ledger = CloneRequired(ledger, nameof(ledger));
@@ -25,6 +46,22 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             PrivateKeyPkcs8 = CloneRequired(
                 privateKeyPkcs8,
                 nameof(privateKeyPkcs8));
+            bool hasOther = otherCaCertificateDer != null
+                || otherCrlDer != null
+                || otherPrivateKeyPkcs8 != null;
+            if (hasOther
+                && (otherCaCertificateDer == null
+                    || otherCrlDer == null
+                    || otherPrivateKeyPkcs8 == null))
+            {
+                Dispose();
+                throw new ArgumentException(
+                    "Secondary CA backup components must be supplied together.");
+            }
+
+            OtherCaCertificateDer = CloneOptional(otherCaCertificateDer);
+            OtherCrlDer = CloneOptional(otherCrlDer);
+            OtherPrivateKeyPkcs8 = CloneOptional(otherPrivateKeyPkcs8);
         }
 
         internal byte[] Metadata { get; private set; }
@@ -36,6 +73,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
         internal byte[] CrlDer { get; private set; }
 
         internal byte[] PrivateKeyPkcs8 { get; private set; }
+
+        internal byte[] OtherCaCertificateDer { get; private set; }
+
+        internal byte[] OtherCrlDer { get; private set; }
+
+        internal byte[] OtherPrivateKeyPkcs8 { get; private set; }
+
+        internal bool HasOtherAuthority => OtherCaCertificateDer != null;
 
         public void Dispose()
         {
@@ -49,11 +94,17 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             Clear(CaCertificateDer);
             Clear(CrlDer);
             Clear(PrivateKeyPkcs8);
+            Clear(OtherCaCertificateDer);
+            Clear(OtherCrlDer);
+            Clear(OtherPrivateKeyPkcs8);
             Metadata = null;
             Ledger = null;
             CaCertificateDer = null;
             CrlDer = null;
             PrivateKeyPkcs8 = null;
+            OtherCaCertificateDer = null;
+            OtherCrlDer = null;
+            OtherPrivateKeyPkcs8 = null;
             _disposed = true;
         }
 
@@ -67,6 +118,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             }
 
             return (byte[])value.Clone();
+        }
+
+        private static byte[] CloneOptional(byte[] value)
+        {
+            return value == null ? null : CloneRequired(value, nameof(value));
         }
 
         private static void Clear(byte[] value)
@@ -92,12 +148,12 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
         private const int AuthenticationKeyLength = 32;
         private const int MacLength = 32;
         private const int OuterHeaderLength = 8 + 4 + SaltLength + IvLength + 4;
-        private const int InnerHeaderLength = 8 + (5 * 4);
+        private const int InnerHeaderLength = 8 + (8 * 4);
 
         private static readonly byte[] OuterMagic =
-            Encoding.ASCII.GetBytes("DPAICAE1");
+            Encoding.ASCII.GetBytes("DPAICAE2");
         private static readonly byte[] InnerMagic =
-            Encoding.ASCII.GetBytes("DPAICAB1");
+            Encoding.ASCII.GetBytes("DPAICAB2");
         private static readonly UTF8Encoding StrictUtf8 =
             new UTF8Encoding(false, true);
 
@@ -309,18 +365,25 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 payload.Ledger,
                 payload.CaCertificateDer,
                 payload.CrlDer,
-                payload.PrivateKeyPkcs8
+                payload.PrivateKeyPkcs8,
+                payload.OtherCaCertificateDer,
+                payload.OtherCrlDer,
+                payload.OtherPrivateKeyPkcs8
             };
             int totalLength = InnerHeaderLength;
-            foreach (byte[] part in parts)
+            for (int index = 0; index < parts.Length; index++)
             {
-                if (part == null || part.Length == 0)
+                byte[] part = parts[index];
+                if ((index < 5 && (part == null || part.Length == 0))
+                    || (index >= 5 && part != null && part.Length == 0))
                 {
                     throw new InvalidDataException(
                         "CA backup payload contains an empty component.");
                 }
 
-                totalLength = checked(totalLength + part.Length);
+                totalLength = checked(totalLength + (part == null
+                    ? 0
+                    : part.Length));
             }
 
             if (totalLength > MaximumBackupBytes)
@@ -332,14 +395,21 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             var output = new byte[totalLength];
             int offset = 0;
             WriteBytes(output, ref offset, InnerMagic);
-            foreach (byte[] part in parts)
+            for (int index = 0; index < parts.Length; index++)
             {
-                WriteInt32(output, ref offset, part.Length);
+                byte[] part = parts[index];
+                WriteInt32(
+                    output,
+                    ref offset,
+                    part == null ? 0 : part.Length);
             }
 
             foreach (byte[] part in parts)
             {
-                WriteBytes(output, ref offset, part);
+                if (part != null)
+                {
+                    WriteBytes(output, ref offset, part);
+                }
             }
 
             return output;
@@ -349,12 +419,13 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
         {
             int offset = 0;
             RequireBytes(plaintext, ref offset, InnerMagic);
-            var lengths = new int[5];
+            var lengths = new int[8];
             int expectedLength = InnerHeaderLength;
             for (int index = 0; index < lengths.Length; index++)
             {
                 lengths[index] = ReadInt32(plaintext, ref offset);
-                if (lengths[index] <= 0)
+                if ((index < 5 && lengths[index] <= 0)
+                    || (index >= 5 && lengths[index] < 0))
                 {
                     throw new InvalidDataException(
                         "CA backup payload component length is invalid.");
@@ -369,11 +440,27 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     "CA backup payload length is invalid.");
             }
 
+
+            bool hasOther = lengths[5] != 0
+                || lengths[6] != 0
+                || lengths[7] != 0;
+            if (hasOther
+                && (lengths[5] == 0
+                    || lengths[6] == 0
+                    || lengths[7] == 0))
+            {
+                throw new InvalidDataException(
+                    "Secondary CA backup components are incomplete.");
+            }
+
             byte[] metadata = null;
             byte[] ledger = null;
             byte[] certificate = null;
             byte[] crl = null;
             byte[] key = null;
+            byte[] otherCertificate = null;
+            byte[] otherCrl = null;
+            byte[] otherKey = null;
             try
             {
                 metadata = ReadBytes(plaintext, ref offset, lengths[0]);
@@ -381,12 +468,30 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 certificate = ReadBytes(plaintext, ref offset, lengths[2]);
                 crl = ReadBytes(plaintext, ref offset, lengths[3]);
                 key = ReadBytes(plaintext, ref offset, lengths[4]);
+                if (hasOther)
+                {
+                    otherCertificate = ReadBytes(
+                        plaintext,
+                        ref offset,
+                        lengths[5]);
+                    otherCrl = ReadBytes(
+                        plaintext,
+                        ref offset,
+                        lengths[6]);
+                    otherKey = ReadBytes(
+                        plaintext,
+                        ref offset,
+                        lengths[7]);
+                }
                 return new CaBackupPayload(
                     metadata,
                     ledger,
                     certificate,
                     crl,
-                    key);
+                    key,
+                    otherCertificate,
+                    otherCrl,
+                    otherKey);
             }
             finally
             {
@@ -395,6 +500,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 Clear(certificate);
                 Clear(crl);
                 Clear(key);
+                Clear(otherCertificate);
+                Clear(otherCrl);
+                Clear(otherKey);
             }
         }
 

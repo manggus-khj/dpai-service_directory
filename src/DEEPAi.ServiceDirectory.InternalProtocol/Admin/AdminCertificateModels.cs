@@ -189,6 +189,7 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
     {
         public AdminServerCertificateItem(
             string serialNumber,
+            string issuerCaSerialNumber,
             string productCode,
             AdminCertificateIssuanceKind issuanceKind,
             string serviceHostName,
@@ -205,6 +206,12 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
             bool validSerial = CertificateSerialNumber.TryCreate(
                 serialNumber,
                 out CertificateSerialNumber ignoredSerial);
+            bool validIssuerSerial = CertificateSerialNumber.TryCreate(
+                issuerCaSerialNumber,
+                out CertificateSerialNumber ignoredIssuerSerial)
+                && !StringComparer.Ordinal.Equals(
+                    serialNumber,
+                    issuerCaSerialNumber);
             bool validProductCode =
                 DEEPAi.ServiceDirectory.Domain.ProductCode.TryCreate(
                 productCode,
@@ -225,6 +232,7 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
                     serviceIpv4Address,
                     parsedIdentity.ServiceIpv4Address);
             if (!validSerial
+                || !validIssuerSerial
                 || !validProductCode
                 || !validIdentity
                 || !AdminCertificateModelValidation.IsCanonicalSha256(
@@ -267,6 +275,7 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
             }
 
             SerialNumber = serialNumber;
+            IssuerCaSerialNumber = issuerCaSerialNumber;
             ProductCode = productCode;
             IssuanceKind = issuanceKind;
             ServiceHostName = serviceHostName;
@@ -282,6 +291,8 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
         }
 
         public string SerialNumber { get; }
+
+        public string IssuerCaSerialNumber { get; }
 
         public string ProductCode { get; }
 
@@ -336,6 +347,7 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
     {
         public AdminServerCertificateRevocationResponse(
             string serialNumber,
+            string issuerCaSerialNumber,
             DateTime revokedUtc,
             AdminCertificateRevocationReason reason,
             ulong pkiRevision,
@@ -345,6 +357,12 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
             if (!CertificateSerialNumber.TryCreate(
                     serialNumber,
                     out CertificateSerialNumber ignoredSerial)
+                || !CertificateSerialNumber.TryCreate(
+                    issuerCaSerialNumber,
+                    out CertificateSerialNumber ignoredIssuerSerial)
+                || StringComparer.Ordinal.Equals(
+                    serialNumber,
+                    issuerCaSerialNumber)
                 || revokedUtc.Kind != DateTimeKind.Utc
                 || !Enum.IsDefined(
                     typeof(AdminCertificateRevocationReason),
@@ -357,6 +375,7 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
             }
 
             SerialNumber = serialNumber;
+            IssuerCaSerialNumber = issuerCaSerialNumber;
             RevokedUtc = revokedUtc;
             Reason = reason;
             PkiRevision = pkiRevision;
@@ -365,6 +384,8 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
         }
 
         public string SerialNumber { get; }
+
+        public string IssuerCaSerialNumber { get; }
 
         public DateTime RevokedUtc { get; }
 

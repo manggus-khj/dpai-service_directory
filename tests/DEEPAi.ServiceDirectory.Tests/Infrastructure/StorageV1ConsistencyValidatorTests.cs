@@ -65,6 +65,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 corruptedLeaf[corruptedLeaf.Length - 1] ^= 0x01;
                 CertificateLedgerEntry corruptedEntry = CreateEntry(
                     fixture.Entry.SerialNumber,
+                    fixture.Entry.IssuerCaSerialNumber,
                     fixture.Entry.ServiceDefinition,
                     corruptedLeaf,
                     fixture.Entry.GetSubjectPublicKeyInfoSha256(),
@@ -204,6 +205,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
 
         private static CertificateLedgerEntry CreateEntry(
             CertificateSerialNumber serialNumber,
+            CertificateSerialNumber issuerCaSerialNumber,
             ServiceDefinition definition,
             byte[] leafCertificateDer,
             byte[] spkiSha256,
@@ -212,6 +214,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
         {
             return CertificateLedgerEntry.CreateIssued(
                 serialNumber,
+                issuerCaSerialNumber,
                 definition,
                 new Guid("77777777-8888-4999-aaaa-bbbbbbbbbbbb"),
                 CertificateIssuanceKind.Registration,
@@ -329,6 +332,7 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
 
                 CertificateLedgerEntry entry = CreateEntry(
                     serialNumber.ToLedgerSerialNumber(),
+                    authority.SerialNumber,
                     definition,
                     leafCertificateDer,
                     validated.GetSubjectPublicKeyInfoSha256(),

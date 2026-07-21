@@ -148,9 +148,9 @@ function Get-CertificateAuthorityStateSnapshots {
         'pki\state.xml',
         'pki\ledger.xml',
         'pki\peer-cache.xml',
-        'pki\crl.der',
-        'pki\ca.der',
-        'secrets\ca.key'
+        'pki\crl-a.der',
+        'pki\ca-a.der',
+        'secrets\ca-a.key'
     )
     $snapshots = New-Object 'System.Collections.Generic.List[object]'
     foreach ($relativePath in $relativePaths) {

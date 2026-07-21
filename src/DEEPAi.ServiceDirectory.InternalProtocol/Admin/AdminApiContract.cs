@@ -18,6 +18,11 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
             "/admin/registration-mode/open";
         public const string CloseRegistrationModePath =
             "/admin/registration-mode/close";
+        public const string CaRotationPath = "/admin/ca/rotation";
+        public const string PrepareCaRotationPath =
+            "/admin/ca/rotation/prepare";
+        public const string CancelCaRotationPath =
+            "/admin/ca/rotation/cancel";
 
         public static readonly Uri BaseAddress =
             new Uri("http://127.0.0.1:21000/", UriKind.Absolute);

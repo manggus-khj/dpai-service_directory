@@ -41,6 +41,8 @@
   <ItemGroup>
     <Compile Include="Admin\AdminApiContract.cs" />
     <Compile Include="Admin\AdminApiModels.cs" />
+    <Compile Include="Admin\AdminCaRotationModels.cs" />
+    <Compile Include="Admin\AdminCaRotationXmlCodec.cs" />
     <Compile Include="Admin\AdminCertificateModels.cs" />
     <Compile Include="Admin\AdminCertificateXmlCodec.cs" />
     <Compile Include="Admin\AdminPeerEndpoint.cs" />

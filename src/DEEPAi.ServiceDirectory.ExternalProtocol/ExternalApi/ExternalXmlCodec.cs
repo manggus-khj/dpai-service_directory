@@ -257,6 +257,14 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                         "The external response payload kind is invalid.");
             }
 
+            if (response.TrustBundle != null)
+            {
+                root.Add(
+                    new XElement(
+                        Namespace + "Extensions",
+                        CreateTrustBundleElement(response.TrustBundle)));
+            }
+
             byte[] body = StrictUtf8.GetBytes(
                 root.ToString(SaveOptions.DisableFormatting));
             if (body.Length > maximumBodyBytes)
@@ -316,6 +324,122 @@ namespace DEEPAi.ServiceDirectory.ExternalProtocol.ExternalApi
                 new XElement(
                     Namespace + "LastModifiedUtc",
                     FormatUtc(service.LastModifiedUtc)));
+        }
+
+        private static XElement CreateTrustBundleElement(
+            ExternalTrustBundle trustBundle)
+        {
+            var element = new XElement(
+                Namespace + "TrustBundle",
+                new XElement(
+                    Namespace + "SiteId",
+                    FormatGuid(trustBundle.SiteId)),
+                new XElement(
+                    Namespace + "TrustRevision",
+                    trustBundle.TrustRevision.ToString(
+                        CultureInfo.InvariantCulture)));
+            if (trustBundle.RotationId.HasValue)
+            {
+                element.Add(new XElement(
+                    Namespace + "RotationId",
+                    FormatGuid(trustBundle.RotationId.Value)));
+            }
+
+            element.Add(new XElement(
+                Namespace + "Phase",
+                FormatRotationPhase(trustBundle.Phase)));
+            AddOptionalUtc(
+                element,
+                "PublishedUtc",
+                trustBundle.PublishedUtc);
+            AddOptionalUtc(
+                element,
+                "ActivationNotBeforeUtc",
+                trustBundle.ActivationNotBeforeUtc);
+            AddOptionalUtc(
+                element,
+                "ActivatedUtc",
+                trustBundle.ActivatedUtc);
+            AddOptionalUtc(
+                element,
+                "RetirementNotBeforeUtc",
+                trustBundle.RetirementNotBeforeUtc);
+            foreach (ExternalTrustAuthority authority
+                in trustBundle.Authorities)
+            {
+                element.Add(new XElement(
+                    Namespace + "Authority",
+                    new XElement(
+                        Namespace + "Role",
+                        FormatAuthorityRole(authority.Role)),
+                    new XElement(
+                        Namespace + "CaSerialNumber",
+                        authority.CaSerialNumber),
+                    new XElement(
+                        Namespace + "CaCertificate",
+                        Convert.ToBase64String(authority.CaCertificate)),
+                    new XElement(
+                        Namespace + "CaSpkiSha256",
+                        Convert.ToBase64String(authority.CaSpkiSha256)),
+                    new XElement(
+                        Namespace + "CrlUri",
+                        authority.CrlUri),
+                    new XElement(
+                        Namespace + "NotBeforeUtc",
+                        FormatUtc(authority.NotBeforeUtc)),
+                    new XElement(
+                        Namespace + "NotAfterUtc",
+                        FormatUtc(authority.NotAfterUtc))));
+            }
+
+            return element;
+        }
+
+        private static void AddOptionalUtc(
+            XElement parent,
+            string name,
+            DateTime? value)
+        {
+            if (value.HasValue)
+            {
+                parent.Add(new XElement(
+                    Namespace + name,
+                    FormatUtc(value.Value)));
+            }
+        }
+
+        private static string FormatRotationPhase(
+            ExternalCaRotationPhase phase)
+        {
+            switch (phase)
+            {
+                case ExternalCaRotationPhase.Stable:
+                    return "STABLE";
+                case ExternalCaRotationPhase.Published:
+                    return "PUBLISHED";
+                case ExternalCaRotationPhase.Activated:
+                    return "ACTIVATED";
+                default:
+                    throw new ExternalProtocolException(
+                        "The CA rotation phase is invalid.");
+            }
+        }
+
+        private static string FormatAuthorityRole(
+            ExternalTrustAuthorityRole role)
+        {
+            switch (role)
+            {
+                case ExternalTrustAuthorityRole.Current:
+                    return "CURRENT";
+                case ExternalTrustAuthorityRole.Next:
+                    return "NEXT";
+                case ExternalTrustAuthorityRole.Retiring:
+                    return "RETIRING";
+                default:
+                    throw new ExternalProtocolException(
+                        "The trust authority role is invalid.");
+            }
         }
 
         private static XElement CreateCertificateElement(

@@ -421,7 +421,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 CertificateAuthorityState actualState =
                     _stateCodec.DeserializeState(metadata);
                 CertificateLedgerSnapshot actualLedger =
-                    _stateCodec.DeserializeLedger(ledgerBytes);
+                    _stateCodec.DeserializeLedger(
+                        ledgerBytes,
+                        actualState.CrlNumber);
                 if (actualState.Role
                         != CertificateAuthorityRole.ActiveIssuer
                     || actualState.SiteId != expectedState.SiteId
@@ -464,10 +466,19 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
         {
             CertificateAuthorityState state = _stateCodec.DeserializeState(
                 payload.Metadata);
+            if (payload.HasOtherAuthority
+                || state.RotationPhase
+                    != CertificateAuthorityRotationPhase.Stable)
+            {
+                throw new InvalidDataException(
+                    "Standby role changes require a STABLE single-authority backup.");
+            }
+
             CertificateLedgerSnapshot ledger = _stateCodec
-                .DeserializeLedger(payload.Ledger);
+                .DeserializeLedger(payload.Ledger, state.CrlNumber);
             if (state.Role != CertificateAuthorityRole.ActiveIssuer
                 || !state.LastBackupUtc.HasValue
+                || !state.IsCurrentRevisionBackedUp
                 || state.LastBackupUtc.Value > utcNow
                 || state.PkiRevision != ledger.PkiRevision
                 || state.CrlNumber != ledger.CrlNumber)
@@ -729,6 +740,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 backup.GetCaSpkiSha256(),
                 backup.NotBeforeUtc,
                 backup.NotAfterUtc,
+                backup.TrustRevision,
                 backup.PkiRevision,
                 backup.CrlNumber,
                 backup.LastBackupUtc);
@@ -748,6 +760,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                 backup.GetCaSpkiSha256(),
                 backup.NotBeforeUtc,
                 backup.NotAfterUtc,
+                backup.TrustRevision,
                 promotedRevision,
                 backup.CrlNumber,
                 backupUtc);
@@ -863,6 +876,20 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
 
         private void EnsureRequiredRoleFiles(CertificateAuthorityRole role)
         {
+            StateFileTarget[] unsupportedRotationTargets =
+            {
+                StateFileTarget.CertificateRevocationListB,
+                StateFileTarget.CaCertificateB,
+                StateFileTarget.CaPrivateKeyB,
+                StateFileTarget.RetiredAuthorities
+            };
+            if (unsupportedRotationTargets.Any(target =>
+                _writer.Exists(target) || _writer.BackupExists(target)))
+            {
+                throw new InvalidDataException(
+                    "Role repair requires the dual-CA maintenance implementation for rotating state.");
+            }
+
             bool active = role == CertificateAuthorityRole.ActiveIssuer;
             foreach (StateFileTarget target in RoleTargets)
             {

@@ -93,9 +93,19 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             return _inner.GetTrustInfo();
         }
 
+        public ExternalTrustSnapshot GetTrustSnapshot()
+        {
+            return _inner.GetTrustSnapshot();
+        }
+
         public byte[] GetCertificateRevocationList()
         {
             return _inner.GetCertificateRevocationList();
+        }
+
+        public byte[] GetCertificateRevocationList(string caSerialNumber)
+        {
+            return _inner.GetCertificateRevocationList(caSerialNumber);
         }
 
         public ExternalRegistrationServiceResult Register(

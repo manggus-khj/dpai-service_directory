@@ -272,6 +272,79 @@ namespace DEEPAi.ServiceDirectory.Tests.ExternalProtocol
         }
 
         [TestMethod]
+        public void PublishedTrustBundleUsesCanonicalDualAuthorityOrder()
+        {
+            Guid siteId = Guid.Parse(
+                "3d8ff138-4e9a-4e52-b108-e3af248b1787");
+            Guid rotationId = Guid.Parse(
+                "8cb6e958-3157-42bc-9d83-99ecb9d6bc15");
+            DateTime publishedUtc = new DateTime(
+                2026,
+                7,
+                22,
+                1,
+                2,
+                3,
+                DateTimeKind.Utc);
+            const string nextSerial =
+                "11A4B5C6D7E8F90123456789ABCDEF01";
+            var trustInfo = new ExternalTrustInfo(
+                siteId,
+                new byte[] { 1, 2, 3 },
+                Sequence(32, 10),
+                ExternalApiContract.CrlPath);
+            var bundle = new ExternalTrustBundle(
+                siteId,
+                2,
+                rotationId,
+                ExternalCaRotationPhase.Published,
+                publishedUtc,
+                publishedUtc.AddDays(30),
+                null,
+                null,
+                new[]
+                {
+                    new ExternalTrustAuthority(
+                        ExternalTrustAuthorityRole.Current,
+                        SerialNumber,
+                        new byte[] { 1, 2, 3 },
+                        Sequence(32, 10),
+                        ExternalApiContract.IssuerCrlPathPrefix
+                            + SerialNumber,
+                        publishedUtc.AddYears(-1),
+                        publishedUtc.AddYears(10)),
+                    new ExternalTrustAuthority(
+                        ExternalTrustAuthorityRole.Next,
+                        nextSerial,
+                        new byte[] { 4, 5, 6 },
+                        Sequence(32, 50),
+                        ExternalApiContract.IssuerCrlPathPrefix
+                            + nextSerial,
+                        publishedUtc,
+                        publishedUtc.AddYears(10))
+                });
+
+            string xml = Decode(
+                ExternalXmlCodec.SerializeTrustInfoResponse(
+                    ExternalResponse.CreateTrustInfoSuccess(
+                        trustInfo,
+                        bundle)));
+
+            StringAssert.Contains(xml, "<TrustRevision>2</TrustRevision>");
+            StringAssert.Contains(xml, "<Phase>PUBLISHED</Phase>");
+            int current = xml.IndexOf(
+                "<Role>CURRENT</Role>",
+                StringComparison.Ordinal);
+            int next = xml.IndexOf(
+                "<Role>NEXT</Role>",
+                StringComparison.Ordinal);
+            Assert.IsTrue(current >= 0 && next > current);
+            StringAssert.Contains(
+                xml,
+                "<CrlUri>/pki/crl/" + nextSerial + "</CrlUri>");
+        }
+
+        [TestMethod]
         [DataRow(ExternalCertificateIssuanceStatus.Registered, "REGISTERED")]
         [DataRow(ExternalCertificateIssuanceStatus.Reregistered, "REREGISTERED")]
         [DataRow(ExternalCertificateIssuanceStatus.Replayed, "REPLAYED")]
@@ -459,7 +532,8 @@ namespace DEEPAi.ServiceDirectory.Tests.ExternalProtocol
                     0,
                     0,
                     DateTimeKind.Utc),
-                ExternalApiContract.CrlPath);
+                ExternalApiContract.IssuerCrlPathPrefix
+                    + "01A4B5C6D7E8F90123456789ABCDEF01");
         }
 
         private static byte[] RegistrationXml(

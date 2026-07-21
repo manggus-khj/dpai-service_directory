@@ -39,6 +39,11 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             "/admin/settings/logging";
         private const string CaStatusPath = "/admin/ca/status";
         private const string CaBackupPath = "/admin/ca/backup";
+        private const string CaRotationPath = AdminApiContract.CaRotationPath;
+        private const string PrepareCaRotationPath =
+            AdminApiContract.PrepareCaRotationPath;
+        private const string CancelCaRotationPath =
+            AdminApiContract.CancelCaRotationPath;
         private const string CertificatesPath = "/admin/certificates";
         private const string CertificatesPrefix = "/admin/certificates/";
         private const string RevokeSuffix = "/revoke";
@@ -259,6 +264,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             AdminDisableSyncRequest disableSyncRequest = null;
             AdminLoggingSettingsRequest loggingSettingsRequest = null;
             AdminCreateCaBackupRequest createCaBackupRequest = null;
+            AdminCancelCaRotationRequest cancelCaRotationRequest = null;
             AdminRevokeCertificateRequest revokeCertificateRequest = null;
             try
             {
@@ -298,6 +304,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                     case AdminHttpOperation.RevokeCertificate:
                         revokeCertificateRequest = AdminServerXmlCodec
                             .ParseRevokeCertificateRequest(body);
+                        break;
+                    case AdminHttpOperation.PrepareCaRotation:
+                        AdminServerXmlCodec.ParsePrepareCaRotationRequest(
+                            body);
+                        break;
+                    case AdminHttpOperation.CancelCaRotation:
+                        cancelCaRotationRequest = AdminServerXmlCodec
+                            .ParseCancelCaRotationRequest(body);
                         break;
                 }
             }
@@ -373,6 +387,22 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                     return Execute(
                         () => _handler.CreateCaBackup(createCaBackupRequest),
                         AdminServerResponseXmlCodec.SerializeCaBackupResponse);
+                case AdminHttpOperation.GetCaRotation:
+                    return Execute(
+                        _handler.GetCaRotation,
+                        AdminServerResponseXmlCodec
+                            .SerializeCaRotationResponse);
+                case AdminHttpOperation.PrepareCaRotation:
+                    return Execute(
+                        _handler.PrepareCaRotation,
+                        AdminServerResponseXmlCodec
+                            .SerializeCaRotationResponse);
+                case AdminHttpOperation.CancelCaRotation:
+                    return Execute(
+                        () => _handler.CancelCaRotation(
+                            cancelCaRotationRequest),
+                        AdminServerResponseXmlCodec
+                            .SerializeCaRotationResponse);
                 case AdminHttpOperation.GetCertificates:
                     return Execute(
                         () => _handler.GetCertificates(certificatesQuery),
@@ -712,6 +742,28 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
             }
 
             if (StringComparer.Ordinal.Equals(method, "GET")
+                && StringComparer.Ordinal.Equals(path, CaRotationPath))
+            {
+                return AdminHttpOperation.GetCaRotation;
+            }
+
+            if (StringComparer.Ordinal.Equals(method, "POST")
+                && StringComparer.Ordinal.Equals(
+                    path,
+                    PrepareCaRotationPath))
+            {
+                return AdminHttpOperation.PrepareCaRotation;
+            }
+
+            if (StringComparer.Ordinal.Equals(method, "POST")
+                && StringComparer.Ordinal.Equals(
+                    path,
+                    CancelCaRotationPath))
+            {
+                return AdminHttpOperation.CancelCaRotation;
+            }
+
+            if (StringComparer.Ordinal.Equals(method, "GET")
                 && StringComparer.Ordinal.Equals(path, CertificatesPath))
             {
                 return AdminHttpOperation.GetCertificates;
@@ -759,7 +811,9 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Http
                 || operation == AdminHttpOperation.DisableSync
                 || operation == AdminHttpOperation.PutLoggingSettings
                 || operation == AdminHttpOperation.CreateCaBackup
-                || operation == AdminHttpOperation.RevokeCertificate;
+                || operation == AdminHttpOperation.RevokeCertificate
+                || operation == AdminHttpOperation.PrepareCaRotation
+                || operation == AdminHttpOperation.CancelCaRotation;
         }
 
         private static bool IsSupportedXmlContentType(string contentType)

@@ -214,6 +214,9 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
                         Namespace + "SerialNumber",
                         item.SerialNumber),
                     new XElement(
+                        Namespace + "IssuerCaSerialNumber",
+                        item.IssuerCaSerialNumber),
+                    new XElement(
                         Namespace + "ProductCode",
                         item.ProductCode),
                     new XElement(
@@ -296,6 +299,9 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
                 new XElement(
                     Namespace + "SerialNumber",
                     response.SerialNumber),
+                new XElement(
+                    Namespace + "IssuerCaSerialNumber",
+                    response.IssuerCaSerialNumber),
                 new XElement(
                     Namespace + "RevokedUtc",
                     FormatUtc(response.RevokedUtc)),
@@ -486,6 +492,9 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
                     {
                         items.Add(new AdminServerCertificateItem(
                             ReadRequiredString(item, "SerialNumber"),
+                            ReadRequiredString(
+                                item,
+                                "IssuerCaSerialNumber"),
                             ReadRequiredString(item, "ProductCode"),
                             ParseIssuanceKind(ReadRequiredString(
                                 item,
@@ -522,6 +531,9 @@ namespace DEEPAi.ServiceDirectory.InternalProtocol.Admin
                 (root, revoked) =>
                     new AdminServerCertificateRevocationResponse(
                         ReadRequiredString(revoked, "SerialNumber"),
+                        ReadRequiredString(
+                            revoked,
+                            "IssuerCaSerialNumber"),
                         ReadRequiredUtc(revoked, "RevokedUtc"),
                         ParseRevocationReason(ReadRequiredString(
                             revoked,

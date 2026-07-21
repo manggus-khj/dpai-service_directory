@@ -57,6 +57,47 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             });
         }
 
+        internal ExternalTrustSnapshot GetStandbyExternalTrustSnapshot(
+            DateTime utcNow)
+        {
+            EnsureUtc(utcNow, nameof(utcNow));
+            return _mutationGate.Execute(() =>
+            {
+                _journal.EnsureNoActiveTransaction();
+                using (StandbyReadSnapshot snapshot =
+                    ReadValidatedStandbySnapshot(utcNow))
+                {
+                    var trustInfo = new ExternalTrustInfo(
+                        snapshot.State.SiteId,
+                        snapshot.CaCertificate,
+                        snapshot.State.GetCaSpkiSha256(),
+                        SiteCertificateAuthority.CrlRelativePath);
+                    var authority = new ExternalTrustAuthority(
+                        ExternalTrustAuthorityRole.Current,
+                        snapshot.State.CaSerialNumber.Hex,
+                        snapshot.CaCertificate,
+                        snapshot.State.GetCaSpkiSha256(),
+                        SiteCertificateAuthority.GetIssuerCrlRelativePath(
+                            snapshot.State.CaSerialNumber),
+                        snapshot.State.NotBeforeUtc,
+                        snapshot.State.NotAfterUtc);
+                    var trustBundle = new ExternalTrustBundle(
+                        snapshot.State.SiteId,
+                        snapshot.State.TrustRevision,
+                        null,
+                        ExternalCaRotationPhase.Stable,
+                        null,
+                        null,
+                        null,
+                        null,
+                        new[] { authority });
+                    return new ExternalTrustSnapshot(
+                        trustInfo,
+                        trustBundle);
+                }
+            });
+        }
+
         internal byte[] GetStandbyExternalCertificateRevocationList(
             DateTime utcNow)
         {
@@ -72,6 +113,36 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                     {
                         throw new InvalidDataException(
                             "The current CRL exceeds the External response limit.");
+                    }
+
+                    return (byte[])snapshot.Crl.Clone();
+                }
+            });
+        }
+
+        internal byte[] GetStandbyExternalCertificateRevocationList(
+            string caSerialNumber,
+            DateTime utcNow)
+        {
+            EnsureUtc(utcNow, nameof(utcNow));
+            return _mutationGate.Execute(() =>
+            {
+                _journal.EnsureNoActiveTransaction();
+                using (StandbyReadSnapshot snapshot =
+                    ReadValidatedStandbySnapshot(utcNow))
+                {
+                    if (!StringComparer.Ordinal.Equals(
+                            caSerialNumber,
+                            snapshot.State.CaSerialNumber.Hex))
+                    {
+                        return null;
+                    }
+
+                    if (snapshot.Crl.Length
+                        > ExternalApiContract.MaximumCrlResponseBytes)
+                    {
+                        throw new InvalidDataException(
+                            "The requested CRL exceeds the External response limit.");
                     }
 
                     return (byte[])snapshot.Crl.Clone();

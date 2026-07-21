@@ -80,7 +80,7 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
                         "Only the active issuer can publish Peer PKI state.");
                 }
 
-                CertificateLedgerSnapshot ledger = ReadLedger();
+                CertificateLedgerSnapshot ledger = ReadLedger(state.CrlNumber);
                 byte[] caCertificate = null;
                 byte[] crl = null;
                 try
@@ -622,14 +622,14 @@ namespace DEEPAi.ServiceDirectory.Infrastructure.Pki
             }
         }
 
-        private CertificateLedgerSnapshot ReadLedger()
+        private CertificateLedgerSnapshot ReadLedger(ulong crlNumber)
         {
             byte[] contents = Read(
                 StateFileTarget.CertificateLedger,
                 CertificateAuthorityStateCodec.MaximumDocumentBytes);
             try
             {
-                return _stateCodec.DeserializeLedger(contents);
+                return _stateCodec.DeserializeLedger(contents, crlNumber);
             }
             finally
             {

@@ -108,7 +108,18 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                 throw new NotSupportedException();
             }
 
+            public ExternalTrustSnapshot GetTrustSnapshot()
+            {
+                throw new NotSupportedException();
+            }
+
             public byte[] GetCertificateRevocationList()
+            {
+                throw new NotSupportedException();
+            }
+
+            public byte[] GetCertificateRevocationList(
+                string caSerialNumber)
             {
                 throw new NotSupportedException();
             }
@@ -133,7 +144,8 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
                         "1234567890ABCDEF1234567890ABCDEF",
                         utcNow.AddMinutes(-5),
                         utcNow.AddYears(1),
-                        ExternalApiContract.CrlPath));
+                        ExternalApiContract.IssuerCrlPathPrefix
+                            + "01A4B5C6D7E8F90123456789ABCDEF01"));
             }
 
             public ExternalRegistrationServiceResult Renew(

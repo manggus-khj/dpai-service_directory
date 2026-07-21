@@ -234,10 +234,12 @@ namespace DEEPAi.ServiceDirectory.Tests.Infrastructure
             CertificateServiceMutationTestContext source,
             DateTime utcNow)
         {
+            ulong trustRevision;
             ulong pkiRevision;
             ulong crlNumber;
             return source.Store.CaptureBackupPayload(
                 utcNow,
+                out trustRevision,
                 out pkiRevision,
                 out crlNumber);
         }

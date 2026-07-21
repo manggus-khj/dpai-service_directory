@@ -192,9 +192,14 @@ namespace DEEPAi.ServiceDirectory.Tests.Domain
             byte[] leafCertificate = null)
         {
             CertificateSerialNumber serialNumber;
+            CertificateSerialNumber issuerCaSerialNumber;
             Assert.IsTrue(CertificateSerialNumber.TryCreate(serial, out serialNumber));
+            Assert.IsTrue(CertificateSerialNumber.TryCreate(
+                "01FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+                out issuerCaSerialNumber));
             return CertificateLedgerEntry.CreateIssued(
                 serialNumber,
+                issuerCaSerialNumber,
                 TestData.Definition(
                     "VMS Bridge",
                     productCode,
